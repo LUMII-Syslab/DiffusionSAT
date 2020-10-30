@@ -4,7 +4,7 @@ from registry.registry import ModelRegistry, DatasetRegistry
 
 config = argparse.ArgumentParser()
 
-config.add_argument('--train_dir', type=str, default='/host-dir/sat-solver')
+config.add_argument('--train_dir', type=str, default='/host-dir/np-solver')
 config.add_argument('--data_dir', type=str, default='/host-dir/data')
 
 config.add_argument('--ckpt_count', type=int, default=3)
