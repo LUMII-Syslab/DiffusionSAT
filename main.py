@@ -42,6 +42,7 @@ def train(dataset, model: Model, optimizer):
 
     mean_loss = tf.metrics.Mean()
     timer = Timer(start=True)
+    validation_data = dataset.validation_data()
 
     for features, labels in itertools.islice(dataset.train_data(), config.train_steps):
         loss, gradients = runner.train_step(features, labels)
@@ -67,7 +68,7 @@ def train(dataset, model: Model, optimizer):
                         tf.summary.histogram(var.name, var, step=int(ckpt.step))
 
         if int(ckpt.step) % 1000 == 0:
-            mean_acc, mean_total_acc = validate_model(dataset, runner)
+            mean_acc, mean_total_acc = validate_model(validation_data, runner, dataset.accuracy_fn)
             with tf.name_scope("accuracy"):
                 with writer.as_default():
                     tf.summary.scalar("accuracy", mean_acc, step=int(ckpt.step))
@@ -84,18 +85,18 @@ def train(dataset, model: Model, optimizer):
         ckpt.step.assign_add(1)
 
 
-def validate_model(dataset: Dataset, runner):
+def validate_model(data, runner, accuracy_fn):
     mean_acc = tf.metrics.Mean()
     mean_total_acc = tf.metrics.Mean()
     # TODO: Don't use slice here, init dataset only once
 
-    for (features, labels), (variable_count, normal_clauses) in itertools.islice(dataset.validation_data(), 100):
+    for (features, labels), (variable_count, normal_clauses) in itertools.islice(data, 100):
         prediction = runner.prediction(features, labels)
         prediction = np.round(tf.sigmoid(prediction))
         prediction = split_batch(prediction, variable_count)
 
         for batch, (pred, clause) in enumerate(zip(prediction, normal_clauses)):
-            accuracy = dataset.accuracy_fn(pred, clause)
+            accuracy = accuracy_fn(pred, clause)
 
             if accuracy == 1:
                 mean_total_acc.update_state(accuracy)

@@ -37,14 +37,13 @@ class QuerySAT(Model):
         literals = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.25)
 
         for _ in tf.range(self.rounds):
-            variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
-            logits = self.literals_query(variables)
-            clauses = variables_mul_loss(logits, labels)
-            clauses = self.literals_query_inter(clauses)
+            literals_prep = self.literals_query(literals)
+            clauses_participants = tf.sparse.sparse_dense_matmul(inputs, literals_prep, adjoint_a=True)
 
-            literals_loss = tf.sparse.sparse_dense_matmul(inputs, clauses)
+            clauses_participants = self.literals_query_inter(clauses_participants)
+            literals_neighbors = tf.sparse.sparse_dense_matmul(inputs, clauses_participants)
 
-            unit = tf.concat([literals, literals_loss], axis=-1)
+            unit = tf.concat([literals, literals_neighbors], axis=-1)
             unit = self.flip(unit, n_vars)
             unit = self.literals_norm(unit)
 
