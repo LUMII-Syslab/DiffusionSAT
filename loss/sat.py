@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def variables_mul_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-10):
+def variables_mul_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
     :param clauses: RaggedTensor of input clauses in DIMAC format
