@@ -128,7 +128,7 @@ def test(dataset, model, optimizer):
 
     mean_acc = tf.metrics.Mean()
     mean_total_acc = tf.metrics.Mean()
-    for features, labels, variable_count, normal_clauses in dataset.test_data():  # TODO: This is task specific too
+    for (features, labels), (variable_count, normal_clauses) in dataset.test_data():  # TODO: This is task specific too
         prediction = runner.prediction(features, labels)
         prediction = np.round(tf.sigmoid(prediction))  # TODO: Move somewhere, this is task specific
         prediction = split_batch(prediction, variable_count)
@@ -138,6 +138,7 @@ def test(dataset, model, optimizer):
 
             if accuracy == 1:
                 mean_total_acc.update_state(accuracy)
+                print(f"Error! Predicted: {tf.sigmoid(pred).numpy()}; clauses: {clauses}")
             else:
                 mean_total_acc.variables[1].assign_add(1)
 
