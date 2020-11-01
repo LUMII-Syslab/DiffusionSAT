@@ -138,7 +138,7 @@ def test(dataset, model, optimizer):
 
             if accuracy == 1:
                 mean_total_acc.update_state(accuracy)
-                print(f"Error! Predicted: {tf.sigmoid(pred).numpy()}; clauses: {clauses}")
+                print(f"Error! Predicted: {tf.sigmoid(pred).numpy()}; clauses: {[x.tolist() for x in clause.numpy()]}")
             else:
                 mean_total_acc.variables[1].assign_add(1)
 
