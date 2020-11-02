@@ -154,6 +154,11 @@ if __name__ == '__main__':
 
     tf.config.run_functions_eagerly(config.eager)
 
-    current_date = time.strftime("%y_%m_%d_%T", time.gmtime(time.time()))  # TODO: Allow continuing from previous
-    config.train_dir = config.train_dir + "/" + config.task + "_" + current_date
+    if config.restore:
+        print(f"Restoring model from last checkpoint in '{config.restore}'!")
+        config.train_dir = config.restore
+    else:
+        current_date = time.strftime("%y_%m_%d_%T", time.gmtime(time.time()))
+        config.train_dir = config.train_dir + "/" + config.task + "_" + current_date
+
     main()
