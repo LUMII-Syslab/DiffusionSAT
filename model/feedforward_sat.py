@@ -26,6 +26,9 @@ class FeedForwardSAT(Model):
         self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
         self.feature_maps = feature_maps
 
+    @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
+                                  tf.TensorSpec(shape=(), dtype=bool)])
     def call(self, inputs, labels=None, training=None, mask=None):
         shape = tf.shape(inputs)  # inputs is sparse adjacency matrix
         n_lits = shape[0]

@@ -1,6 +1,8 @@
 import tensorflow as tf
 
 
+@tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
+                              tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
 def variables_mul_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
