@@ -44,6 +44,7 @@ def train(dataset, model: Model, optimizer):
     timer = Timer(start=True)
     validation_data = dataset.validation_data()
 
+    # TODO: Check against step in checkpoint
     for features, labels in itertools.islice(dataset.train_data(), config.train_steps):
         loss, gradients = runner.train_step(features, labels)
 
@@ -130,15 +131,14 @@ def test(dataset, model, optimizer):
     mean_total_acc = tf.metrics.Mean()
     for (features, labels), (variable_count, normal_clauses) in dataset.test_data():  # TODO: This is task specific too
         prediction = runner.prediction(features, labels)
-        prediction = np.round(tf.sigmoid(prediction))  # TODO: Move somewhere, this is task specific
-        prediction = split_batch(prediction, variable_count)
+        prediction = split_batch(prediction, variable_count)  # TODO: Move somewhere, this is task specific
 
         for batch, (pred, clause) in enumerate(zip(prediction, normal_clauses)):
-            accuracy = dataset.accuracy_fn(pred, clause)
-
+            soft_prediction = tf.sigmoid(pred)
+            hard_prediction = np.round(soft_prediction)
+            accuracy = dataset.accuracy_fn(hard_prediction, clause)
             if accuracy == 1:
                 mean_total_acc.update_state(accuracy)
-                print(f"Error! Predicted: {tf.sigmoid(pred).numpy()}; clauses: {[x.tolist() for x in clause.numpy()]}")
             else:
                 mean_total_acc.variables[1].assign_add(1)
 
