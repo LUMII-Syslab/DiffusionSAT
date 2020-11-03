@@ -80,8 +80,7 @@ def tsp_loss(predictions, adjacency_matrix, noise=0):
     x = tf.reshape(x, (batch_size, node_count * node_count, 1))
     for (nr, adj_matrix) in AA:
         tmp = tf.sparse.sparse_dense_matmul(adj_matrix, x[nr])
-        cost4 += tf.reduce_sum(2. - tmp) / tf.cast(batch_size,
-                                                   dtype=tf.float32)  # ņem summu visiem viena grafa pārkāpumiem
+        cost4 += tf.reduce_sum(2. - tmp) / tf.cast(batch_size, dtype=tf.float32)  # ņem summu visiem viena grafa pārkāpumiem
 
     # multiplied_dims = []
     # for i in range(x.shape[-1]):
