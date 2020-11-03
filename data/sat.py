@@ -11,7 +11,7 @@ from loss.sat import variables_mul_loss
 from mk_problem import Problem
 
 
-class NeuroSATDataset(Dataset):
+class RandomKSAT(Dataset):
 
     def __init__(self) -> None:
         train_dir = 'data_files/train/sr5'
