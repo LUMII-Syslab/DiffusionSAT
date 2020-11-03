@@ -15,6 +15,7 @@ def inverse_identity(size):
 
 
 def tsp_loss(predictions, adjacency_matrix, noise=0):
+    # TODO(@Elīza): rename with meaningful variable names
     batch_size, node_count, *_ = tf.shape(predictions)
     u = sample_logistic(shape=[batch_size, node_count, node_count])
     graph = tf.reshape(adjacency_matrix, shape=[batch_size, node_count, node_count])
@@ -29,7 +30,8 @@ def tsp_loss(predictions, adjacency_matrix, noise=0):
     cost1 = tf.reduce_mean(x * graph)  # minimizējamais vienādojums
 
     AA = []
-    x2 = copy.deepcopy(x.numpy())  # TODO: I believe we can live without deepcopy and numpy if tenor is used
+    x2 = copy.deepcopy(x.numpy())  # TODO(@Elīza): I believe we can live without deepcopy and numpy if tenor is used
+    # TODO(@Elīza): Optimize this, can something be cached or precomputed, can we parallelize it along batch dimension?
     for g in range(len(x2)):
         graph = x2[g]
         G = []  # G* - sakārto šķautnes pēc svariem
@@ -44,7 +46,6 @@ def tsp_loss(predictions, adjacency_matrix, noise=0):
         for edge in G:  # šis notiks O(n) reizes
             i = edge[1][0]  # šķautnes virsotnes
             j = edge[1][1]
-
             C = connected_components(F)[1]  # F grafa komponentes
             if C[i] != C[j]:  # ja šķautne pieder dažādām F komponentēm
                 F[i, j] = 1  # pievieno šķautni F grafam
@@ -70,18 +71,17 @@ def tsp_loss(predictions, adjacency_matrix, noise=0):
                     ind.extend(ind_tmp)
                     cnt += 1
 
-        if (cnt != 0):
+        if cnt != 0:
             adj_matrix = tf.SparseTensor(values=[1.] * len(ind), indices=ind,
                                          dense_shape=[cnt, node_count * node_count])
             AA.append([g, adj_matrix])
 
     cost4 = 0.
     x = tf.reshape(x, (batch_size, node_count * node_count, 1))
-    for a_tensor in AA:
-        nr = a_tensor[0]
-        adj_matrix = a_tensor[1]
+    for (nr, adj_matrix) in AA:
         tmp = tf.sparse.sparse_dense_matmul(adj_matrix, x[nr])
-        cost4 += tf.reduce_sum(2. - tmp) / tf.cast(batch_size, dtype=tf.float32)  # ņem summu visiem viena grafa pārkāpumiem
+        cost4 += tf.reduce_sum(2. - tmp) / tf.cast(batch_size,
+                                                   dtype=tf.float32)  # ņem summu visiem viena grafa pārkāpumiem
 
     # multiplied_dims = []
     # for i in range(x.shape[-1]):
