@@ -12,12 +12,13 @@ class MatrixSE(tf.keras.Model):
 
     def __init__(self, feature_maps=64):
         super(MatrixSE, self).__init__()
-        self.input_layer = Dense(feature_maps, activation=tf.nn.relu)
-        self.benes = BenesBlock(1, feature_maps)
-        self.output_layer = Dense(1)
+        self.input_layer = Dense(feature_maps, activation=tf.nn.relu, name="input_layer")
+        self.benes = BenesBlock(1, feature_maps, name="benes")
+        self.output_layer = Dense(1, name="output_layer")
 
-    # TODO: @tf.function
+    @tf.function
     def call(self, inputs, labels=None, training=None, mask=None):
+        inputs = tf.expand_dims(inputs, axis=-1)
         hidden = self.input_layer(inputs)
         hidden = self.benes(hidden, training=training)
         return self.output_layer(hidden)
@@ -172,15 +173,13 @@ class BenesBlock(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.block_count = block_count
         self.num_units = num_units
-        self.block_layers = {}
-        for i in range(self.block_count):
-            self.block_layers[i] = {
-                "forward": QuaternarySwitchUnit("forward", dropout_rate=0.1),
-                "middle": QuaternarySwitchUnit("middle", dropout_rate=0.1),
-                "reverse": QuaternarySwitchUnit("reverse", dropout_rate=0.1)
-            }
+        self.block_layers = [[
+            QuaternarySwitchUnit("forward", dropout_rate=0.1),
+            QuaternarySwitchUnit("reverse", dropout_rate=0.1),
+            QuaternarySwitchUnit("middle", dropout_rate=0.1),
+        ] for _ in range(self.block_count)]
 
-        self.output_layer = Dense(self.num_units, name="output", )
+        self.output_layer = Dense(self.num_units, name="output")
 
     def call(self, inputs, training=False, **kwargs):
         input_shape = inputs.get_shape().as_list()
@@ -188,17 +187,21 @@ class BenesBlock(tf.keras.layers.Layer):
 
         last_layer = ZOrderFlatten()(inputs)
 
-        for block_nr in tf.range(self.block_count):
+        for block_nr in range(self.block_count):
+            switch_layer = self.block_layers[block_nr][0]
+            shuffle_layer = QuaternaryShuffleLayer(ShuffleType.RIGHT)
 
-            with tf.name_scope(f"benes_block_{block_nr}"):
-                for _ in range(level_count):
-                    switch = self.block_layers[block_nr]["forward"](last_layer, training=training)
-                    last_layer = QuaternaryShuffleLayer(ShuffleType.RIGHT)(switch)
+            for _ in tf.range(level_count):
+                last_layer = switch_layer(last_layer, training=training)
+                last_layer = shuffle_layer(last_layer)
 
-                for level in range(level_count):
-                    last_layer = self.block_layers[block_nr]["reverse"](last_layer, training=training)
-                    last_layer = QuaternaryShuffleLayer(ShuffleType.LEFT)(last_layer)
+            switch_layer = self.block_layers[block_nr][1]
+            shuffle_layer = QuaternaryShuffleLayer(ShuffleType.LEFT)
 
-                last_layer = self.block_layers[block_nr]["middle"](last_layer, training=training)
+            for _ in tf.range(level_count):
+                last_layer = switch_layer(last_layer, training=training)
+                last_layer = shuffle_layer(last_layer)
+
+            last_layer = self.block_layers[block_nr][2](last_layer, training=training)
 
         return ZOrderUnflatten()(last_layer, width=input_shape[1], height=input_shape[2])

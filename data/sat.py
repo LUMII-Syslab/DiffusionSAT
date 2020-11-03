@@ -56,7 +56,7 @@ class RandomKSAT(Dataset):
             tf.cast(y, tf.int32)
         ))
         data = data.shuffle(10000)
-        data = data.repeat()
+        data = data.repeat()  # TODO: Move shuffling, repetition, batching to common code
 
         return data
 

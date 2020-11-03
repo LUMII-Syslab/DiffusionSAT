@@ -11,11 +11,11 @@ def sample_logistic(shape, eps=1e-20):
 
 
 def inverse_identity(size):
-    return tf.ones(shape=[size, size]) - tf.identity(size)
+    return tf.ones(shape=[size, size]) - tf.eye(size)
 
 
-def tsp_loss_fn(predictions, adjacency_matrix, noise=0):
-    batch_size, node_count, _ = tf.shape(predictions)
+def tsp_loss(predictions, adjacency_matrix, noise=0):
+    batch_size, node_count, *_ = tf.shape(predictions)
     u = sample_logistic(shape=[batch_size, node_count, node_count])
     graph = tf.reshape(adjacency_matrix, shape=[batch_size, node_count, node_count])
 
@@ -75,13 +75,13 @@ def tsp_loss_fn(predictions, adjacency_matrix, noise=0):
                                          dense_shape=[cnt, node_count * node_count])
             AA.append([g, adj_matrix])
 
-    cost4 = 0
+    cost4 = 0.
     x = tf.reshape(x, (batch_size, node_count * node_count, 1))
     for a_tensor in AA:
         nr = a_tensor[0]
         adj_matrix = a_tensor[1]
         tmp = tf.sparse.sparse_dense_matmul(adj_matrix, x[nr])
-        cost4 += tf.reduce_sum(2 - tmp) / batch_size  # ņem summu visiem viena grafa pārkāpumiem
+        cost4 += tf.reduce_sum(2. - tmp) / tf.cast(batch_size, dtype=tf.float32)  # ņem summu visiem viena grafa pārkāpumiem
 
     # multiplied_dims = []
     # for i in range(x.shape[-1]):

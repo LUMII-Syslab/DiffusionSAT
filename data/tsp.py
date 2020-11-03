@@ -5,8 +5,10 @@ import tensorflow as tf
 
 from data.dataset import Dataset
 
-
 # TODO: Meaningful name for dataset - it has to represent problems included in dataset
+from loss.tsp import tsp_loss
+
+
 class EuclideanTSP(Dataset):
 
     def __init__(self, n=8, count=1500, batch_size=15) -> None:
@@ -15,6 +17,12 @@ class EuclideanTSP(Dataset):
         self.batch_size = batch_size
 
     def train_data(self) -> tf.data.Dataset:
+        data = self.__generate_data()
+        data = data.shuffle(10000)
+        data = data.repeat()
+        return data
+
+    def __generate_data(self) -> tf.data.Dataset:
         # eiklīda attālumi
         coords = np.random.rand(self.count, self.n, 2)  # punktu koordinātas
         graphs = []
@@ -25,16 +33,13 @@ class EuclideanTSP(Dataset):
                     graph[i][j] = math.sqrt(
                         (coords[u][i][0] - coords[u][j][0]) ** 2 + (coords[u][i][1] - coords[u][j][1]) ** 2)
             graphs.append(graph.tolist())
-
         # # random attālumi:
         # graphs = np.random.rand(count, n, n)
         # for i in range(count):
         #     for j in range(n):
         #         graphs[i][j][j] = 0
-
         data = tf.data.Dataset.from_tensor_slices((graphs, coords))
         data = data.batch(self.batch_size)
-
         return data
 
     def validation_data(self) -> tf.data.Dataset:
@@ -43,8 +48,8 @@ class EuclideanTSP(Dataset):
     def test_data(self) -> tf.data.Dataset:
         return self.test_data()
 
-    def loss_fn(self, predictions, labels=None):
-        pass
+    def loss_fn(self, predictions, adjacency_matrix=None):
+        return tsp_loss(predictions, adjacency_matrix)
 
     def accuracy_fn(self, predictions, labels=None):
-        pass
+        raise NotImplementedError()
