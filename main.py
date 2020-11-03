@@ -1,25 +1,14 @@
 import itertools
 import time
 
-import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow.keras import Model
 
 from config import config
-from data.dataset import Dataset
 from model_runner import ModelRunner
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
-
-
-def split_batch(predictions, variable_count):  # TODO: This is task specific, move somewhere
-    batched_logits = []
-    i = 0
-    for length in variable_count:
-        batched_logits.append(predictions[i:i + length])
-        i += length
-    return batched_logits
 
 
 def main():
@@ -31,8 +20,8 @@ def main():
                                              warmup_proportion=config.warmup)
     optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
 
+    # model.summary() # TODO: with input as Elīza had done
     train(dataset, model, optimizer)
-    model.summary()
     test(dataset, model, optimizer)
 
 
@@ -41,10 +30,12 @@ def train(dataset, model: Model, optimizer):
     ckpt, manager, runner = prepare_model(dataset, model, optimizer)
 
     mean_loss = tf.metrics.Mean()
-    timer = Timer(start=True)
+    timer = Timer(start_now=True)
+    validation_data = dataset.validation_data()
 
-    for features, labels in itertools.islice(dataset.train_data(), config.train_steps):
-        loss, gradients = runner.train_step(features, labels)
+    # TODO: Check against step in checkpoint
+    for step_data in itertools.islice(dataset.train_data(), config.train_steps + 1):
+        loss, gradients = runner.train_step(step_data)
 
         mean_loss.update_state(loss)
 
@@ -53,7 +44,7 @@ def train(dataset, model: Model, optimizer):
             with writer.as_default():
                 tf.summary.scalar("loss", loss_mean, step=int(ckpt.step))
 
-            print(f"{int(ckpt.step)}. step;\tloss: {loss_mean:.5f};\ttime: {timer.lap_time():.3f}s")
+            print(f"{int(ckpt.step)}. step;\tloss: {loss_mean:.5f};\ttime: {timer.lap():.3f}s")
             mean_loss.reset_states()
 
             with tf.name_scope("gradients"):
@@ -67,7 +58,7 @@ def train(dataset, model: Model, optimizer):
                         tf.summary.histogram(var.name, var, step=int(ckpt.step))
 
         if int(ckpt.step) % 1000 == 0:
-            mean_acc, mean_total_acc = validate_model(dataset, runner)
+            mean_acc, mean_total_acc = validate_model(validation_data, runner, dataset.accuracy)
             with tf.name_scope("accuracy"):
                 with writer.as_default():
                     tf.summary.scalar("accuracy", mean_acc, step=int(ckpt.step))
@@ -84,29 +75,6 @@ def train(dataset, model: Model, optimizer):
         ckpt.step.assign_add(1)
 
 
-def validate_model(dataset: Dataset, runner):
-    mean_acc = tf.metrics.Mean()
-    mean_total_acc = tf.metrics.Mean()
-    # TODO: Don't use slice here, init dataset only once
-
-    for (features, labels), (variable_count, normal_clauses) in itertools.islice(dataset.validation_data(), 100):
-        prediction = runner.prediction(features, labels)
-        prediction = np.round(tf.sigmoid(prediction))
-        prediction = split_batch(prediction, variable_count)
-
-        for batch, (pred, clause) in enumerate(zip(prediction, normal_clauses)):
-            accuracy = dataset.accuracy_fn(pred, clause)
-
-            if accuracy == 1:
-                mean_total_acc.update_state(accuracy)
-            else:
-                mean_total_acc.variables[1].assign_add(1)
-
-            mean_acc.update_state(accuracy)
-
-    return mean_acc.result(), mean_total_acc.result()
-
-
 def prepare_model(dataset, model, optimizer):
     ckpt = tf.train.Checkpoint(step=tf.Variable(0), optimizer=optimizer, model=model)
     manager = tf.train.CheckpointManager(ckpt, config.train_dir, max_to_keep=config.ckpt_count)
@@ -117,9 +85,22 @@ def prepare_model(dataset, model, optimizer):
     else:
         print("Initializing new model!")
 
-    runner = ModelRunner(model, dataset.loss_fn, optimizer)
+    runner = ModelRunner(model, dataset, optimizer)
 
     return ckpt, manager, runner
+
+
+def validate_model(data, runner, accuracy_fn):  # TODO: Validation and test is basically same function. Merge them.
+    mean_acc = tf.metrics.Mean()
+    mean_total_acc = tf.metrics.Mean()
+
+    for step_data in itertools.islice(data, 100):  # TODO: Add this to config
+        prediction = runner.prediction(step_data)
+        accuracy, total_accuracy = accuracy_fn(prediction, step_data)
+        mean_acc.update_state(accuracy)
+        mean_total_acc.update_state(total_accuracy)
+
+    return mean_acc.result(), mean_total_acc.result()
 
 
 def test(dataset, model, optimizer):
@@ -127,23 +108,14 @@ def test(dataset, model, optimizer):
 
     mean_acc = tf.metrics.Mean()
     mean_total_acc = tf.metrics.Mean()
-    for features, labels, variable_count, normal_clauses in dataset.test_data():  # TODO: This is task specific too
-        prediction = runner.prediction(features, labels)
-        prediction = np.round(tf.sigmoid(prediction))  # TODO: Move somewhere, this is task specific
-        prediction = split_batch(prediction, variable_count)
+    for step_data in dataset.test_data():
+        prediction = runner.prediction(step_data)
+        accuracy, total_accuracy = dataset.accuracy(prediction, step_data)
+        mean_acc.update_state(accuracy)
+        mean_total_acc.update_state(total_accuracy)
 
-        for batch, (pred, clause) in enumerate(zip(prediction, normal_clauses)):
-            accuracy = dataset.accuracy_fn(pred, clause)
-
-            if accuracy == 1:
-                mean_total_acc.update_state(accuracy)
-            else:
-                mean_total_acc.variables[1].assign_add(1)
-
-            mean_acc.update_state(accuracy)
-
-    print("Accuracy:", mean_acc.result().numpy())
-    print("Total fully correct:", mean_total_acc.result().numpy())
+    print(f"Accuracy: {mean_acc.result().numpy():.4f}")
+    print(f"Total fully correct: {mean_total_acc.result().numpy():.4f}")
 
 
 if __name__ == '__main__':
@@ -152,6 +124,11 @@ if __name__ == '__main__':
 
     tf.config.run_functions_eagerly(config.eager)
 
-    current_date = time.strftime("%y_%m_%d_%T", time.gmtime(time.time()))  # TODO: Allow continuing from previous
-    config.train_dir = config.train_dir + "/" + config.task + "_" + current_date
+    if config.restore:
+        print(f"Restoring model from last checkpoint in '{config.restore}'!")
+        config.train_dir = config.restore
+    else:
+        current_date = time.strftime("%y_%m_%d_%T", time.gmtime(time.time()))
+        config.train_dir = config.train_dir + "/" + config.task + "_" + current_date
+
     main()

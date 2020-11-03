@@ -1,32 +1,32 @@
 import tensorflow as tf
 
+from data.dataset import Dataset
+
 
 class ModelRunner:
 
     def __init__(self,
                  model_fn: tf.keras.Model,
-                 loss_fn: callable,
+                 dataset: Dataset,
                  optimizer: tf.optimizers.Optimizer) -> None:
         self.model = model_fn
-        self.loss_fn = loss_fn
+        self.dataset = dataset
         self.optimizer = optimizer
 
-    @tf.function(  # TODO: Make this more general
-        input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                         tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-        experimental_relax_shapes=True)
-    def train_step(self, features, labels):
+    def train_step(self, step_data):
         with tf.GradientTape() as tape:
-            predictions = self.model(features, labels=labels, training=True)
-            loss = self.loss_fn(predictions, labels=labels)
-            train_vars = self.model.trainable_variables
-            gradients = tape.gradient(loss, train_vars)
-            self.optimizer.apply_gradients(zip(gradients, train_vars))
+            model_inputs = self.dataset.filter_model_inputs(step_data)
+            predictions = self.model(**model_inputs, training=True)
+            loss = self.dataset.loss(predictions, step_data)
+            gradients = tape.gradient(loss, self.model.trainable_variables)  # TODO: Put gradient calculation in graph
+            self.__optimize(gradients)
+
             return loss, gradients
 
-    @tf.function(  # TODO: Make this more general
-        input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                         tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-        experimental_relax_shapes=True)
-    def prediction(self, features, labels):
-        return self.model(features, labels=labels, training=False)
+    @tf.function
+    def __optimize(self, gradients):
+        self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+
+    def prediction(self, step_data):
+        model_inputs = self.dataset.filter_model_inputs(step_data)
+        return self.model(**model_inputs, training=False)
