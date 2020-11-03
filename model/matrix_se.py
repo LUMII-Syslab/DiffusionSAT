@@ -10,17 +10,24 @@ import utils.shuffle as shuffle_utils
 
 class MatrixSE(tf.keras.Model):
 
-    def __init__(self, feature_maps=64):
+    def __init__(self, feature_maps=64, block_count=1):
         super(MatrixSE, self).__init__()
         self.input_layer = Dense(feature_maps, activation=tf.nn.relu, name="input_layer")
-        self.benes = BenesBlock(1, feature_maps, name="benes")
+        self.benes_blocks = [BenesBlock() for _ in range(block_count)]
         self.output_layer = Dense(1, name="output_layer")
 
     @tf.function
     def call(self, inputs, labels=None, training=None, mask=None):
+        input_shape = inputs.get_shape().as_list()
+
         inputs = tf.expand_dims(inputs, axis=-1)
         hidden = self.input_layer(inputs)
-        hidden = self.benes(hidden, training=training)
+
+        hidden = ZOrderFlatten()(hidden)
+        for block in self.benes_blocks:
+            hidden = block(hidden, training=training)
+        hidden = ZOrderUnflatten()(hidden, width=input_shape[1], height=input_shape[2])
+
         return self.output_layer(hidden)
 
     # TODO: Move this to main.py
@@ -158,50 +165,28 @@ class ZOrderUnflatten(tf.keras.layers.Layer):
 
 
 class BenesBlock(tf.keras.layers.Layer):
-    """Implementation of Quaternary Beneš block
-    This implementation expects 4-D inputs - [batch_size, width, height, channels]
-    Output shape will be same as input shape, expect channels will be in size of num_units.
-    BenesBlock output is output from the last BenesBlock layer. No additional output processing is applied.
-    """
 
-    def __init__(self, block_count, num_units, **kwargs):
-        """
-        :param block_count: Determines Beneš block count that are chained together
-        :param fixed_shuffle: Use fixed shuffle (equal in every layer) or dynamic (shuffle differs in every layer)
-        :param num_units: Num units to use in Beneš block
-        """
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.block_count = block_count
-        self.num_units = num_units
-        self.block_layers = [[
-            QuaternarySwitchUnit("forward", dropout_rate=0.1),
-            QuaternarySwitchUnit("reverse", dropout_rate=0.1),
-            QuaternarySwitchUnit("middle", dropout_rate=0.1),
-        ] for _ in range(self.block_count)]
-
-        self.output_layer = Dense(self.num_units, name="output")
+        self.forward = QuaternarySwitchUnit("forward", dropout_rate=0.1)
+        self.reverse = QuaternarySwitchUnit("reverse", dropout_rate=0.1)
+        self.middle = QuaternarySwitchUnit("middle", dropout_rate=0.1)
+        self.shuffle_forward = QuaternaryShuffleLayer(ShuffleType.RIGHT)
+        self.shuffle_reverse = QuaternaryShuffleLayer(ShuffleType.LEFT)
 
     def call(self, inputs, training=False, **kwargs):
-        input_shape = inputs.get_shape().as_list()
-        level_count = (input_shape[1] - 1).bit_length() - 1
+        side = tf.cast(tf.shape(inputs)[1], dtype=tf.float32)
+        bit_length = tf.math.log(side - 1) / tf.math.log(2.)
+        level_count = tf.cast(tf.math.floor(bit_length), tf.int32)
 
-        last_layer = ZOrderFlatten()(inputs)
+        last_layer = inputs
 
-        for block_nr in range(self.block_count):
-            switch_layer = self.block_layers[block_nr][0]
-            shuffle_layer = QuaternaryShuffleLayer(ShuffleType.RIGHT)
+        for _ in tf.range(level_count):
+            last_layer = self.forward(last_layer, training=training)
+            last_layer = self.shuffle_forward(last_layer)
 
-            for _ in tf.range(level_count):
-                last_layer = switch_layer(last_layer, training=training)
-                last_layer = shuffle_layer(last_layer)
+        for _ in tf.range(level_count):
+            last_layer = self.reverse(last_layer, training=training)
+            last_layer = self.shuffle_reverse(last_layer)
 
-            switch_layer = self.block_layers[block_nr][1]
-            shuffle_layer = QuaternaryShuffleLayer(ShuffleType.LEFT)
-
-            for _ in tf.range(level_count):
-                last_layer = switch_layer(last_layer, training=training)
-                last_layer = shuffle_layer(last_layer)
-
-            last_layer = self.block_layers[block_nr][2](last_layer, training=training)
-
-        return ZOrderUnflatten()(last_layer, width=input_shape[1], height=input_shape[2])
+        return self.middle(last_layer, training=training)
