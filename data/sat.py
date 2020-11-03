@@ -50,15 +50,19 @@ class RandomKSAT(Dataset):
 
         data = tf.data.Dataset.from_tensor_slices((indices, clauses, n_lits, n_clauses))
         data = data.map(lambda x, y, z, v: (tf.cast(x.to_tensor(), tf.int64), y, tf.cast(tf.stack([z, v]), tf.int64)))
-        data = data.map(lambda x, y, dense_shape: (
-            tf.sparse.SparseTensor(x, tf.ones(tf.cast(tf.shape(x)[0], tf.int32), dtype=tf.float32),
-                                   dense_shape=dense_shape),
-            tf.cast(y, tf.int32)
-        ))
+        data = data.map(lambda x, y, dense_shape: {"adjacency_matrix": self.create_adjacency_matrix(x, dense_shape),
+                                                   "clauses": tf.cast(y, tf.int32)}
+                        )
         data = data.shuffle(10000)
         data = data.repeat()  # TODO: Move shuffling, repetition, batching to common code
 
         return data
+
+    @staticmethod
+    def create_adjacency_matrix(indices, dense_shape):
+        return tf.sparse.SparseTensor(indices,
+                                      tf.ones(tf.cast(tf.shape(indices)[0], tf.int32), dtype=tf.float32),
+                                      dense_shape=dense_shape)
 
     def validation_data(self) -> tf.data.Dataset:
         data = self.test_data()
@@ -76,29 +80,62 @@ class RandomKSAT(Dataset):
         n_lits = tf.constant(n_lits)
         n_clauses = tf.constant(n_clauses)
         var_count = tf.ragged.constant(var_count, dtype=tf.int32, row_splits_dtype=tf.int32)
-        normal_clauses = tf.ragged.constant(normal_clauses, dtype=tf.int32,
-                                            row_splits_dtype=tf.int32)  # TODO: this is same as clauses, remove it
+        normal_clauses = tf.ragged.constant(normal_clauses, dtype=tf.int32, row_splits_dtype=tf.int32)
 
         data_add = tf.data.Dataset.from_tensor_slices((var_count, normal_clauses))
         data = tf.data.Dataset.from_tensor_slices((indices, clauses, n_lits, n_clauses))
         data = data.map(
-            lambda x, y, z, v: (
-                tf.cast(x.to_tensor(), tf.int64), y, tf.cast(tf.stack([z, v]), tf.int64)))
+            lambda x, y, z, v: (tf.cast(x.to_tensor(), tf.int64), y, tf.cast(tf.stack([z, v]), tf.int64)))
         data = data.map(lambda x, y, dense_shape: (
             tf.sparse.SparseTensor(x, tf.ones(tf.cast(tf.shape(x)[0], tf.int32), dtype=tf.float32),
                                    dense_shape=dense_shape),
             tf.cast(y, tf.int32)
         ))
 
-        return tf.data.Dataset.zip((data, data_add))
+        data = tf.data.Dataset.zip((data, data_add))
+        data = data.map(lambda x, y: {"adjacency_matrix": x[0],
+                                      "clauses": x[1],
+                                      "variable_count": y[0],
+                                      "normal_clauses": y[1]
+                                      })
+        return data
 
-    def loss_fn(self, predictions, labels=None):
+    def loss(self, predictions, step_data):
         predictions = tf.expand_dims(predictions, axis=-1)
-        loss = variables_mul_loss(predictions, labels)
+        loss = variables_mul_loss(predictions, step_data["clauses"])
         return tf.reduce_mean(loss)
 
-    def accuracy_fn(self, prediction, label=None):
-        formula = CNF(from_clauses=[x.tolist() for x in label.numpy()])  # TODO: is there better way?
+    def filter_model_inputs(self, step_data) -> dict:  # TODO: Not good because dataset needs to know about model
+        return {"adj_matrix": step_data["adjacency_matrix"], "clauses": step_data["clauses"]}
+
+    @staticmethod
+    def split_batch(predictions, variable_count):
+        batched_logits = []  # TODO: Can I do it better?
+        i = 0
+        for length in variable_count:
+            batched_logits.append(predictions[i:i + length])
+            i += length
+
+        return batched_logits
+
+    def accuracy(self, prediction, step_data):
+
+        prediction = tf.round(tf.sigmoid(prediction))
+        prediction = self.split_batch(prediction, step_data["variable_count"])
+
+        mean_acc = tf.metrics.Mean()
+        mean_total_acc = tf.metrics.Mean()
+
+        for pred, clause in zip(prediction, step_data["normal_clauses"]):
+            accuracy, total_accuracy = self.__accuracy_for_single(pred, clause)
+            mean_acc.update_state(accuracy)
+            mean_total_acc.update_state(total_accuracy)
+
+        return mean_acc.result(), mean_total_acc.result()
+
+    @staticmethod
+    def __accuracy_for_single(prediction, clauses):
+        formula = CNF(from_clauses=[x.tolist() for x in clauses.numpy()])  # TODO: is there better way?
         with Cadical(bootstrap_with=formula.clauses) as solver:
             assum = [i if prediction[i - 1] == 1 else -i for i in range(1, len(prediction), 1)]
             correct_pred = solver.solve(assumptions=assum)
@@ -111,7 +148,4 @@ class RandomKSAT(Dataset):
             correct = np.sum(equal_elem)
             total = prediction.shape[0]
 
-            if correct_pred:
-                return 1
-
-        return correct / total
+        return correct / total, 1 if correct_pred else 0

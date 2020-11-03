@@ -15,6 +15,13 @@ def inverse_identity(size):
 
 
 def tsp_loss(predictions, adjacency_matrix, noise=0):
+    """
+    :param predictions: TODO: Describe what and with what dimensions is expected as input
+    :param adjacency_matrix:
+    :param noise:
+    :return:
+    """
+
     # TODO(@Elīza): rename with meaningful variable names
     batch_size, node_count, *_ = tf.shape(predictions)
     u = sample_logistic(shape=[batch_size, node_count, node_count])

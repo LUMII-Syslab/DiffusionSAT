@@ -28,9 +28,9 @@ class NeuroSAT(Model):
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
-                                  tf.TensorSpec(shape=(), dtype=bool)])
-    def call(self, inputs, labels=None, training=None, mask=None):
-        shape = tf.shape(inputs)  # inputs is sparse adjacency matrix
+                                  tf.TensorSpec(shape=(), dtype=tf.bool)])
+    def call(self, adj_matrix, clauses=None, training=None, mask=None):
+        shape = tf.shape(adj_matrix)  # inputs is sparse adjacency matrix
         n_lits = shape[0]
         n_clauses = shape[1]
         n_vars = n_lits // 2
@@ -43,12 +43,12 @@ class NeuroSAT(Model):
 
         for _ in tf.range(self.rounds):
             LC_pre_msgs = self.LC_msg(l_state[0])
-            LC_msgs = tf.sparse.sparse_dense_matmul(inputs, LC_pre_msgs, adjoint_a=True)
+            LC_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, LC_pre_msgs, adjoint_a=True)
 
             _, c_state = self.C_update(inputs=LC_msgs, states=c_state)
 
             CL_pre_msgs = self.CL_msg(c_state[0])
-            CL_msgs = tf.sparse.sparse_dense_matmul(inputs, CL_pre_msgs)
+            CL_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, CL_pre_msgs)
 
             _, l_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(l_state[0], n_vars)], axis=1),
                                        states=l_state)

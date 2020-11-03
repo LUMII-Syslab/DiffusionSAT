@@ -12,11 +12,11 @@ config.add_argument('--ckpt_count', type=int, default=3)
 config.add_argument('--eager', action='store_true', default=False)
 
 config.add_argument('--optimizer', default='radam', const='radam', nargs='?', choices=["radam"])
-config.add_argument('--train_steps', type=int, default=100000)
+config.add_argument('--train_steps', type=int, default=2000)
 config.add_argument('--warmup', type=float, default=0.0)
 config.add_argument('--learning_rate', type=float, default=0.00001)
 
-config.add_argument('--model', type=str, default='neuro_sat', const='query_sat', nargs='?',
+config.add_argument('--model', type=str, default='matrix_se', const='matrix_se', nargs='?',
                     choices=ModelRegistry().registered_names)
-config.add_argument('--task', type=str, default='random_k_sat', const='random_k_sat', nargs='?',
+config.add_argument('--task', type=str, default='euclidean_tsp', const='euclidean_tsp', nargs='?',
                     choices=DatasetRegistry().registered_names)

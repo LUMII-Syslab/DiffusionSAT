@@ -10,14 +10,20 @@ import utils.shuffle as shuffle_utils
 
 class MatrixSE(tf.keras.Model):
 
-    def __init__(self, feature_maps=64, block_count=1):
-        super(MatrixSE, self).__init__()
+    def __init__(self, feature_maps=64, output_features=1, block_count=1, **kwargs):
+        super(MatrixSE, self).__init__(**kwargs)
         self.input_layer = Dense(feature_maps, activation=tf.nn.relu, name="input_layer")
         self.benes_blocks = [BenesBlock() for _ in range(block_count)]
-        self.output_layer = Dense(1, name="output_layer")
+        self.output_layer = Dense(output_features, name="output_layer")
 
     @tf.function
-    def call(self, inputs, labels=None, training=None, mask=None):
+    def call(self, inputs, training=None, mask=None):
+        """
+        :param inputs: tensor [batch_size, height, width, feature_maps], where height == width
+        :param training: boolean
+        :param mask: not used
+        :return: logit tensor in shape [batch_size, height, width, output_features]
+        """
         input_shape = inputs.get_shape().as_list()
 
         inputs = tf.expand_dims(inputs, axis=-1)

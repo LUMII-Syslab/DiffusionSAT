@@ -5,14 +5,13 @@ import tensorflow as tf
 
 from data.dataset import Dataset
 
-# TODO: Meaningful name for dataset - it has to represent problems included in dataset
 from loss.tsp import tsp_loss
 
 
 class EuclideanTSP(Dataset):
 
     def __init__(self, n=8, count=1500, batch_size=15) -> None:
-        self.n = n  # TODO: Meaningful names for variables
+        self.n = n  # TODO(@Elīza): Meaningful names for variables
         self.count = count
         self.batch_size = batch_size
 
@@ -38,7 +37,7 @@ class EuclideanTSP(Dataset):
         # for i in range(count):
         #     for j in range(n):
         #         graphs[i][j][j] = 0
-        data = tf.data.Dataset.from_tensor_slices((graphs, coords))
+        data = tf.data.Dataset.from_tensor_slices({"adjacency_matrix": graphs, "coordinates:": coords})
         data = data.batch(self.batch_size)
         return data
 
@@ -48,8 +47,11 @@ class EuclideanTSP(Dataset):
     def test_data(self) -> tf.data.Dataset:
         return self.test_data()
 
-    def loss_fn(self, predictions, adjacency_matrix=None):
-        return tsp_loss(predictions, adjacency_matrix)
+    def loss(self, predictions, step_data):
+        return tsp_loss(predictions, step_data["adjacency_matrix"])
 
-    def accuracy_fn(self, predictions, labels=None):
-        raise NotImplementedError()
+    def filter_model_inputs(self, step_data) -> dict:
+        return {"inputs": step_data["adjacency_matrix"]}
+
+    def accuracy(self, predictions, step_data):
+        return 0., 0.

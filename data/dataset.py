@@ -17,9 +17,13 @@ class Dataset(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def loss_fn(self, predictions, labels=None):
+    def loss(self, predictions, step_data) -> tf.Tensor:
         pass
 
     @abstractmethod
-    def accuracy_fn(self, predictions, labels=None):
+    def accuracy(self, predictions, step_data) -> tf.Tensor:
+        pass
+
+    @abstractmethod
+    def filter_model_inputs(self, step_data) -> dict:
         pass

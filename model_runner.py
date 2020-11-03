@@ -1,20 +1,23 @@
 import tensorflow as tf
 
+from data.dataset import Dataset
+
 
 class ModelRunner:
 
     def __init__(self,
                  model_fn: tf.keras.Model,
-                 loss_fn: callable,
+                 dataset: Dataset,
                  optimizer: tf.optimizers.Optimizer) -> None:
         self.model = model_fn
-        self.loss_fn = loss_fn
+        self.dataset = dataset
         self.optimizer = optimizer
 
-    def train_step(self, features, labels):
+    def train_step(self, step_data):
         with tf.GradientTape() as tape:
-            predictions = self.model(features, labels=labels, training=True)
-            loss = self.loss_fn(predictions, labels=labels)
+            model_inputs = self.dataset.filter_model_inputs(step_data)
+            predictions = self.model(**model_inputs, training=True)
+            loss = self.dataset.loss(predictions, step_data)
             gradients = tape.gradient(loss, self.model.trainable_variables)  # TODO: Put gradient calculation in graph
             self.__optimize(gradients)
 
@@ -24,5 +27,6 @@ class ModelRunner:
     def __optimize(self, gradients):
         self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
-    def prediction(self, features, labels):
-        return self.model(features, labels=labels, training=False)
+    def prediction(self, step_data):
+        model_inputs = self.dataset.filter_model_inputs(step_data)
+        return self.model(**model_inputs, training=False)
