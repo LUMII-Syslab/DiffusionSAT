@@ -10,6 +10,7 @@ from loss.tsp import tsp_loss
 
 class EuclideanTSP(Dataset):
 
+    # TODO(@Emīls): Move batch_size to config and add kwargs to datasets
     def __init__(self, n=8, count=1500, batch_size=15) -> None:
         self.n = n  # TODO(@Elīza): Meaningful names for variables
         self.count = count
