@@ -131,6 +131,6 @@ if __name__ == '__main__':
         config.train_dir = config.restore
     else:
         current_date = time.strftime("%y_%m_%d_%T", time.gmtime(time.time()))
-        config.train_dir = config.train_dir + "/" + config.task + "_" + current_date
+        config.train_dir = config.train_dir + "/" + config.task + "_" + current_date + "_" + config.label
 
     main()
