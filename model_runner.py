@@ -23,7 +23,7 @@ class ModelRunner:
 
             return loss, gradients
 
-    @tf.function
+    @tf.function(experimental_relax_shapes=True, experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
     def __optimize(self, gradients):
         self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 

@@ -36,11 +36,6 @@ class MatrixSE(tf.keras.Model):
 
         return self.output_layer(hidden)
 
-    # TODO: Move this to main.py
-    # def model(self, n, batchsize):
-    #     x = Input(shape=(n, n, 1), batch_size=batchsize)
-    #     return Model(inputs=[x], outputs=self.call(x))
-
 
 class QuaternarySwitchUnit(tf.keras.layers.Layer):
 

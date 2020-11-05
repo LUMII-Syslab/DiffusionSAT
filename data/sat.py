@@ -7,7 +7,7 @@ from pysat.formula import CNF
 from pysat.solvers import Cadical
 
 from data.dataset import Dataset
-from loss.sat import variables_mul_loss
+from loss.sat import softplus_log_loss
 from mk_problem import Problem
 
 
@@ -96,7 +96,7 @@ class RandomKSAT(Dataset):
 
     def loss(self, predictions, step_data):
         predictions = tf.expand_dims(predictions, axis=-1)
-        loss = variables_mul_loss(predictions, step_data["clauses"])
+        loss = softplus_log_loss(predictions, step_data["clauses"])
         return tf.reduce_mean(loss)
 
     def filter_model_inputs(self, step_data) -> dict:  # TODO: Not good because dataset needs to know about model

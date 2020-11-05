@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
 
-from loss.sat import variables_mul_loss
+from loss.sat import softplus_log_loss
 from model.mlp import MLP
 
 
@@ -41,7 +41,7 @@ class QuerySAT(Model):
         for _ in tf.range(self.rounds):
             variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
             logits = self.literals_query(variables)
-            clauses_loss = variables_mul_loss(logits, clauses)
+            clauses_loss = softplus_log_loss(logits, clauses)
             clauses_loss = self.literals_query_inter(clauses_loss)
 
             literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, clauses_loss)

@@ -28,7 +28,8 @@ class NeuroSAT(Model):
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
-                                  tf.TensorSpec(shape=(), dtype=tf.bool)])
+                                  tf.TensorSpec(shape=(), dtype=tf.bool)],
+                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
     def call(self, adj_matrix, clauses=None, training=None, mask=None):
         shape = tf.shape(adj_matrix)  # inputs is sparse adjacency matrix
         n_lits = shape[0]

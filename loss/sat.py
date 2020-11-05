@@ -2,8 +2,9 @@ import tensorflow as tf
 
 
 @tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-                              tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
-def variables_mul_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
+                              tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
+             experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
+def sigmoid_log_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
     :param clauses: RaggedTensor of input clauses in DIMAC format
@@ -27,3 +28,29 @@ def variables_mul_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor
     # multiply all values in a clause together
     varsum = tf.math.unsorted_segment_prod(inverse_vars, clauses_mask, clauses.nrows())
     return -tf.math.log(1 - varsum + eps)
+
+
+@tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
+                              tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
+             experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
+def softplus_log_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
+    """
+    :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
+    :param clauses: RaggedTensor of input clauses in DIMAC format
+    :param eps: small value to avoid log(0)
+    :return: returns per clause loss
+    """
+    clauses_split = clauses.row_lengths()
+    flat_clauses = clauses.flat_values
+    clauses_mask = tf.repeat(tf.range(0, clauses.nrows()), clauses_split)
+
+    clauses_index = tf.abs(flat_clauses) - 1  # Just star indexing from 0. DIMACS standard start variables from 1
+    variables = tf.gather(variable_predictions, clauses_index)  # Gather clauses of variables
+    float_clauses = tf.cast(flat_clauses, tf.float32)
+    variables = variables * tf.expand_dims(tf.sign(float_clauses), axis=-1)
+
+    variables = tf.nn.softplus(variables)
+    clauses_val = tf.math.segment_sum(variables, clauses_mask)
+    clauses_val = tf.exp(-clauses_val)
+
+    return -tf.math.log(1 - clauses_val + eps)
