@@ -21,7 +21,7 @@ class QuerySAT(Model):
                                out_activation=tf.sigmoid,
                                name="clauses_update")
 
-        self.literals_vote = MLP(vote_layers, feature_maps, 1, name="literals_vote")
+        self.literals_vote = MLP(vote_layers, feature_maps, 1, name="literals_vote")  # TODO: Rethink MLP used here
         self.literals_query = MLP(vote_layers, feature_maps, feature_maps, name="literals_query")
         self.literals_query_inter = MLP(vote_layers, feature_maps, feature_maps, name="literals_query_inter")
 
@@ -33,7 +33,6 @@ class QuerySAT(Model):
     def call(self, adj_matrix, clauses=None, training=None, mask=None):
         shape = tf.shape(adj_matrix)  # inputs is sparse adjacency matrix
         n_lits = shape[0]
-        n_clauses = shape[1]
         n_vars = n_lits // 2
 
         literals = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.25)
@@ -48,7 +47,7 @@ class QuerySAT(Model):
 
             unit = tf.concat([literals, literals_loss], axis=-1)
             unit = self.flip(unit, n_vars)
-            unit = self.literals_norm(unit)
+            unit = self.literals_norm(unit)  # TODO: Rethink normalization
 
             forget_gate = self.forget_gate(unit)
             literals_new = self.literals_update(unit)
