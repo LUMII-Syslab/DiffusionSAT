@@ -51,8 +51,7 @@ class RandomKSAT(Dataset):
         data = tf.data.Dataset.from_tensor_slices((indices, clauses, n_lits, n_clauses))
         data = data.map(lambda x, y, z, v: (tf.cast(x.to_tensor(), tf.int64), y, tf.cast(tf.stack([z, v]), tf.int64)))
         data = data.map(lambda x, y, dense_shape: {"adjacency_matrix": self.create_adjacency_matrix(x, dense_shape),
-                                                   "clauses": tf.cast(y, tf.int32)}
-                        )
+                                                   "clauses": tf.cast(y, tf.int32)})
         data = data.shuffle(10000)
         data = data.repeat()  # TODO: Move shuffling, repetition, batching to common code
 
@@ -84,13 +83,8 @@ class RandomKSAT(Dataset):
 
         data_add = tf.data.Dataset.from_tensor_slices((var_count, normal_clauses))
         data = tf.data.Dataset.from_tensor_slices((indices, clauses, n_lits, n_clauses))
-        data = data.map(
-            lambda x, y, z, v: (tf.cast(x.to_tensor(), tf.int64), y, tf.cast(tf.stack([z, v]), tf.int64)))
-        data = data.map(lambda x, y, dense_shape: (
-            tf.sparse.SparseTensor(x, tf.ones(tf.cast(tf.shape(x)[0], tf.int32), dtype=tf.float32),
-                                   dense_shape=dense_shape),
-            tf.cast(y, tf.int32)
-        ))
+        data = data.map(lambda x, y, z, v: (tf.cast(x.to_tensor(), tf.int64), y, tf.cast(tf.stack([z, v]), tf.int64)))
+        data = data.map(lambda x, y, dense_shape: (self.create_adjacency_matrix(x, dense_shape), tf.cast(y, tf.int32)))
 
         data = tf.data.Dataset.zip((data, data_add))
         data = data.map(lambda x, y: {"adjacency_matrix": x[0],

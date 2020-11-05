@@ -7,7 +7,7 @@ from pathlib import Path
 from dimacs_to_data import dimacs_to_data
 from gen_sr_dimacs import gen_sr_dimacs
 
-N_PAIRS = 100000
+N_PAIRS = 1000
 MIN_N = 3
 MAX_N = 10
 MAX_NODES_PAR_BATCH = 5000

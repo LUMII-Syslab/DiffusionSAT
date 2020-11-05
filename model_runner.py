@@ -30,3 +30,8 @@ class ModelRunner:
     def prediction(self, step_data):
         model_inputs = self.dataset.filter_model_inputs(step_data)
         return self.model(**model_inputs, training=False)
+
+    def print_summary(self, step_data):
+        model_inputs = self.dataset.filter_model_inputs(step_data)
+        self.model(**model_inputs, training=True)
+        self.model.summary()

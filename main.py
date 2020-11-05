@@ -20,7 +20,6 @@ def main():
                                              warmup_proportion=config.warmup)
     optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
 
-    # model.summary() # TODO: with input as Elīza had done
     train(dataset, model, optimizer)
     test(dataset, model, optimizer)
 
@@ -32,9 +31,12 @@ def train(dataset, model: Model, optimizer):
     mean_loss = tf.metrics.Mean()
     timer = Timer(start_now=True)
     validation_data = dataset.validation_data()
+    train_data = dataset.train_data()
+
+    runner.print_summary([x for x in itertools.islice(train_data, 1)][0])
 
     # TODO: Check against step in checkpoint
-    for step_data in itertools.islice(dataset.train_data(), config.train_steps + 1):
+    for step_data in itertools.islice(train_data, config.train_steps + 1):
         loss, gradients = runner.train_step(step_data)
 
         mean_loss.update_state(loss)

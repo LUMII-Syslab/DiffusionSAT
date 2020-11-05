@@ -1,15 +1,14 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Dense
 from tensorflow.keras.models import Model
 
-from model.mlp import MLP
 from loss.sat import variables_mul_loss
+from model.mlp import MLP
 
 
 class QuerySAT(Model):
 
     def __init__(self, feature_maps=512, msg_layers=3, vote_layers=3, rounds=16, **kwargs):
-        super().__init__(**kwargs, name="ResidualSAT")
+        super().__init__(**kwargs, name="QuerySAT")
         self.rounds = rounds
 
         self.literals_norm = tf.keras.layers.LayerNormalization()
@@ -31,8 +30,8 @@ class QuerySAT(Model):
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=(), dtype=bool)])
-    def call(self, inputs, labels=None, training=None, mask=None):  # TODO: Solve labels passing to model
-        shape = tf.shape(inputs)  # inputs is sparse adjacency matrix
+    def call(self, adj_matrix, clauses=None, training=None, mask=None):
+        shape = tf.shape(adj_matrix)  # inputs is sparse adjacency matrix
         n_lits = shape[0]
         n_clauses = shape[1]
         n_vars = n_lits // 2
@@ -42,10 +41,10 @@ class QuerySAT(Model):
         for _ in tf.range(self.rounds):
             variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
             logits = self.literals_query(variables)
-            clauses = variables_mul_loss(logits, labels)
-            clauses = self.literals_query_inter(clauses)
+            clauses_loss = variables_mul_loss(logits, clauses)
+            clauses_loss = self.literals_query_inter(clauses_loss)
 
-            literals_loss = tf.sparse.sparse_dense_matmul(inputs, clauses)
+            literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, clauses_loss)
 
             unit = tf.concat([literals, literals_loss], axis=-1)
             unit = self.flip(unit, n_vars)
