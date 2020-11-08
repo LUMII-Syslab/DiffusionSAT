@@ -49,6 +49,12 @@ def gen_iclause_pair(min_n, max_n, p_k_2, p_geo):
     iclause_sat = [- iclause_unsat[0]] + iclause_unsat[1:]
     return n, iclauses, iclause_unsat, iclause_sat
 
+# remove duplicate clauses
+# todo: remove subsumed clauses - when shorter clause is fully in a longer one, the longer one is redundant
+def prune(clauses):
+    clauses_pruned = list({tuple(sorted(x)) for x in clauses})
+    return clauses_pruned
+
 
 def gen_sr_dimacs(out_dir: str, n_pairs: int, min_n=40, max_n=40, p_k_2=0.3, p_geo=0.4, print_interval=100):
     for pair in range(n_pairs):
@@ -59,7 +65,7 @@ def gen_sr_dimacs(out_dir: str, n_pairs: int, min_n=40, max_n=40, p_k_2=0.3, p_g
         prefix = f"{out_dir}/sr_n={n_vars}_pk2={p_k_2}_pg={p_geo}_t={pair}"
 
         iclauses.append(iclause_unsat)
-        write_dimacs_to(n_vars, iclauses, f"{prefix}_sat=0.dimacs")
+        write_dimacs_to(n_vars, prune(iclauses), f"{prefix}_sat=0.dimacs")
 
         iclauses[-1] = iclause_sat
-        write_dimacs_to(n_vars, iclauses, f"{prefix}_sat=1.dimacs")
+        write_dimacs_to(n_vars, prune(iclauses), f"{prefix}_sat=1.dimacs")
