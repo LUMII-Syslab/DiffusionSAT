@@ -27,7 +27,14 @@ def sigmoid_log_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, 
 
     # multiply all values in a clause together
     varsum = tf.math.unsorted_segment_prod(inverse_vars, clauses_mask, clauses.nrows())
-    return -tf.math.log(1 - varsum + eps)
+    return -(tf.math.log(1 - varsum + eps) - tf.math.log(1 + eps))
+
+
+@tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
+                              tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
+             experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
+def softplus_log_square_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
+    return tf.square(softplus_log_loss(variable_predictions, clauses, eps))
 
 
 @tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
@@ -42,7 +49,8 @@ def softplus_log_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor,
     """
     clauses_val = softplus_loss(variable_predictions, clauses)
 
-    return -(tf.math.log(1 - clauses_val + eps)-tf.math.log(1+eps))
+    return -(tf.math.log(1 - clauses_val + eps) - tf.math.log(1 + eps))
+
 
 @tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
                               tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
