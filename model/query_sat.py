@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
 
-from loss.sat import softplus_log_loss, softplus_loss
+from loss.sat import softplus_loss
 from model.mlp import MLP
 
 
@@ -24,7 +24,7 @@ class QuerySAT(Model):
         self.literals_vote = MLP(vote_layers, feature_maps, 1, name="literals_vote")  # TODO: Rethink MLP used here
         self.literals_query = MLP(vote_layers, feature_maps, feature_maps, name="literals_query")
         self.literals_query_inter = MLP(vote_layers, feature_maps, feature_maps, name="literals_query_inter")
-        #self.grad2var = MLP(vote_layers, feature_maps, feature_maps*2, name="grad2var")
+        # self.grad2var = MLP(vote_layers, feature_maps, feature_maps*2, name="grad2var")
 
         self.feature_maps = feature_maps
 

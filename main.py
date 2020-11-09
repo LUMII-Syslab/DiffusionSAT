@@ -1,14 +1,13 @@
 import itertools
 import time
-import os
-#os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import tensorflow as tf
-import tensorflow_addons as tfa
 from tensorflow.keras import Model
-from utils.AdaBelief import AdaBeliefOptimizer
 
 from config import config
 from model_runner import ModelRunner
+from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
 
@@ -20,7 +19,7 @@ def main():
     # optimizer = tfa.optimizers.RectifiedAdam(config.learning_rate,
     #                                          total_steps=config.train_steps,
     #                                          warmup_proportion=config.warmup)
-    #optimizer = tf.keras.optimizers.Adam(config.learning_rate)
+    # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
     optimizer = AdaBeliefOptimizer(config.learning_rate, clip_gradients=True)
     optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
 
@@ -38,7 +37,7 @@ def train(dataset, model: Model, optimizer):
     validation_data = dataset.validation_data()
     train_data = dataset.train_data()
 
-    #runner.print_summary([x for x in itertools.islice(train_data, 1)][0])
+    # runner.print_summary([x for x in itertools.islice(train_data, 1)][0])
 
     # TODO: Check against step in checkpoint
     for step_data in itertools.islice(train_data, config.train_steps + 1):
