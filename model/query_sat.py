@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
 
-from loss.sat import softplus_log_loss
+from loss.sat import softplus_log_loss, softplus_loss
 from model.mlp import MLP
 
 
@@ -24,6 +24,7 @@ class QuerySAT(Model):
         self.literals_vote = MLP(vote_layers, feature_maps, 1, name="literals_vote")  # TODO: Rethink MLP used here
         self.literals_query = MLP(vote_layers, feature_maps, feature_maps, name="literals_query")
         self.literals_query_inter = MLP(vote_layers, feature_maps, feature_maps, name="literals_query_inter")
+        #self.grad2var = MLP(vote_layers, feature_maps, feature_maps*2, name="grad2var")
 
         self.feature_maps = feature_maps
 
@@ -37,15 +38,24 @@ class QuerySAT(Model):
 
         literals = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.25)
 
-        for _ in tf.range(self.rounds):
-            variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
-            logits = self.literals_query(variables)
-            clauses_loss = softplus_log_loss(logits, clauses)
+        for r in tf.range(self.rounds):
+            with tf.GradientTape() as grad_tape:
+                grad_tape.watch(literals)
+                variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
+                logits = self.literals_query(variables)
+                clauses_loss = softplus_loss(logits, clauses)
+                step_loss = tf.reduce_sum(clauses_loss)
+            literal_grad = grad_tape.gradient(step_loss, literals)
+            # logit_grad = grad_tape.gradient(step_loss, logits)
+            # var_grad = self.grad2var(logit_grad)
+            # literal_grad = tf.concat([var_grad[:, self.feature_maps:],var_grad[:, 0:self.feature_maps]], axis=0)
+            # tf.summary.histogram("lit_grad"+str(r), literal_grad)
+            # tf.summary.histogram("logit_grad" + str(r), logit_grad)
             clauses_loss = self.literals_query_inter(clauses_loss)
 
             literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, clauses_loss)
 
-            unit = tf.concat([literals, literals_loss], axis=-1)
+            unit = tf.concat([literals, literals_loss, literal_grad], axis=-1)
             unit = self.flip(unit, n_vars)
             unit = self.literals_norm(unit)  # TODO: Rethink normalization
 

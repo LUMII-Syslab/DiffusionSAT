@@ -2,6 +2,8 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.python.keras.layers import Dense
 
+def gelu(x):
+    return x * tf.sigmoid(1.702*x)
 
 class MLP(Model):
     def __init__(self, layer_count, hidden_nmap, out_nmap, activation=tf.nn.relu, out_activation=None, **kwargs):

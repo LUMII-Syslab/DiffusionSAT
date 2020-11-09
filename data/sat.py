@@ -7,7 +7,7 @@ from pysat.formula import CNF
 from pysat.solvers import Cadical
 
 from data.dataset import Dataset
-from loss.sat import softplus_log_loss
+from loss.sat import softplus_log_loss, softplus_log_square_loss
 from mk_problem import Problem
 
 
@@ -73,7 +73,6 @@ class RandomKSAT(Dataset):
         # TODO: Clear up this garbage
         test_data = [(*self.create_example(p), p.variable_count, p.normal_clauses) for p in self.test_problems]
         indices, clauses, n_lits, n_clauses, var_count, normal_clauses = list(zip(*test_data))
-
         indices = tf.ragged.constant(indices, dtype=tf.int32, row_splits_dtype=tf.int32)
         clauses = tf.ragged.constant(clauses, dtype=tf.int32, row_splits_dtype=tf.int32)
         n_lits = tf.constant(n_lits)
@@ -96,8 +95,8 @@ class RandomKSAT(Dataset):
 
     def loss(self, predictions, step_data):
         predictions = tf.expand_dims(predictions, axis=-1)
-        loss = softplus_log_loss(predictions, step_data["clauses"])
-        return tf.reduce_mean(loss)
+        loss = softplus_log_square_loss(predictions, step_data["clauses"])
+        return tf.reduce_sum(loss)
 
     def filter_model_inputs(self, step_data) -> dict:  # TODO: Not good because dataset needs to know about model
         return {"adj_matrix": step_data["adjacency_matrix"], "clauses": step_data["clauses"]}
