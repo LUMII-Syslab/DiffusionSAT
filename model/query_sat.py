@@ -37,8 +37,9 @@ class QuerySAT(Model):
         n_vars = n_lits // 2
 
         literals = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.25)
+        step_logits = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
 
-        for r in tf.range(self.rounds):
+        for step in tf.range(self.rounds):
             with tf.GradientTape() as grad_tape:
                 grad_tape.watch(literals)
                 variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
@@ -64,9 +65,11 @@ class QuerySAT(Model):
 
             literals = (1 - forget_gate) * literals + forget_gate * literals_new
 
-        variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
-        logits = self.literals_vote(variables)
-        return tf.squeeze(logits, axis=[-1])  # Size of n_vars
+            variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
+            logits = self.literals_vote(variables)
+            step_logits = step_logits.write(step, logits)
+
+        return step_logits.stack()  # step_count x literal_count
 
     @staticmethod
     def flip(literals, n_vars):

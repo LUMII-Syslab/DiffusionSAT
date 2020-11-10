@@ -1,9 +1,6 @@
 import tensorflow as tf
 
 
-@tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-                              tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-             experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
 def sigmoid_log_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
@@ -30,16 +27,10 @@ def sigmoid_log_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, 
     return -(tf.math.log(1 - varsum + eps) - tf.math.log(1 + eps))
 
 
-@tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-                              tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-             experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
 def softplus_log_square_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
     return tf.square(softplus_log_loss(variable_predictions, clauses, eps))
 
 
-@tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-                              tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-             experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
 def softplus_log_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
@@ -52,9 +43,6 @@ def softplus_log_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor,
     return -(tf.math.log(1 - clauses_val + eps) - tf.math.log(1 + eps))
 
 
-@tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-                              tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-             experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
 def softplus_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable

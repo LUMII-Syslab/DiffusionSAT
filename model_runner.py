@@ -17,7 +17,10 @@ class ModelRunner:
         with tf.GradientTape() as tape:
             model_inputs = self.dataset.filter_model_inputs(step_data)
             predictions = self.model(**model_inputs, training=True)
-            loss = self.dataset.loss(predictions, step_data)
+
+            loss_inputs = self.dataset.filter_loss_inputs(step_data)
+            loss = self.dataset.loss(predictions, **loss_inputs)
+
             gradients = tape.gradient(loss, self.model.trainable_variables)  # TODO: Put gradient calculation in graph
             self.__optimize(gradients)
 
@@ -29,7 +32,8 @@ class ModelRunner:
 
     def prediction(self, step_data):
         model_inputs = self.dataset.filter_model_inputs(step_data)
-        return self.model(**model_inputs, training=False)
+        predictions = self.model(**model_inputs, training=False)
+        return self.dataset.interpret_model_output(predictions)
 
     def print_summary(self, step_data):
         model_inputs = self.dataset.filter_model_inputs(step_data)
