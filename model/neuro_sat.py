@@ -58,7 +58,7 @@ class NeuroSAT(Model):
 
         variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
         logits = self.L_vote(variables)
-        return tf.squeeze(logits, axis=[-1])  # Size of n_vars
+        return tf.expand_dims(logits, axis=[0])  # Size of n_vars
 
     @staticmethod
     def flip(literals, n_vars):
