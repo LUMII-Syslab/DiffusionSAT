@@ -102,7 +102,9 @@ class RandomKSAT(Dataset):
             per_clause = softplus_log_square_loss(logits, clauses)
             loss += tf.reduce_sum(per_clause)
 
-        return loss
+        step_count = tf.shape(predictions)[0]
+        step_count = tf.cast(step_count, dtype=tf.float32)
+        return loss / step_count
 
     def filter_loss_inputs(self, step_data) -> dict:
         return {"clauses": step_data["clauses"]}
