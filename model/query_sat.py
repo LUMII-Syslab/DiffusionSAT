@@ -3,6 +3,7 @@ from tensorflow.keras.models import Model
 
 from loss.sat import softplus_loss, softplus_log_square_loss
 from model.mlp import MLP
+from utils.summary import log_as_histogram
 
 
 class QuerySAT(Model):
@@ -38,6 +39,7 @@ class QuerySAT(Model):
 
         literals = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.25)
         step_logits = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
+        step_losses = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
 
         for step in tf.range(self.rounds):
             with tf.GradientTape() as grad_tape:
@@ -67,6 +69,7 @@ class QuerySAT(Model):
             variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
             logits = self.literals_vote(variables)
             step_logits = step_logits.write(step, logits)
+            step_losses = step_losses.write(step, tf.reduce_sum(softplus_log_square_loss(logits, clauses)))
 
             # due to the loss at each level, gradients accumulate on the backward pass and may become very large for the first layers
             # reduce the gradient magnitude to remedy this
@@ -75,6 +78,7 @@ class QuerySAT(Model):
         step_logits_tensor = step_logits.stack()  # step_count x literal_count
         last_layer_loss = tf.reduce_sum(softplus_log_square_loss(step_logits_tensor[-1], clauses))
         tf.summary.scalar("last_layer_loss", last_layer_loss)
+        log_as_histogram("step_losses", step_losses.stack())
         return step_logits_tensor
 
     @staticmethod
