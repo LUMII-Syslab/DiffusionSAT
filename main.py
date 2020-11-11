@@ -41,7 +41,7 @@ def train(dataset, model: Model, optimizer):
 
     # TODO: Check against step in checkpoint
     for step_data in itertools.islice(train_data, config.train_steps + 1):
-        tf.summary.experimental.set_step(int(ckpt.step))
+        tf.summary.experimental.set_step(ckpt.step)
         loss, gradients = runner.train_step(step_data)
 
         mean_loss.update_state(loss)
@@ -83,7 +83,7 @@ def train(dataset, model: Model, optimizer):
 
 
 def prepare_model(dataset, model, optimizer):
-    ckpt = tf.train.Checkpoint(step=tf.Variable(0), optimizer=optimizer, model=model)
+    ckpt = tf.train.Checkpoint(step=tf.Variable(0, dtype=tf.int64), optimizer=optimizer, model=model)
     manager = tf.train.CheckpointManager(ckpt, config.train_dir, max_to_keep=config.ckpt_count)
 
     ckpt.restore(manager.latest_checkpoint)

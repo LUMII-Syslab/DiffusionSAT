@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
 
-from loss.sat import softplus_loss
+from loss.sat import softplus_loss, softplus_log_square_loss
 from model.mlp import MLP
 
 
@@ -53,7 +53,6 @@ class QuerySAT(Model):
             # tf.summary.histogram("lit_grad"+str(r), literal_grad)
             # tf.summary.histogram("logit_grad" + str(r), logit_grad)
             clauses_loss = self.literals_query_inter(clauses_loss)
-
             literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, clauses_loss)
 
             unit = tf.concat([literals, literals_loss, literal_grad], axis=-1)
@@ -69,7 +68,14 @@ class QuerySAT(Model):
             logits = self.literals_vote(variables)
             step_logits = step_logits.write(step, logits)
 
-        return step_logits.stack()  # step_count x literal_count
+            # due to the loss at each level, gradients accumulate on the backward pass and may become very large for the first layers
+            # reduce the gradient magnitude to remedy this
+            literals = tf.stop_gradient(literals)*0.2+literals*0.8
+
+        step_logits_tensor = step_logits.stack()  # step_count x literal_count
+        last_layer_loss = tf.reduce_sum(softplus_log_square_loss(step_logits_tensor[-1], clauses))
+        tf.summary.scalar("last_layer_loss", last_layer_loss)
+        return step_logits_tensor
 
     @staticmethod
     def flip(literals, n_vars):
