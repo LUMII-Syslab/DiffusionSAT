@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
 
+from layers.layer_normalization import LayerNormalization
 from loss.sat import softplus_loss
 from model.mlp import MLP
 
@@ -11,66 +12,51 @@ class QuerySAT(Model):
         super().__init__(**kwargs, name="QuerySAT")
         self.rounds = rounds
 
-        self.literals_norm = tf.keras.layers.LayerNormalization()
+        self.variables_norm = LayerNormalization(axis=-1)
 
-        self.literals_update = MLP(msg_layers, feature_maps, feature_maps,
-                                   out_activation=tf.nn.relu,
-                                   name="literals_update")
+        self.update_gate = MLP(msg_layers, feature_maps, feature_maps, name="update_gate")
 
         self.forget_gate = MLP(msg_layers, feature_maps, feature_maps,
                                out_activation=tf.sigmoid,
-                               name="clauses_update")
+                               name="forget_gate")
 
-        self.literals_vote = MLP(vote_layers, feature_maps, 1, name="literals_vote")  # TODO: Rethink MLP used here
-        self.literals_query = MLP(vote_layers, feature_maps, feature_maps, name="literals_query")
-        self.literals_query_inter = MLP(vote_layers, feature_maps, feature_maps, name="literals_query_inter")
-        # self.grad2var = MLP(vote_layers, feature_maps, feature_maps*2, name="grad2var")
+        self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output")
+        self.variables_query = MLP(vote_layers, feature_maps, feature_maps, name="variables_query")
+        self.query_pos_inter = MLP(vote_layers, feature_maps, feature_maps // 2, name="query_pos_inter")
+        self.query_neg_inter = MLP(vote_layers, feature_maps, feature_maps // 2, name="query_neg_inter")
 
         self.feature_maps = feature_maps
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=(), dtype=bool)])
-    def call(self, adj_matrix, clauses=None, training=None, mask=None):
-        shape = tf.shape(adj_matrix)  # inputs is sparse adjacency matrix
-        n_lits = shape[0]
-        n_vars = n_lits // 2
+    def call(self, adj_matrix_pos, adj_matrix_neg, clauses=None, training=None, mask=None):
+        shape = tf.shape(adj_matrix_pos)
+        n_vars = shape[0]
 
-        literals = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.25)
+        variables = tf.random.truncated_normal([n_vars, self.feature_maps], stddev=0.25)
         step_logits = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
 
         for step in tf.range(self.rounds):
-            with tf.GradientTape() as grad_tape:
-                grad_tape.watch(literals)
-                variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
-                logits = self.literals_query(variables)
-                clauses_loss = softplus_loss(logits, clauses)
-                step_loss = tf.reduce_sum(clauses_loss)
-            literal_grad = grad_tape.gradient(step_loss, literals)
-            # logit_grad = grad_tape.gradient(step_loss, logits)
-            # var_grad = self.grad2var(logit_grad)
-            # literal_grad = tf.concat([var_grad[:, self.feature_maps:],var_grad[:, 0:self.feature_maps]], axis=0)
-            # tf.summary.histogram("lit_grad"+str(r), literal_grad)
-            # tf.summary.histogram("logit_grad" + str(r), logit_grad)
-            clauses_loss = self.literals_query_inter(clauses_loss)
+            query = self.variables_query(variables)
+            clauses_loss = softplus_loss(query, clauses)
 
-            literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, clauses_loss)
+            variables_loss_pos = self.query_pos_inter(clauses_loss)
+            variables_loss_pos = tf.sparse.sparse_dense_matmul(adj_matrix_pos, variables_loss_pos)
 
-            unit = tf.concat([literals, literals_loss, literal_grad], axis=-1)
-            unit = self.flip(unit, n_vars)
-            unit = self.literals_norm(unit)  # TODO: Rethink normalization
+            variables_loss_neg = self.query_neg_inter(clauses_loss)
+            variables_loss_neg = tf.sparse.sparse_dense_matmul(adj_matrix_neg, variables_loss_neg)
+
+            unit = tf.concat([variables, variables_loss_pos, variables_loss_neg], axis=-1)
 
             forget_gate = self.forget_gate(unit)
-            literals_new = self.literals_update(unit)
+            new_variables = self.update_gate(unit)
 
-            literals = (1 - forget_gate) * literals + forget_gate * literals_new
+            variables = (1 - forget_gate) * variables + forget_gate * new_variables
+            variables = self.variables_norm(variables, training=training)  # TODO: Rethink normalization
 
-            variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
-            logits = self.literals_vote(variables)
-            step_logits = step_logits.write(step, logits)
+            query = self.variables_output(variables)
+            step_logits = step_logits.write(step, query)
 
-        return step_logits.stack()  # step_count x literal_count
-
-    @staticmethod
-    def flip(literals, n_vars):
-        return tf.concat([literals[n_vars:(2 * n_vars), :], literals[0:n_vars, :]], axis=0)
+        return step_logits.stack()  # step_count x literal_count x 1

@@ -37,25 +37,34 @@ class RandomKSAT(Dataset):
 
     @staticmethod
     def create_example(problem: Problem):
-        return problem.L_unpack_indices, problem.clauses, problem.n_lits, problem.n_clauses
+        indices_pos, indices_neg = problem.L_unpack_indices
+        return indices_pos, indices_neg, problem.clauses, problem.n_vars, problem.n_clauses
 
     def train_data(self) -> tf.data.Dataset:
         # TODO: remove constants (remove pickle and read from files)
-        indices, clauses, n_lits, n_clauses = list(
-            zip(*[self.create_example(problem) for problem in self.train_problems]))
-        indices = tf.ragged.constant(indices, dtype=tf.int32, row_splits_dtype=tf.int32)
+        indices_pos, indices_neg, clauses, n_vars, n_clauses = list(zip(*[self.create_example(problem) for problem in self.train_problems]))
+        indices_pos = tf.ragged.constant(indices_pos, dtype=tf.int32, row_splits_dtype=tf.int32)
+        indices_neg = tf.ragged.constant(indices_neg, dtype=tf.int32, row_splits_dtype=tf.int32)
         clauses = tf.ragged.constant(clauses, dtype=tf.int32, row_splits_dtype=tf.int32)
-        n_lits = tf.constant(n_lits)
+        n_vars = tf.constant(n_vars)
         n_clauses = tf.constant(n_clauses)
 
-        data = tf.data.Dataset.from_tensor_slices((indices, clauses, n_lits, n_clauses))
-        data = data.map(lambda x, y, z, v: (tf.cast(x.to_tensor(), tf.int64), y, tf.cast(tf.stack([z, v]), tf.int64)))
-        data = data.map(lambda x, y, dense_shape: {"adjacency_matrix": self.create_adjacency_matrix(x, dense_shape),
-                                                   "clauses": tf.cast(y, tf.int32)})
+        data = tf.data.Dataset.from_tensor_slices((indices_pos, indices_neg, clauses, n_vars, n_clauses))
+
+        data = data.map(self.prepare_adj_matrices, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         data = data.shuffle(10000)
         data = data.repeat()  # TODO: Move shuffling, repetition, batching to common code
 
         return data
+
+    def prepare_adj_matrices(self, indices_pos, indices_neg, clauses, n_vars, n_clauses):
+        indices_pos = tf.cast(indices_pos.to_tensor(), tf.int64)
+        indices_neg = tf.cast(indices_neg.to_tensor(), tf.int64)
+        dense_shape = tf.cast(tf.stack([n_vars, n_clauses]), tf.int64)
+
+        return {"adjacency_matrix_pos": self.create_adjacency_matrix(indices_pos, dense_shape),
+                "adjacency_matrix_neg": self.create_adjacency_matrix(indices_neg, dense_shape),
+                "clauses": tf.cast(clauses, tf.int32)}
 
     @staticmethod
     def create_adjacency_matrix(indices, dense_shape):
@@ -71,26 +80,26 @@ class RandomKSAT(Dataset):
 
     def test_data(self) -> tf.data.Dataset:
         # TODO: Clear up this garbage
-        test_data = [(*self.create_example(p), p.variable_count, p.normal_clauses) for p in self.test_problems]
-        indices, clauses, n_lits, n_clauses, var_count, normal_clauses = list(zip(*test_data))
-        indices = tf.ragged.constant(indices, dtype=tf.int32, row_splits_dtype=tf.int32)
+        test_data = [(*self.create_example(p), p.variable_count_per_clause, p.normal_clauses) for p in self.test_problems]
+        indices_pos, indices_neg, clauses, n_vars, n_clauses, var_count, normal_clauses = list(zip(*test_data))
+        indices_pos = tf.ragged.constant(indices_pos, dtype=tf.int32, row_splits_dtype=tf.int32)
+        indices_neg = tf.ragged.constant(indices_neg, dtype=tf.int32, row_splits_dtype=tf.int32)
+
         clauses = tf.ragged.constant(clauses, dtype=tf.int32, row_splits_dtype=tf.int32)
-        n_lits = tf.constant(n_lits)
+        n_vars = tf.constant(n_vars)
         n_clauses = tf.constant(n_clauses)
         var_count = tf.ragged.constant(var_count, dtype=tf.int32, row_splits_dtype=tf.int32)
         normal_clauses = tf.ragged.constant(normal_clauses, dtype=tf.int32, row_splits_dtype=tf.int32)
 
         data_add = tf.data.Dataset.from_tensor_slices((var_count, normal_clauses))
-        data = tf.data.Dataset.from_tensor_slices((indices, clauses, n_lits, n_clauses))
-        data = data.map(lambda x, y, z, v: (tf.cast(x.to_tensor(), tf.int64), y, tf.cast(tf.stack([z, v]), tf.int64)))
-        data = data.map(lambda x, y, dense_shape: (self.create_adjacency_matrix(x, dense_shape), tf.cast(y, tf.int32)))
+        data = tf.data.Dataset.from_tensor_slices((indices_pos, indices_neg, clauses, n_vars, n_clauses))
+        data = data.map(self.prepare_adj_matrices, tf.data.experimental.AUTOTUNE)
 
         data = tf.data.Dataset.zip((data, data_add))
-        data = data.map(lambda x, y: {"adjacency_matrix": x[0],
-                                      "clauses": x[1],
-                                      "variable_count": y[0],
-                                      "normal_clauses": y[1]
-                                      })
+        data = data.map(lambda x, y: dict({
+            "variable_count": y[0],
+            "normal_clauses": y[1]
+        }, **x))
         return data
 
     @tf.function(input_signature=[tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
@@ -110,7 +119,9 @@ class RandomKSAT(Dataset):
         return {"clauses": step_data["clauses"]}
 
     def filter_model_inputs(self, step_data) -> dict:  # TODO: Not good because dataset needs to know about model
-        return {"adj_matrix": step_data["adjacency_matrix"], "clauses": step_data["clauses"]}
+        return {"adj_matrix_pos": step_data["adjacency_matrix_pos"],
+                "adj_matrix_neg": step_data["adjacency_matrix_neg"],
+                "clauses": step_data["clauses"]}
 
     @tf.function(input_signature=[tf.TensorSpec(shape=[None, None, 1], dtype=tf.float32)],
                  experimental_autograph_options=tf.autograph.experimental.Feature.ALL)

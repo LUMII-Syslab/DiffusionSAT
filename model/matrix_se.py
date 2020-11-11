@@ -6,6 +6,7 @@ import tensorflow_addons as tfa
 from tensorflow.keras.layers import Dense
 
 import utils.shuffle as shuffle_utils
+from layers.layer_normalization import LayerNormalization
 
 
 class MatrixSE(tf.keras.Model):
@@ -82,28 +83,6 @@ class QuaternarySwitchUnit(tf.keras.layers.Layer):
         residual_scale = tf.nn.sigmoid(self.residual_scale)
         candidate = residual_scale * inputs + second_linear * self.candidate_weight
         return tf.reshape(candidate, [batch_size, length, self.num_units])
-
-
-class LayerNormalization(tf.keras.layers.Layer):
-
-    def __init__(self, axis=1, epsilon=1e-6, subtract_mean=True, **kwargs):
-        self.axis = axis
-        self.epsilon = epsilon
-        self.bias = None
-        self.subtract_mean = subtract_mean
-        super(LayerNormalization, self).__init__(**kwargs)
-
-    def build(self, input_shape):
-        num_units = input_shape.as_list()[-1]
-        self.bias = self.add_weight("bias", [1, 1, num_units], initializer=tf.zeros_initializer)
-
-    def call(self, inputs, **kwargs):
-        if self.subtract_mean:  # subtracting mean may not be necessary: https://arxiv.org/abs/1910.07467
-            inputs -= tf.reduce_mean(inputs, axis=self.axis, keepdims=True)
-            inputs += self.bias
-
-        variance = tf.reduce_mean(tf.square(inputs), self.axis, keepdims=True)
-        return inputs * tf.math.rsqrt(variance + self.epsilon)
 
 
 class ShuffleType(Enum):
