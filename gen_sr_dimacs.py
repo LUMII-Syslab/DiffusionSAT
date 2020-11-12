@@ -49,6 +49,7 @@ def gen_iclause_pair(min_n, max_n, p_k_2, p_geo):
     iclause_sat = [- iclause_unsat[0]] + iclause_unsat[1:]
     return n, iclauses, iclause_unsat, iclause_sat
 
+
 # remove duplicate clauses
 # todo: remove subsumed clauses - when shorter clause is fully in a longer one, the longer one is redundant
 def prune(clauses):

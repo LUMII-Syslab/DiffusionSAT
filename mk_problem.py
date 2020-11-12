@@ -39,13 +39,14 @@ class Problem(object):
         self.clauses = iclauses
         self.normal_clauses = normal_clauses
         self.clauses_per_example = clauses_per_example  # Per one batch element
-        self.variable_count = variable_count
+        self.variable_count_per_clause = variable_count
 
         self.n_cells = sum(n_cells_per_batch)
         self.n_cells_per_batch = n_cells_per_batch
 
         self.is_sat = is_sat
-        self.L_unpack_indices = self.compute_L_unpack(iclauses, self.n_cells, self.n_vars)
+        # self.L_unpack_indices = self.compute_L_unpack(iclauses, self.n_vars)
+        self.L_unpack_indices = self.compute_adj_indices(iclauses)
 
         # will be a list of None for training problems
         self.dimacs = all_dimacs
@@ -59,9 +60,20 @@ class Problem(object):
                 L_unpack_indices[cell, :] = [vlit, clause_idx]
                 cell += 1
 
-        assert cell == self.n_cells
+    def compute_adj_indices(self, iclauses):
+        adj_indices_pos = []
+        adj_indices_neg = []
 
-        return L_unpack_indices
+        for clause_id, clause in enumerate(iclauses):
+            for var in clause:
+                if var > 0:
+                    adj_indices_pos.append([var - 1, clause_id])
+                elif var < 0:
+                    adj_indices_neg.append([abs(var) - 1, clause_id])
+                else:
+                    raise ValueError("Variable can't be 0 in the DIMAC format!")
+
+        return adj_indices_pos, adj_indices_neg
 
 
 def shift_ilit(x, offset):
