@@ -30,7 +30,7 @@ class QuerySAT(Model):
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
-                                  tf.TensorSpec(shape=(), dtype=bool)])
+                                  tf.TensorSpec(shape=(), dtype=tf.bool)])
     def call(self, adj_matrix_pos, adj_matrix_neg, clauses=None, training=None, mask=None):
         shape = tf.shape(adj_matrix_pos)
         n_vars = shape[0]
@@ -52,9 +52,9 @@ class QuerySAT(Model):
 
             forget_gate = self.forget_gate(unit)
             new_variables = self.update_gate(unit)
+            new_variables = self.variables_norm(new_variables, training=training)  # TODO: Rethink normalization
 
             variables = (1 - forget_gate) * variables + forget_gate * new_variables
-            variables = self.variables_norm(variables, training=training)  # TODO: Rethink normalization
 
             query = self.variables_output(variables)
             step_logits = step_logits.write(step, query)
