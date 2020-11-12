@@ -64,7 +64,7 @@ class QuerySAT(Model):
             unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
 
             forget_gate = self.forget_gate(unit)
-            new_variables = self.update_gate(unit)  # TODO: Try GRRUA by @Ronalds
+            new_variables = self.update_gate(unit)
             new_variables = self.variables_norm(new_variables, training=training)  # TODO: Rethink normalization
 
             variables = (1 - forget_gate) * variables + forget_gate * new_variables
