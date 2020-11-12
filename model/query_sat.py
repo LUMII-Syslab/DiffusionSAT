@@ -23,8 +23,9 @@ class QuerySAT(Model):
 
         self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output")
         self.variables_query = MLP(vote_layers, feature_maps, feature_maps, name="variables_query")
-        self.query_pos_inter = MLP(vote_layers, feature_maps, feature_maps // 2, name="query_pos_inter")
-        self.query_neg_inter = MLP(vote_layers, feature_maps, feature_maps // 2, name="query_neg_inter")
+        self.clause_update =   MLP(vote_layers, feature_maps, feature_maps, name="clause_update")
+        self.query_pos_inter = MLP(vote_layers, feature_maps, feature_maps, name="query_pos_inter")
+        self.query_neg_inter = MLP(vote_layers, feature_maps, feature_maps, name="query_neg_inter")
 
         self.feature_maps = feature_maps
 
@@ -35,8 +36,10 @@ class QuerySAT(Model):
     def call(self, adj_matrix_pos, adj_matrix_neg, clauses=None, training=None, mask=None):
         shape = tf.shape(adj_matrix_pos)
         n_vars = shape[0]
+        n_clauses = shape[1]
 
         variables = tf.random.truncated_normal([n_vars, self.feature_maps], stddev=0.25)
+        clause_state = tf.zeros([n_clauses, self.feature_maps])
         step_logits = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
         step_losses = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
 
@@ -54,14 +57,16 @@ class QuerySAT(Model):
             # tf.summary.histogram("logit_grad" + str(r), logit_grad)
 
             # Aggregate loss over positive edges (x)
-            variables_loss_pos = self.query_pos_inter(clauses_loss)
+            clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
+            variables_loss_pos = self.query_pos_inter(clause_unit)
             variables_loss_pos = tf.sparse.sparse_dense_matmul(adj_matrix_pos, variables_loss_pos)
 
             # Aggregate loss over negative edges (not x)
-            variables_loss_neg = self.query_neg_inter(clauses_loss)
+            variables_loss_neg = self.query_neg_inter(clause_unit)
             variables_loss_neg = tf.sparse.sparse_dense_matmul(adj_matrix_neg, variables_loss_neg)
+            clause_state = self.clause_update(clause_unit)
 
-            unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
+            unit = tf.concat([variables, variables_grad, variables_loss_pos + variables_loss_neg], axis=-1)
 
             forget_gate = self.forget_gate(unit)
             new_variables = self.update_gate(unit)
