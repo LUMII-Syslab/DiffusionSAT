@@ -63,3 +63,43 @@ def softplus_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor):
     clauses_val = tf.exp(-clauses_val)
 
     return clauses_val
+
+
+def min_max_loss_per_clause(variable_prediction: tf.Tensor, clauses: tf.RaggedTensor, temp=1):
+    """Implementation of softmin and softmax loss proposed in
+    "Learning To Solve Circuit-SAT: An Unsupervised Differentiable Approach"
+
+    Returns per clause loss. Suitable for in model loss.
+    """
+    variables = tf.sigmoid(variable_prediction)
+
+    clauses_index = tf.abs(clauses) - 1  # Just star indexing from 0. DIMACS standard start variables from 1
+    vars = tf.gather(variables, clauses_index)  # Gather clauses of variables
+
+    # Inverse in form x for positive clause variable and (1-x) for negative representation
+    float_clauses = tf.cast(clauses, tf.float32)
+    variables = vars * tf.expand_dims(tf.sign(float_clauses), axis=-1)
+    variables = tf.expand_dims(tf.clip_by_value(-float_clauses, 0, 1), axis=-1) + variables
+
+    vars_with_temp = variables / temp
+    exp = tf.exp(vars_with_temp)
+    max_per_clause = tf.reduce_sum(exp * vars_with_temp, axis=-2) / tf.reduce_sum(exp, axis=-2)
+
+    return max_per_clause
+
+
+def min_max_loss(variable_prediction: tf.Tensor, clauses: tf.RaggedTensor, temp=1):
+    """Implementation of softmin and softmax loss proposed in
+    "Learning To Solve Circuit-SAT: An Unsupervised Differentiable Approach"
+
+    Reduces loss as min over all clauses. Suitable for output. At the end applies step function loss propesed in paper.
+    """
+    clauses = min_max_loss_per_clause(variable_prediction, clauses, temp)
+    clauses = tf.reduce_mean(clauses, axis=-1)
+
+    # Reduce total
+    exp = tf.exp(-clauses / temp)
+    min_value = tf.reduce_sum(exp * clauses) / tf.reduce_sum(exp)
+
+    skm = tf.pow(1 - min_value, 10)
+    return skm / (skm + tf.pow(min_value, 10))
