@@ -65,7 +65,7 @@ def softplus_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor):
     return clauses_val
 
 
-def min_max_loss_per_clause(variable_prediction: tf.Tensor, clauses: tf.RaggedTensor, temp=1):
+def max_clauses_loss(variable_prediction: tf.Tensor, clauses: tf.RaggedTensor, temp=1):
     """Implementation of softmin and softmax loss proposed in
     "Learning To Solve Circuit-SAT: An Unsupervised Differentiable Approach"
 
@@ -94,7 +94,7 @@ def min_max_loss(variable_prediction: tf.Tensor, clauses: tf.RaggedTensor, temp=
 
     Reduces loss as min over all clauses. Suitable for output. At the end applies step function loss propesed in paper.
     """
-    clauses = min_max_loss_per_clause(variable_prediction, clauses, temp)
+    clauses = max_clauses_loss(variable_prediction, clauses, temp)
     clauses = tf.reduce_mean(clauses, axis=-1)
 
     # Reduce total
@@ -103,3 +103,14 @@ def min_max_loss(variable_prediction: tf.Tensor, clauses: tf.RaggedTensor, temp=
 
     skm = tf.pow(1 - min_value, 10)
     return skm / (skm + tf.pow(min_value, 10))
+
+
+def log_max_loss(variable_prediction: tf.Tensor, clauses: tf.RaggedTensor, temp=1):
+    """
+    As seen in "PDP: A General Neural Framework for Learning Constraint Satisfaction Solvers"
+    """
+    clauses = max_clauses_loss(variable_prediction, clauses, temp)
+    clauses = tf.reduce_mean(clauses, axis=-1)
+
+    skm = tf.pow(1 - clauses, 10)
+    return skm / (skm + tf.pow(clauses, 10))
