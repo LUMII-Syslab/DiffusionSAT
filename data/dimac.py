@@ -5,26 +5,68 @@ from pathlib import Path
 import tensorflow as tf
 
 from config import Config
+from data.dataset import Dataset
 
 
 def elements_to_str(inputs: iter):
     return [str(x) for x in inputs]
 
 
-class DIMACDataset:
+DATA_FILE_NAME = "feature_data.tfrecord"
+
+
+class DIMACDataset(Dataset):
 
     @abstractmethod
-    def dimac_generator(self) -> tuple:
-        """
-        Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
+    def dimacs_generator(self) -> tuple:
+        """ Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
         This generator should be finite (in the size of dataset)
         :return: tuple(variable_count: int, clauses: list of tuples)
         """
         pass
 
     @abstractmethod
-    def write_dimacs_to_file(self):
-        output_folder = Path(Config.data_dir) / self.__class__.__name__ / "dimacs"
+    def prepare_dataset(self, dataset: tf.data.Dataset):
+        """ Prepare task specifics for dataset.
+        :param dataset: tf.data.Dataset
+        :return: tf.data.Dataset
+        """
+        pass
+
+    def train_data(self) -> tf.data.Dataset:
+        data_folder = Path(Config.data_dir) / self.__class__.__name__ / 'train'
+        self.generate_data(data_folder)
+        data = self.read_dataset(data_folder)
+        return self.prepare_dataset(data)
+
+    def validation_data(self) -> tf.data.Dataset:
+        data_folder = Path(Config.data_dir) / self.__class__.__name__ / 'validation'
+        self.generate_data(data_folder)
+        data = self.read_dataset(data_folder)
+        return self.prepare_dataset(data)
+
+    def test_data(self) -> tf.data.Dataset:
+        data_folder = Path(Config.data_dir) / self.__class__.__name__ / 'test'
+        self.generate_data(data_folder)
+        data = self.read_dataset(data_folder)
+        return self.prepare_dataset(data)
+
+    def read_dataset(self, data_folder):
+        tf_record_file = data_folder / DATA_FILE_NAME
+        data = tf.data.TFRecordDataset([str(tf_record_file)], "GZIP")  # TODO: Generate several record files
+        return data.map(lambda rec: self.feature_from_file(rec), tf.data.experimental.AUTOTUNE)
+
+    def generate_data(self, folder: Path):
+        if Config.force_data_gen and folder.exists():
+            shutil.rmtree(folder)
+
+        if not folder.exists():
+            self.write_dimacs_to_file(folder)
+            self.dimac_to_data(folder)
+
+    @abstractmethod
+    def write_dimacs_to_file(self, folder: Path):
+        output_folder = folder / "dimacs"
 
         if Config.force_data_gen and output_folder.exists():
             shutil.rmtree(output_folder)
@@ -36,7 +78,7 @@ class DIMACDataset:
             output_folder.mkdir(parents=True)
 
         print(f"Generating data in '{output_folder}' directory!")
-        for idx, (n_vars, clauses) in enumerate(self.dimac_generator()):
+        for idx, (n_vars, clauses) in enumerate(self.dimacs_generator()):
             clauses = [elements_to_str(c) for c in clauses]
             file = [f"p cnf {n_vars} {len(clauses)}"]
             file += [f"{' '.join(c)} 0" for c in clauses]
@@ -61,9 +103,8 @@ class DIMACDataset:
         return [[self.shift_variable(x, offset) for x in c] for c in clauses]
 
     @abstractmethod
-    def dimac_to_data(self):
-        data_folder = Path(Config.data_dir) / self.__class__.__name__
-        dimacs = data_folder / "dimacs"
+    def dimac_to_data(self, folder: Path):
+        dimacs = folder / "dimacs"
 
         files = [d for d in dimacs.glob("*.dimacs")]
         formula_size = [self.__read_dimacs_details(f) for f in files]
@@ -75,7 +116,7 @@ class DIMACDataset:
         files = sorted(zip(node_count, files))
         batches = self.__batch_files(files)
 
-        tf_record_file = data_folder / "feature_data.tfrecord"
+        tf_record_file = folder / DATA_FILE_NAME
         options = tf.io.TFRecordOptions(compression_type="GZIP", compression_level=9)
 
         with tf.io.TFRecordWriter(str(tf_record_file), options) as tfwriter:
@@ -83,7 +124,8 @@ class DIMACDataset:
                 feature = self.prepare_example(batch)
                 tfwriter.write(feature.SerializeToString())
 
-    def flatten(self, array: list):
+    @staticmethod
+    def flatten(array: list):
         return [x for c in array for x in c]
 
     @staticmethod
@@ -183,13 +225,6 @@ class DIMACDataset:
             batches.append(current_batch)
 
         return batches
-
-    def train_data(self) -> tf.data.Dataset:
-        data_folder = Path(Config.data_dir) / self.__class__.__name__
-        tf_record_file = data_folder / "feature_data.tfrecord"
-
-        data = tf.data.TFRecordDataset([str(tf_record_file)], "GZIP")
-        return data.map(lambda rec: self.feature_from_file(rec), tf.data.experimental.AUTOTUNE)
 
     @staticmethod
     def feature_from_file(data_record):

@@ -1,6 +1,6 @@
 from abc import abstractmethod
 
-from data.sat import RandomKSAT
+from data.k_sat import RandomKSAT
 from data.tsp import EuclideanTSP
 from model.feedforward_sat import FeedForwardSAT
 from model.matrix_se import MatrixSE
