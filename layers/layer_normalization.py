@@ -13,7 +13,7 @@ class LayerNormalization(tf.keras.layers.Layer):
     def build(self, input_shape):
         num_units = input_shape.as_list()[-1]
         if self.subtract_mean:
-            self.bias = self.add_weight("bias", [1, 1, num_units], initializer=tf.zeros_initializer)
+            self.bias = self.add_weight("bias", [num_units], initializer=tf.zeros_initializer)
 
     def call(self, inputs, **kwargs):
         if self.subtract_mean:  # subtracting mean may not be necessary: https://arxiv.org/abs/1910.07467
