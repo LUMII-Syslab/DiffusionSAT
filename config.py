@@ -6,8 +6,8 @@ from registry.registry import ModelRegistry, DatasetRegistry
 class Config:
     train_dir = '/host-dir/np-solver'
     data_dir = '/host-dir/data'
-    restore = None
-    label = ""
+    force_data_gen = False
+
 
     ckpt_count = 3
     eager = False
@@ -18,6 +18,9 @@ class Config:
     learning_rate = 0.0001
     model = 'matrix_se'
     task = 'euclidean_tsp'
+
+    restore = None
+    label = ""
 
     __arguments_parsed = False
 
@@ -55,5 +58,7 @@ class Config:
 
         config_parser.add_argument('--task', type=str, default=cls.task, const=cls.task, nargs='?',
                                    choices=DatasetRegistry().registered_names)
+
+        config_parser.add_argument('--force_data_gen', action='store_true', default=cls.force_data_gen)
 
         return config_parser
