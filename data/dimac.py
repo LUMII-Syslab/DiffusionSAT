@@ -1,8 +1,10 @@
+import shutil
 from abc import abstractmethod
 from pathlib import Path
 
+import tensorflow as tf
+
 from config import Config
-import shutil
 
 
 def elements_to_str(inputs: iter):
@@ -14,18 +16,15 @@ class DIMACDataset:
     @abstractmethod
     def dimac_generator(self) -> tuple:
         """
-        Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file
+        Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
+        This generator should be finite (in the size of dataset)
         :return: tuple(variable_count: int, clauses: list of tuples)
         """
         pass
 
     @abstractmethod
-    def dimac_to_data(self):
-        pass
-
-    @abstractmethod
     def write_dimacs_to_file(self):
-        output_folder = Path(Config.data_dir) / self.__class__.__name__
+        output_folder = Path(Config.data_dir) / self.__class__.__name__ / "dimacs"
 
         if Config.force_data_gen and output_folder.exists():
             shutil.rmtree(output_folder)
@@ -42,88 +41,188 @@ class DIMACDataset:
             file = [f"p cnf {n_vars} {len(clauses)}"]
             file += [f"{' '.join(c)} 0" for c in clauses]
 
-            out_filename = output_folder / f"example_{idx}.dimacs"
+            out_filename = output_folder / f"formula_{n_vars}_{len(clauses)}_{idx}.dimacs"
             with open(out_filename, 'w') as f:
                 f.write('\n'.join(file))
 
-#
-# class GeneratorDataset(Dataset):
-#     def train_dataset(self) -> list:
-#         return self.create_file_based_dataset("train", self.train_output_shapes, self.train_size, training=True)
-#
-#     def create_file_based_dataset(self, file_prefix: str, output_shapes: list, dataset_size, training):
-#         data_dir = Path(config.data_dir) / self.__class__.__name__.lower()
-#
-#         if not data_dir.exists():
-#             data_dir.mkdir(parents=True)
-#
-#         datasets = []
-#         for feature_sh, label_sh in output_shapes:
-#             f_sh_str = "x".join([str(x) for x in feature_sh])
-#             file_name = f"{file_prefix}_{f_sh_str}.tfrecord"
-#             file_name = data_dir / file_name
-#
-#             data = self.dataset_from_file(file_name, feature_sh, label_sh, dataset_size, training)
-#
-#             datasets.append(data)
-#         return datasets
-#
-#     def dataset_from_file(self, file_name: Path, feature_sh: tuple,
-#                           label_sh: tuple, dataset_size, training: bool) -> tf.data.TFRecordDataset:
-#
-#         if file_name.exists() and config.force_file_generation:
-#             file_name.unlink()
-#
-#         if not file_name.exists():
-#             generator = self.generator_fn(feature_sh, label_sh, training=training)
-#             generator = itertools.islice(generator(), dataset_size)
-#             options = tf.io.TFRecordOptions(tf.compat.v1.io.TFRecordCompressionType.GZIP)
-#
-#             with tf.io.TFRecordWriter(str(file_name), options) as tfwriter:
-#                 for feature, label in generator:
-#                     example = self.create_example(feature, label)
-#                     tfwriter.write(example.SerializeToString())
-#
-#         data = tf.data.TFRecordDataset([str(file_name)], "GZIP")
-#         return data.map(lambda rec: self.extract(rec, feature_sh, label_sh), tf.data.experimental.AUTOTUNE)
-#
-#     @staticmethod
-#     def extract(data_record, feature_shape, label_shape):
-#         parsed = tf.io.parse_single_example(data_record, {
-#             'feature': tf.io.VarLenFeature(tf.int64),
-#             'label': tf.io.VarLenFeature(tf.int64),
-#         })
-#
-#         feature = tf.reshape(parsed["feature"].values, feature_shape)  # type: tf.Tensor
-#         label = tf.reshape(parsed["label"].values, label_shape)  # type: tf.Tensor
-#
-#         feature.set_shape(feature_shape)
-#         label.set_shape(label_shape)
-#
-#         feature = tf.cast(feature, tf.int32)
-#         label = tf.cast(label, tf.int32)
-#
-#         return feature, label
-#
-#     @staticmethod
-#     def create_example(feature, label):
-#         feature = tf.train.Int64List(value=feature.flatten())
-#         label = tf.train.Int64List(value=label.flatten())
-#
-#         example_map = {
-#             'feature': tf.train.Feature(int64_list=feature),
-#             'label': tf.train.Feature(int64_list=label),
-#         }
-#
-#         features = tf.train.Features(feature=example_map)
-#         return tf.train.Example(features=features)
-#
-#     def eval_dataset(self) -> list:
-#         return self.create_file_based_dataset("eval", self.eval_output_shapes, self.eval_size, training=False)
-#
-#     def create_dataset(self, feature_sh, label_sh):
-#         return tf.data.Dataset.from_generator(
-#             self.generator_fn(feature_sh, label_sh, training=False),
-#             self.generator_output_types,
-#             output_shapes=(tf.TensorShape(feature_sh), tf.TensorShape(label_sh))
-#         )
+    @staticmethod
+    def __read_dimacs_details(file):
+        with open(file, 'r') as f:
+            first_line = f.readline()
+            first_line = first_line.strip()
+            *_, var_count, clauses_count = first_line.split()
+            return int(var_count), int(clauses_count)
+
+    @staticmethod
+    def shift_variable(x, offset):
+        return x + offset if x > 0 else x - offset
+
+    def shift_clause(self, clauses, offset):
+        return [[self.shift_variable(x, offset) for x in c] for c in clauses]
+
+    @abstractmethod
+    def dimac_to_data(self):
+        data_folder = Path(Config.data_dir) / self.__class__.__name__
+        dimacs = data_folder / "dimacs"
+
+        files = [d for d in dimacs.glob("*.dimacs")]
+        formula_size = [self.__read_dimacs_details(f) for f in files]
+
+        # TODO: Doesn't match our node count as we use variables instead of literals
+        node_count = [2 * n + m for (n, m) in formula_size]
+
+        # Put formulas with similar size in same batch
+        files = sorted(zip(node_count, files))
+        batches = self.__batch_files(files)
+
+        tf_record_file = data_folder / "feature_data.tfrecord"
+        options = tf.io.TFRecordOptions(compression_type="GZIP", compression_level=9)
+
+        with tf.io.TFRecordWriter(str(tf_record_file), options) as tfwriter:
+            for batch in batches:
+                feature = self.prepare_example(batch)
+                tfwriter.write(feature.SerializeToString())
+
+    def flatten(self, array: list):
+        return [x for c in array for x in c]
+
+    @staticmethod
+    def elements_to_int(array: iter):
+        return [int(x) for x in array]
+
+    def prepare_example(self, batch):
+        batched_clauses = []
+        cells_in_formula = []
+        clauses_in_formula = []
+        variable_count = []
+        offset = 0
+        original_clauses = []
+
+        for file in batch:
+            with open(file, 'r') as f:
+                lines = f.readlines()
+
+            *_, var_count, clauses_count = lines[0].strip().split()
+            var_count = int(var_count)
+            clauses_count = int(clauses_count)
+
+            clauses = [self.elements_to_int(line.strip().split()[:-1]) for line in lines[1:]]
+
+            clauses_in_formula.append(clauses_count)
+            original_clauses.append(clauses)
+            variable_count.append(var_count)
+            batched_clauses.extend(self.shift_clause(clauses, offset))
+            cells_in_formula.append(sum([len(c) for c in clauses]))
+            offset += var_count
+
+        adj_indices_pos, adj_indices_neg = self.compute_adj_indices(batched_clauses)
+
+        print(original_clauses)
+
+        clauses_len_first = [len(c) for c in original_clauses]
+        clauses_len_second = [len(x) for c in original_clauses for x in c]
+        clauses = tf.train.Int64List(value=self.flatten(self.flatten(original_clauses)))
+        clauses_len_first = tf.train.Int64List(value=clauses_len_first)
+        clauses_len_second = tf.train.Int64List(value=clauses_len_second)
+
+        batched_clauses_row_len = [len(x) for x in batched_clauses]
+        batched_clauses = tf.train.Int64List(value=self.flatten(batched_clauses))
+        batched_clauses_row_len = tf.train.Int64List(value=batched_clauses_row_len)
+
+        adj_indices_pos = tf.train.Int64List(value=self.flatten(adj_indices_pos))
+        adj_indices_neg = tf.train.Int64List(value=self.flatten(adj_indices_neg))
+
+        variable_count = tf.train.Int64List(value=variable_count)
+        clauses_in_formula = tf.train.Int64List(value=clauses_in_formula)
+        cells_in_formula = tf.train.Int64List(value=cells_in_formula)
+
+        example_map = {
+            'clauses': tf.train.Feature(int64_list=clauses),
+            'clauses_len_first': tf.train.Feature(int64_list=clauses_len_first),
+            'clauses_len_second': tf.train.Feature(int64_list=clauses_len_second),
+            'batched_clauses': tf.train.Feature(int64_list=batched_clauses),
+            'batched_clauses_rows': tf.train.Feature(int64_list=batched_clauses_row_len),
+            'adj_indices_pos': tf.train.Feature(int64_list=adj_indices_pos),
+            'adj_indices_neg': tf.train.Feature(int64_list=adj_indices_neg),
+            'variable_count': tf.train.Feature(int64_list=variable_count),
+            'clauses_in_formula': tf.train.Feature(int64_list=clauses_in_formula),
+            'cells_in_formula': tf.train.Feature(int64_list=cells_in_formula)
+        }
+
+        features = tf.train.Features(feature=example_map)
+        return tf.train.Example(features=features)
+
+    @staticmethod
+    def compute_adj_indices(clauses):
+        adj_indices_pos = [[var - 1, idx] for idx, clause in enumerate(clauses) for var in clause if var > 0]
+        adj_indices_neg = [[abs(var) - 1, idx] for idx, clause in enumerate(clauses) for var in clause if var < 0]
+
+        return adj_indices_pos, adj_indices_neg
+
+    @staticmethod
+    def __batch_files(files):  # TODO: This is no good as formulas in batches never changes
+        max_nodes_per_batch = 200  # TODO: Put this in better place
+
+        # filter formulas that will not fit in any batch
+        files = [(node_count, filename) for node_count, filename in files if node_count <= max_nodes_per_batch]
+
+        batches = []
+        current_batch = []
+        nodes_in_batch = 0
+
+        for nodes_cnt, filename in files:
+            if nodes_cnt + nodes_in_batch <= max_nodes_per_batch:
+                current_batch.append(filename)
+                nodes_in_batch += nodes_cnt
+            else:
+                batches.append(current_batch)
+                current_batch = []
+                nodes_in_batch = 0
+
+        if current_batch:
+            batches.append(current_batch)
+
+        return batches
+
+    def train_data(self) -> tf.data.Dataset:
+        data_folder = Path(Config.data_dir) / self.__class__.__name__
+        tf_record_file = data_folder / "feature_data.tfrecord"
+
+        data = tf.data.TFRecordDataset([str(tf_record_file)], "GZIP")
+        return data.map(lambda rec: self.feature_from_file(rec), tf.data.experimental.AUTOTUNE)
+
+    @staticmethod
+    def feature_from_file(data_record):
+        parsed = tf.io.parse_single_example(data_record, {
+            'clauses': tf.io.RaggedFeature(dtype=tf.int64, value_key='clauses',
+                                           partitions=[tf.io.RaggedFeature.RowLengths("clauses_len_first"),
+                                                       tf.io.RaggedFeature.RowLengths("clauses_len_second")]),
+            'batched_clauses': tf.io.RaggedFeature(dtype=tf.int64, value_key="batched_clauses",
+                                                   partitions=[tf.io.RaggedFeature.RowLengths('batched_clauses_rows')]),
+            'adj_indices_pos': tf.io.VarLenFeature(tf.int64),
+            'adj_indices_neg': tf.io.VarLenFeature(tf.int64),
+            'variable_count': tf.io.VarLenFeature(tf.int64),
+            'clauses_in_formula': tf.io.VarLenFeature(tf.int64),
+            'cells_in_formula': tf.io.VarLenFeature(tf.int64)
+        })
+
+        adj_indices_pos = tf.sparse.to_dense(parsed['adj_indices_pos'])
+        adj_indices_pos = tf.reshape(adj_indices_pos, shape=[-1, 2])
+        adj_indices_neg = tf.sparse.to_dense(parsed['adj_indices_neg'])
+        adj_indices_neg = tf.reshape(adj_indices_neg, shape=[-1, 2])
+
+        variable_count = tf.sparse.to_dense(parsed['variable_count'])
+        clauses_in_formula = tf.sparse.to_dense(parsed['clauses_in_formula'])
+        cells_in_formula = tf.sparse.to_dense(parsed['cells_in_formula'])
+
+        output = (
+            parsed['clauses'],
+            parsed['batched_clauses'],
+            adj_indices_pos,
+            adj_indices_neg,
+            variable_count,
+            clauses_in_formula,
+            cells_in_formula
+        )
+
+        return output

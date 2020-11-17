@@ -9,7 +9,7 @@ from data.dimac import DIMACDataset
 class RandomKSAT(DIMACDataset):
 
     def __init__(self) -> None:
-        self.dimacs_count = 2
+        self.dimacs_count = 20
         self.min_vars = 3
         self.max_vars = 10
 
