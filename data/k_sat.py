@@ -64,6 +64,7 @@ class RandomKSAT(DIMACDataset):
 
     def __prepare_data(self, data):
         dense_shape = tf.stack([tf.reduce_sum(data["variable_count"]), tf.reduce_sum(data["clauses_in_formula"])])
+        dense_shape = tf.cast(dense_shape, tf.int64)
 
         return {"adjacency_matrix_pos": self.create_adjacency_matrix(data["adj_indices_pos"], dense_shape),
                 "adjacency_matrix_neg": self.create_adjacency_matrix(data["adj_indices_neg"], dense_shape),
@@ -75,7 +76,7 @@ class RandomKSAT(DIMACDataset):
     @staticmethod
     def create_adjacency_matrix(indices, dense_shape):
         return tf.sparse.SparseTensor(indices,
-                                      tf.ones(tf.cast(tf.shape(indices)[0], tf.int32), dtype=tf.float32),
+                                      tf.ones(tf.shape(indices)[0], dtype=tf.float32),
                                       dense_shape=dense_shape)
 
     def prepare_dataset(self, dataset: tf.data.Dataset):

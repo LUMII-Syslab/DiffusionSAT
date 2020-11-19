@@ -43,8 +43,7 @@ class DIMACDataset(Dataset):
         data = self.prepare_dataset(data)
         data = data.shuffle(100)  # TODO: Shuffle size in config
         data = data.repeat()
-        data = data.prefetch(100)
-        return data
+        return data.prefetch(tf.data.experimental.AUTOTUNE)
 
     def validation_data(self) -> tf.data.Dataset:
         data_folder = self.data_dir / 'validation'
@@ -53,8 +52,7 @@ class DIMACDataset(Dataset):
         data = self.prepare_dataset(data)  # type: tf.data.Dataset
         data = data.shuffle(100)  # TODO: Shuffle size in config
         data = data.repeat()
-        data = data.prefetch(100)
-        return data
+        return data.prefetch(tf.data.experimental.AUTOTUNE)
 
     def test_data(self) -> tf.data.Dataset:
         data_folder = self.data_dir / 'test'
@@ -63,8 +61,10 @@ class DIMACDataset(Dataset):
         return self.prepare_dataset(data)
 
     def read_dataset(self, data_folder):
-        tf_record_file = data_folder / DATA_FILE_NAME
-        data = tf.data.TFRecordDataset([str(tf_record_file)], "GZIP")  # TODO: Generate several record files
+        data_folder = data_folder / 'data'
+        data_files = [str(d) for d in data_folder.glob("*.tfrecord")]
+
+        data = tf.data.TFRecordDataset(data_files, "GZIP")  # TODO: Generate several record files
         return data.map(lambda rec: self.feature_from_file(rec), tf.data.experimental.AUTOTUNE)
 
     def generate_data(self, folder: Path):
@@ -87,7 +87,7 @@ class DIMACDataset(Dataset):
         else:
             output_folder.mkdir(parents=True)
 
-        print(f"Generating data in '{output_folder}' directory!")
+        print(f"Generating DIMACS data in '{output_folder}' directory!")
         for idx, (n_vars, clauses) in enumerate(self.dimacs_generator()):
             clauses = [elements_to_str(c) for c in clauses]
             file = [f"p cnf {n_vars} {len(clauses)}"]
@@ -125,13 +125,21 @@ class DIMACDataset(Dataset):
         files = sorted(zip(node_count, files))
         batches = self.__batch_files(files)
 
-        tf_record_file = folder / DATA_FILE_NAME
         options = tf.io.TFRecordOptions(compression_type="GZIP", compression_level=9)
 
-        with tf.io.TFRecordWriter(str(tf_record_file), options) as tfwriter:
-            for batch in batches:
-                feature = self.prepare_example(batch)
-                tfwriter.write(feature.SerializeToString())
+        data_folder = folder / 'data'
+        print(f"Converting DIMACS data from '{dimacs}' into '{data_folder}'!")
+
+        if not data_folder.exists():
+            data_folder.mkdir(parents=True)
+
+        for idx, batch in enumerate(batches):
+            batch_data = self.prepare_example(batch)
+            batch_file = data_folder / f"batch_{idx}.tfrecord"
+            with tf.io.TFRecordWriter(str(batch_file), options) as tfwriter:
+                tfwriter.write(batch_data.SerializeToString())
+
+        print(f"Created {len(batches)} data batches in {data_folder}...\n")
 
     @staticmethod
     def flatten(array: list):
@@ -267,13 +275,13 @@ class DIMACDataset(Dataset):
         cells_in_formula = tf.sparse.to_dense(parsed['cells_in_formula'])
 
         output = {
-            "clauses": parsed['clauses'],
-            "batched_clauses": parsed['batched_clauses'],
+            "clauses": tf.cast(parsed['clauses'], tf.int32),
+            "batched_clauses": tf.cast(parsed['batched_clauses'], tf.int32),
             "adj_indices_pos": adj_indices_pos,
             "adj_indices_neg": adj_indices_neg,
-            "variable_count": variable_count,
-            "clauses_in_formula": clauses_in_formula,
-            "cells_in_formula": cells_in_formula
+            "variable_count": tf.cast(variable_count, tf.int32),
+            "clauses_in_formula": tf.cast(clauses_in_formula, tf.int32),
+            "cells_in_formula": tf.cast(cells_in_formula, tf.int32)
         }
 
         return output
