@@ -219,7 +219,7 @@ class DIMACDataset(Dataset):
 
     @staticmethod
     def __batch_files(files):  # TODO: This is no good as formulas in batches never changes
-        max_nodes_per_batch = 200  # TODO: Put this in better place
+        max_nodes_per_batch = 5000  # TODO: Put this in better place
 
         # filter formulas that will not fit in any batch
         files = [(node_count, filename) for node_count, filename in files if node_count <= max_nodes_per_batch]
