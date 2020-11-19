@@ -41,9 +41,9 @@ class DIMACDataset(Dataset):
         self.generate_data(data_folder)
         data = self.read_dataset(data_folder)
         data = self.prepare_dataset(data)
-        data = data.shuffle(10000)  # TODO: Shuffle size in config
+        data = data.shuffle(100)  # TODO: Shuffle size in config
         data = data.repeat()
-        data = data.prefetch(10000)
+        data = data.prefetch(100)
         return data
 
     def validation_data(self) -> tf.data.Dataset:
@@ -51,9 +51,9 @@ class DIMACDataset(Dataset):
         self.generate_data(data_folder)
         data = self.read_dataset(data_folder)
         data = self.prepare_dataset(data)  # type: tf.data.Dataset
-        data = data.shuffle(10000)  # TODO: Shuffle size in config
+        data = data.shuffle(100)  # TODO: Shuffle size in config
         data = data.repeat()
-        data = data.prefetch(10000)
+        data = data.prefetch(100)
         return data
 
     def test_data(self) -> tf.data.Dataset:
