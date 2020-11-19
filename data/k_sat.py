@@ -13,8 +13,8 @@ class KSATVariables(DIMACDataset):
 
     def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
         super(KSATVariables, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 10000
-        self.test_size = 3000
+        self.train_size = 100000
+        self.test_size = 5000
         self.min_vars = 3
         self.max_vars = 10
 
@@ -187,7 +187,7 @@ class KSATLiterals(KSATVariables):
     def filter_loss_inputs(self, step_data) -> dict:
         return {"clauses": step_data["clauses"]}
 
-    def filter_model_inputs(self, step_data) -> dict:  # TODO: Not good because dataset needs to know about model
+    def filter_model_inputs(self, step_data) -> dict:
         return {
             "adj_matrix": step_data["adjacency_matrix"],
             "clauses": step_data["clauses"]

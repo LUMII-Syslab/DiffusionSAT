@@ -15,8 +15,8 @@ class Config:
     train_steps = 300000
     warmup = 0.0
     learning_rate = 0.0001
-    model = 'matrix_se'
-    task = 'euclidean_tsp'
+    model = 'query_sat'
+    task = 'k_sat_variables'
 
     restore = None
     label = ""
