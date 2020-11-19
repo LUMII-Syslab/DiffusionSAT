@@ -13,27 +13,22 @@ class RandomKSAT(DIMACDataset):
 
     def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
         super(RandomKSAT, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
-        self.dimacs_count = 10000
+        self.train_size = 10000
+        self.test_size = 3000
         self.min_vars = 3
         self.max_vars = 10
 
         self.p_k_2 = 0.3
         self.p_geo = 0.4
 
-    @staticmethod
-    def __generate_k_iclause(n, k):
-        vs = np.random.choice(n, size=min(n, k), replace=False)
-        return [int(v + 1) if random.random() < 0.5 else int(-(v + 1)) for v in vs]
+    def train_generator(self) -> tuple:
+        return self.__generator(self.train_size)
 
-    # remove duplicate clauses
-    # todo: remove subsumed clauses - when shorter clause is fully in a longer one, the longer one is redundant
-    @staticmethod
-    def prune(clauses):
-        clauses_pruned = list({tuple(sorted(x)) for x in clauses})
-        return clauses_pruned
+    def test_generator(self) -> tuple:
+        return self.__generator(self.test_size)
 
-    def dimacs_generator(self):
-        for _ in range(self.dimacs_count):
+    def __generator(self, size) -> tuple:
+        for _ in range(size):
             n_vars = random.randint(self.min_vars, self.max_vars)
 
             solver = Cadical()
@@ -60,7 +55,17 @@ class RandomKSAT(DIMACDataset):
             # yield n_vars, self.prune(iclauses)
 
             iclauses[-1] = iclause_sat
-            yield n_vars, self.prune(iclauses)
+            yield n_vars, self.remove_duplicate_clauses(iclauses)
+
+    @staticmethod
+    def __generate_k_iclause(n, k):
+        vs = np.random.choice(n, size=min(n, k), replace=False)
+        return [int(v + 1) if random.random() < 0.5 else int(-(v + 1)) for v in vs]
+
+    # TODO: remove subsumed clauses - when shorter clause is fully in a longer one, the longer one is redundant
+    @staticmethod
+    def remove_duplicate_clauses(clauses):
+        return list({tuple(sorted(x)) for x in clauses})
 
     def __prepare_data(self, data):
         dense_shape = tf.stack([tf.reduce_sum(data["variable_count"]), tf.reduce_sum(data["clauses_in_formula"])])
@@ -119,7 +124,6 @@ class RandomKSAT(DIMACDataset):
         return batched_logits
 
     def accuracy(self, prediction, step_data):
-
         prediction = tf.round(tf.sigmoid(prediction))
         prediction = self.split_batch(prediction, step_data["variable_count"])
 

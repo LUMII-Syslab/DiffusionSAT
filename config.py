@@ -8,7 +8,6 @@ class Config:
     data_dir = '/host-dir/data'
     force_data_gen = False
 
-
     ckpt_count = 3
     eager = False
 

@@ -5,23 +5,37 @@ from pathlib import Path
 import tensorflow as tf
 
 from data.dataset import Dataset
+from utils.iterable import elements_to_str, elements_to_int, flatten
 
 
-def elements_to_str(inputs: iter):
-    return [str(x) for x in inputs]
+def compute_adj_indices(clauses):
+    adj_indices_pos = [[v - 1, idx] for idx, c in enumerate(clauses) for v in c if v > 0]
+    adj_indices_neg = [[abs(v) - 1, idx] for idx, c in enumerate(clauses) for v in c if v < 0]
 
-
-DATA_FILE_NAME = "feature_data.tfrecord"
+    return adj_indices_pos, adj_indices_neg
 
 
 class DIMACDataset(Dataset):
 
-    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
-        self.data_dir = Path(data_dir) / self.__class__.__name__
+    def __init__(self, data_dir, force_data_gen=False, max_nodes_per_batch=5000, shuffle_size=100, **kwargs) -> None:
         self.force_data_gen = force_data_gen
+        self.data_dir = Path(data_dir) / self.__class__.__name__
+        self.max_nodes_per_batch = max_nodes_per_batch
+        self.shuffle_size = shuffle_size
+
+        self.dimacs_dir_name = "dimacs"
+        self.data_dir_name = "data"
 
     @abstractmethod
-    def dimacs_generator(self) -> tuple:
+    def train_generator(self) -> tuple:
+        """ Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
+        This generator should be finite (in the size of dataset)
+        :return: tuple(variable_count: int, clauses: list of tuples)
+        """
+        pass
+
+    @abstractmethod
+    def test_generator(self) -> tuple:
         """ Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
         This generator should be finite (in the size of dataset)
         :return: tuple(variable_count: int, clauses: list of tuples)
@@ -37,58 +51,54 @@ class DIMACDataset(Dataset):
         pass
 
     def train_data(self) -> tf.data.Dataset:
-        data_folder = self.data_dir / 'train'
-        self.generate_data(data_folder)
-        data = self.read_dataset(data_folder)
-        data = self.prepare_dataset(data)
-        data = data.shuffle(100)  # TODO: Shuffle size in config
+        data = self.fetch_dataset(self.train_generator, mode="train")
+        data = data.shuffle(self.shuffle_size)
         data = data.repeat()
         return data.prefetch(tf.data.experimental.AUTOTUNE)
 
     def validation_data(self) -> tf.data.Dataset:
-        data_folder = self.data_dir / 'validation'
-        self.generate_data(data_folder)
-        data = self.read_dataset(data_folder)
-        data = self.prepare_dataset(data)  # type: tf.data.Dataset
-        data = data.shuffle(100)  # TODO: Shuffle size in config
+        data = self.fetch_dataset(self.test_generator, mode="validation")
+        data = data.shuffle(self.shuffle_size)
         data = data.repeat()
         return data.prefetch(tf.data.experimental.AUTOTUNE)
 
     def test_data(self) -> tf.data.Dataset:
-        data_folder = self.data_dir / 'test'
-        self.generate_data(data_folder)
+        return self.fetch_dataset(self.test_generator, mode="test")
+
+    def fetch_dataset(self, generator: callable, mode: str):
+        data_folder = self.data_dir / mode
+
+        if self.force_data_gen and data_folder.exists():
+            shutil.rmtree(data_folder)
+
+        if not data_folder.exists():
+            self.write_dimacs_to_file(data_folder, generator)
+            self.dimac_to_data(data_folder)
+
         data = self.read_dataset(data_folder)
         return self.prepare_dataset(data)
 
     def read_dataset(self, data_folder):
-        data_folder = data_folder / 'data'
+        data_folder = data_folder / self.data_dir_name
         data_files = [str(d) for d in data_folder.glob("*.tfrecord")]
 
-        data = tf.data.TFRecordDataset(data_files, "GZIP")  # TODO: Generate several record files
+        data = tf.data.TFRecordDataset(data_files, "GZIP")
         return data.map(lambda rec: self.feature_from_file(rec), tf.data.experimental.AUTOTUNE)
 
-    def generate_data(self, folder: Path):
-        if self.force_data_gen and folder.exists():
-            shutil.rmtree(folder)
-
-        if not folder.exists():
-            self.write_dimacs_to_file(folder)
-            self.dimac_to_data(folder)
-
-    def write_dimacs_to_file(self, folder: Path):
-        output_folder = folder / "dimacs"
+    def write_dimacs_to_file(self, data_folder: Path, data_generator: callable):
+        output_folder = data_folder / self.dimacs_dir_name
 
         if self.force_data_gen and output_folder.exists():
             shutil.rmtree(output_folder)
 
         if output_folder.exists():
-            print("Not recreating data, as folder already exists")
+            print("Not recreating data, as folder already exists!")
             return
         else:
             output_folder.mkdir(parents=True)
 
         print(f"Generating DIMACS data in '{output_folder}' directory!")
-        for idx, (n_vars, clauses) in enumerate(self.dimacs_generator()):
+        for idx, (n_vars, clauses) in enumerate(data_generator()):
             clauses = [elements_to_str(c) for c in clauses]
             file = [f"p cnf {n_vars} {len(clauses)}"]
             file += [f"{' '.join(c)} 0" for c in clauses]
@@ -96,6 +106,9 @@ class DIMACDataset(Dataset):
             out_filename = output_folder / f"sat_{n_vars}_{len(clauses)}_{idx}.dimacs"
             with open(out_filename, 'w') as f:
                 f.write('\n'.join(file))
+
+            if idx % 1000 == 0:
+                print(f"{idx} DIMACS files generated...")
 
     @staticmethod
     def __read_dimacs_details(file):
@@ -113,7 +126,7 @@ class DIMACDataset(Dataset):
         return [[self.shift_variable(x, offset) for x in c] for c in clauses]
 
     def dimac_to_data(self, folder: Path):
-        dimacs = folder / "dimacs"
+        dimacs = folder / self.dimacs_dir_name
 
         files = [d for d in dimacs.glob("*.dimacs")]
         formula_size = [self.__read_dimacs_details(f) for f in files]
@@ -127,7 +140,7 @@ class DIMACDataset(Dataset):
 
         options = tf.io.TFRecordOptions(compression_type="GZIP", compression_level=9)
 
-        data_folder = folder / 'data'
+        data_folder = folder / self.data_dir_name
         print(f"Converting DIMACS data from '{dimacs}' into '{data_folder}'!")
 
         if not data_folder.exists():
@@ -139,15 +152,10 @@ class DIMACDataset(Dataset):
             with tf.io.TFRecordWriter(str(batch_file), options) as tfwriter:
                 tfwriter.write(batch_data.SerializeToString())
 
+            if idx % 50 == 0:
+                print(f"{idx} batches ready...")
+
         print(f"Created {len(batches)} data batches in {data_folder}...\n")
-
-    @staticmethod
-    def flatten(array: list):
-        return [x for c in array for x in c]
-
-    @staticmethod
-    def elements_to_int(array: iter):
-        return [int(x) for x in array]
 
     def prepare_example(self, batch):
         batched_clauses = []
@@ -165,7 +173,7 @@ class DIMACDataset(Dataset):
             var_count = int(var_count)
             clauses_count = int(clauses_count)
 
-            clauses = [self.elements_to_int(line.strip().split()[:-1]) for line in lines[1:]]
+            clauses = [elements_to_int(line.strip().split()[:-1]) for line in lines[1:]]
 
             clauses_in_formula.append(clauses_count)
             original_clauses.append(clauses)
@@ -174,70 +182,38 @@ class DIMACDataset(Dataset):
             cells_in_formula.append(sum([len(c) for c in clauses]))
             offset += var_count
 
-        adj_indices_pos, adj_indices_neg = self.compute_adj_indices(batched_clauses)
-
-        clauses_len_first = [len(c) for c in original_clauses]
-        clauses_len_second = [len(x) for c in original_clauses for x in c]
-        clauses = tf.train.Int64List(value=self.flatten(self.flatten(original_clauses)))
-        clauses_len_first = tf.train.Int64List(value=clauses_len_first)
-        clauses_len_second = tf.train.Int64List(value=clauses_len_second)
-
-        batched_clauses_row_len = [len(x) for x in batched_clauses]
-        batched_clauses = tf.train.Int64List(value=self.flatten(batched_clauses))
-        batched_clauses_row_len = tf.train.Int64List(value=batched_clauses_row_len)
-
-        adj_indices_pos = tf.train.Int64List(value=self.flatten(adj_indices_pos))
-        adj_indices_neg = tf.train.Int64List(value=self.flatten(adj_indices_neg))
-
-        variable_count = tf.train.Int64List(value=variable_count)
-        clauses_in_formula = tf.train.Int64List(value=clauses_in_formula)
-        cells_in_formula = tf.train.Int64List(value=cells_in_formula)
+        adj_indices_pos, adj_indices_neg = compute_adj_indices(batched_clauses)
 
         example_map = {
-            'clauses': tf.train.Feature(int64_list=clauses),
-            'clauses_len_first': tf.train.Feature(int64_list=clauses_len_first),
-            'clauses_len_second': tf.train.Feature(int64_list=clauses_len_second),
-            'batched_clauses': tf.train.Feature(int64_list=batched_clauses),
-            'batched_clauses_rows': tf.train.Feature(int64_list=batched_clauses_row_len),
-            'adj_indices_pos': tf.train.Feature(int64_list=adj_indices_pos),
-            'adj_indices_neg': tf.train.Feature(int64_list=adj_indices_neg),
-            'variable_count': tf.train.Feature(int64_list=variable_count),
-            'clauses_in_formula': tf.train.Feature(int64_list=clauses_in_formula),
-            'cells_in_formula': tf.train.Feature(int64_list=cells_in_formula)
+            'clauses': self.__int64_feat(original_clauses),
+            'clauses_len_first': self.__int64_feat([len(c) for c in original_clauses]),
+            'clauses_len_second': self.__int64_feat([len(x) for c in original_clauses for x in c]),
+            'batched_clauses': self.__int64_feat(batched_clauses),
+            'batched_clauses_rows': self.__int64_feat([len(x) for x in batched_clauses]),
+            'adj_indices_pos': self.__int64_feat(adj_indices_pos),
+            'adj_indices_neg': self.__int64_feat(adj_indices_neg),
+            'variable_count': self.__int64_feat(variable_count),
+            'clauses_in_formula': self.__int64_feat(clauses_in_formula),
+            'cells_in_formula': self.__int64_feat(cells_in_formula)
         }
 
-        features = tf.train.Features(feature=example_map)
-        return tf.train.Example(features=features)
+        return tf.train.Example(features=tf.train.Features(feature=example_map))
 
     @staticmethod
-    def compute_adj_indices(clauses):
-        adj_indices_pos = []
-        adj_indices_neg = []
+    def __int64_feat(array):
+        int_list = tf.train.Int64List(value=flatten(array))
+        return tf.train.Feature(int64_list=int_list)
 
-        for clause_id, clause in enumerate(clauses):
-            for var in clause:
-                if var > 0:
-                    adj_indices_pos.append([var - 1, clause_id])
-                elif var < 0:
-                    adj_indices_neg.append([abs(var) - 1, clause_id])
-                else:
-                    raise ValueError("Variable can't be 0 in the DIMAC format!")
-
-        return adj_indices_pos, adj_indices_neg
-
-    @staticmethod
-    def __batch_files(files):  # TODO: This is no good as formulas in batches never changes
-        max_nodes_per_batch = 5000  # TODO: Put this in better place
-
+    def __batch_files(self, files):  # TODO: This is no good as formulas in batches never changes
         # filter formulas that will not fit in any batch
-        files = [(node_count, filename) for node_count, filename in files if node_count <= max_nodes_per_batch]
+        files = [(node_count, filename) for node_count, filename in files if node_count <= self.max_nodes_per_batch]
 
         batches = []
         current_batch = []
         nodes_in_batch = 0
 
         for nodes_cnt, filename in files:
-            if nodes_cnt + nodes_in_batch <= max_nodes_per_batch:
+            if nodes_cnt + nodes_in_batch <= self.max_nodes_per_batch:
                 current_batch.append(filename)
                 nodes_in_batch += nodes_cnt
             else:
@@ -250,9 +226,9 @@ class DIMACDataset(Dataset):
 
         return batches
 
-    @staticmethod
-    def feature_from_file(data_record):
-        parsed = tf.io.parse_single_example(data_record, {
+    @tf.function
+    def feature_from_file(self, data_record):
+        features = {
             'clauses': tf.io.RaggedFeature(dtype=tf.int64, value_key='clauses',
                                            partitions=[tf.io.RaggedFeature.RowLengths("clauses_len_first"),
                                                        tf.io.RaggedFeature.RowLengths("clauses_len_second")]),
@@ -263,25 +239,22 @@ class DIMACDataset(Dataset):
             'variable_count': tf.io.VarLenFeature(tf.int64),
             'clauses_in_formula': tf.io.VarLenFeature(tf.int64),
             'cells_in_formula': tf.io.VarLenFeature(tf.int64)
-        })
-
-        adj_indices_pos = tf.sparse.to_dense(parsed['adj_indices_pos'])
-        adj_indices_pos = tf.reshape(adj_indices_pos, shape=[-1, 2])
-        adj_indices_neg = tf.sparse.to_dense(parsed['adj_indices_neg'])
-        adj_indices_neg = tf.reshape(adj_indices_neg, shape=[-1, 2])
-
-        variable_count = tf.sparse.to_dense(parsed['variable_count'])
-        clauses_in_formula = tf.sparse.to_dense(parsed['clauses_in_formula'])
-        cells_in_formula = tf.sparse.to_dense(parsed['cells_in_formula'])
-
-        output = {
-            "clauses": tf.cast(parsed['clauses'], tf.int32),
-            "batched_clauses": tf.cast(parsed['batched_clauses'], tf.int32),
-            "adj_indices_pos": adj_indices_pos,
-            "adj_indices_neg": adj_indices_neg,
-            "variable_count": tf.cast(variable_count, tf.int32),
-            "clauses_in_formula": tf.cast(clauses_in_formula, tf.int32),
-            "cells_in_formula": tf.cast(cells_in_formula, tf.int32)
         }
 
-        return output
+        parsed = tf.io.parse_single_example(data_record, features)
+
+        return {
+            "clauses": tf.cast(parsed['clauses'], tf.int32),
+            "batched_clauses": tf.cast(parsed['batched_clauses'], tf.int32),
+            "adj_indices_pos": sparse_to_dense(parsed['adj_indices_pos'], dtype=tf.int64, shape=[-1, 2]),
+            "adj_indices_neg": sparse_to_dense(parsed['adj_indices_neg'], dtype=tf.int64, shape=[-1, 2]),
+            "variable_count": sparse_to_dense(parsed['variable_count']),
+            "clauses_in_formula": sparse_to_dense(parsed['clauses_in_formula']),
+            "cells_in_formula": sparse_to_dense(parsed['cells_in_formula'])
+        }
+
+
+def sparse_to_dense(sparse_tensor, dtype=tf.int32, shape=None):
+    tensor = tf.sparse.to_dense(sparse_tensor)
+    tensor = tf.reshape(tensor, shape) if shape else tensor
+    return tf.cast(tensor, dtype=dtype)
