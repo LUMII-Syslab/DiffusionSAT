@@ -11,8 +11,9 @@ from loss.sat import softplus_log_square_loss
 
 class RandomKSAT(DIMACDataset):
 
-    def __init__(self) -> None:
-        self.dimacs_count = 20
+    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
+        super(RandomKSAT, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+        self.dimacs_count = 10000
         self.min_vars = 3
         self.max_vars = 10
 
@@ -55,20 +56,20 @@ class RandomKSAT(DIMACDataset):
             iclause_sat = [-iclause_unsat[0]] + iclause_unsat[1:]
 
             iclauses.append(iclause_unsat)
-            # yield n_vars, self.prune(iclauses) return only SAT instance
+            # yield only SAT instance
+            # yield n_vars, self.prune(iclauses)
 
             iclauses[-1] = iclause_sat
             yield n_vars, self.prune(iclauses)
 
-    def __prepare_data(self, clauses, batched_clauses, adj_indices_pos, adj_indices_neg, variable_count,
-                       clauses_in_formula, cells_in_formula):
-        dense_shape = tf.cast(tf.stack([variable_count, batched_clauses.shape[0]]), tf.int64)
+    def __prepare_data(self, data):
+        dense_shape = tf.stack([tf.reduce_sum(data["variable_count"]), tf.reduce_sum(data["clauses_in_formula"])])
 
-        return {"adjacency_matrix_pos": self.create_adjacency_matrix(adj_indices_pos, dense_shape),
-                "adjacency_matrix_neg": self.create_adjacency_matrix(adj_indices_neg, dense_shape),
-                "clauses": tf.cast(batched_clauses, tf.int32),
-                "variable_count": variable_count,
-                "normal_clauses": clauses
+        return {"adjacency_matrix_pos": self.create_adjacency_matrix(data["adj_indices_pos"], dense_shape),
+                "adjacency_matrix_neg": self.create_adjacency_matrix(data["adj_indices_neg"], dense_shape),
+                "clauses": tf.cast(data["batched_clauses"], tf.int32),
+                "variable_count": data["variable_count"],
+                "normal_clauses": data["clauses"]
                 }
 
     @staticmethod

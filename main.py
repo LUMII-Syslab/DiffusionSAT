@@ -14,7 +14,7 @@ from utils.measure import Timer
 
 def main():
     model = ModelRegistry().resolve(Config.model)()
-    dataset = DatasetRegistry().resolve(Config.task)()
+    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir, force_data_gen=Config.force_data_gen)
 
     # optimizer = tfa.optimizers.RectifiedAdam(config.learning_rate,
     #                                          total_steps=config.train_steps,

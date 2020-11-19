@@ -4,7 +4,6 @@ from pathlib import Path
 
 import tensorflow as tf
 
-from config import Config
 from data.dataset import Dataset
 
 
@@ -16,6 +15,10 @@ DATA_FILE_NAME = "feature_data.tfrecord"
 
 
 class DIMACDataset(Dataset):
+
+    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
+        self.data_dir = Path(data_dir) / self.__class__.__name__
+        self.force_data_gen = force_data_gen
 
     @abstractmethod
     def dimacs_generator(self) -> tuple:
@@ -34,19 +37,27 @@ class DIMACDataset(Dataset):
         pass
 
     def train_data(self) -> tf.data.Dataset:
-        data_folder = Path(Config.data_dir) / self.__class__.__name__ / 'train'
+        data_folder = self.data_dir / 'train'
         self.generate_data(data_folder)
         data = self.read_dataset(data_folder)
-        return self.prepare_dataset(data)
+        data = self.prepare_dataset(data)
+        data = data.shuffle(10000)  # TODO: Shuffle size in config
+        data = data.repeat()
+        data = data.prefetch(10000)
+        return data
 
     def validation_data(self) -> tf.data.Dataset:
-        data_folder = Path(Config.data_dir) / self.__class__.__name__ / 'validation'
+        data_folder = self.data_dir / 'validation'
         self.generate_data(data_folder)
         data = self.read_dataset(data_folder)
-        return self.prepare_dataset(data)
+        data = self.prepare_dataset(data)  # type: tf.data.Dataset
+        data = data.shuffle(10000)  # TODO: Shuffle size in config
+        data = data.repeat()
+        data = data.prefetch(10000)
+        return data
 
     def test_data(self) -> tf.data.Dataset:
-        data_folder = Path(Config.data_dir) / self.__class__.__name__ / 'test'
+        data_folder = self.data_dir / 'test'
         self.generate_data(data_folder)
         data = self.read_dataset(data_folder)
         return self.prepare_dataset(data)
@@ -57,18 +68,17 @@ class DIMACDataset(Dataset):
         return data.map(lambda rec: self.feature_from_file(rec), tf.data.experimental.AUTOTUNE)
 
     def generate_data(self, folder: Path):
-        if Config.force_data_gen and folder.exists():
+        if self.force_data_gen and folder.exists():
             shutil.rmtree(folder)
 
         if not folder.exists():
             self.write_dimacs_to_file(folder)
             self.dimac_to_data(folder)
 
-    @abstractmethod
     def write_dimacs_to_file(self, folder: Path):
         output_folder = folder / "dimacs"
 
-        if Config.force_data_gen and output_folder.exists():
+        if self.force_data_gen and output_folder.exists():
             shutil.rmtree(output_folder)
 
         if output_folder.exists():
@@ -102,7 +112,6 @@ class DIMACDataset(Dataset):
     def shift_clause(self, clauses, offset):
         return [[self.shift_variable(x, offset) for x in c] for c in clauses]
 
-    @abstractmethod
     def dimac_to_data(self, folder: Path):
         dimacs = folder / "dimacs"
 
@@ -159,8 +168,6 @@ class DIMACDataset(Dataset):
 
         adj_indices_pos, adj_indices_neg = self.compute_adj_indices(batched_clauses)
 
-        print(original_clauses)
-
         clauses_len_first = [len(c) for c in original_clauses]
         clauses_len_second = [len(x) for c in original_clauses for x in c]
         clauses = tf.train.Int64List(value=self.flatten(self.flatten(original_clauses)))
@@ -196,8 +203,17 @@ class DIMACDataset(Dataset):
 
     @staticmethod
     def compute_adj_indices(clauses):
-        adj_indices_pos = [[var - 1, idx] for idx, clause in enumerate(clauses) for var in clause if var > 0]
-        adj_indices_neg = [[abs(var) - 1, idx] for idx, clause in enumerate(clauses) for var in clause if var < 0]
+        adj_indices_pos = []
+        adj_indices_neg = []
+
+        for clause_id, clause in enumerate(clauses):
+            for var in clause:
+                if var > 0:
+                    adj_indices_pos.append([var - 1, clause_id])
+                elif var < 0:
+                    adj_indices_neg.append([abs(var) - 1, clause_id])
+                else:
+                    raise ValueError("Variable can't be 0 in the DIMAC format!")
 
         return adj_indices_pos, adj_indices_neg
 
@@ -250,14 +266,14 @@ class DIMACDataset(Dataset):
         clauses_in_formula = tf.sparse.to_dense(parsed['clauses_in_formula'])
         cells_in_formula = tf.sparse.to_dense(parsed['cells_in_formula'])
 
-        output = (
-            parsed['clauses'],
-            parsed['batched_clauses'],
-            adj_indices_pos,
-            adj_indices_neg,
-            variable_count,
-            clauses_in_formula,
-            cells_in_formula
-        )
+        output = {
+            "clauses": parsed['clauses'],
+            "batched_clauses": parsed['batched_clauses'],
+            "adj_indices_pos": adj_indices_pos,
+            "adj_indices_neg": adj_indices_neg,
+            "variable_count": variable_count,
+            "clauses_in_formula": clauses_in_formula,
+            "cells_in_formula": cells_in_formula
+        }
 
         return output
