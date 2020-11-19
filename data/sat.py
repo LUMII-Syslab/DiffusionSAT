@@ -109,16 +109,17 @@ class RandomKSAT(Dataset):
         loss = 0.0
         weight = 1.
         last_weight = 1.
-        n_steps = tf.shape(predictions)[0]
-        increment = (last_weight - weight) / tf.cast(n_steps, tf.float32)
+        step_count = tf.shape(predictions)[0]
+        step_count = tf.cast(step_count, dtype=tf.float32)
+        increment = (last_weight - weight) / tf.cast(step_count, tf.float32)
+
         for logits in predictions:  # TODO: Rewrite this without loop
             per_clause = softplus_log_square_loss(logits, clauses)
             loss += tf.reduce_sum(per_clause) * weight
             weight += increment
 
-        step_count = tf.shape(predictions)[0]
-        step_count = tf.cast(step_count, dtype=tf.float32)
-        return loss / step_count
+        #return loss / step_count
+        return loss / 16 # should be better with dynamic step count
 
     def filter_loss_inputs(self, step_data) -> dict:
         return {"clauses": step_data["clauses"]}

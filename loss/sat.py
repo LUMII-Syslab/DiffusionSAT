@@ -26,6 +26,30 @@ def sigmoid_log_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, 
     varsum = tf.math.unsorted_segment_prod(inverse_vars, clauses_mask, clauses.nrows())
     return -(tf.math.log(1 - varsum + eps) - tf.math.log(1 + eps))
 
+def unsat_clause_count(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor):
+    """
+    :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
+    :param clauses: RaggedTensor of input clauses in DIMAC format
+    :return: returns the number of not satisfied clauses. Calculated using rounded variables.
+    """
+    clauses_split = clauses.row_lengths()
+    flat_clauses = clauses.flat_values
+    clauses_mask = tf.repeat(tf.range(0, clauses.nrows()), clauses_split)
+
+    variables = tf.round(tf.sigmoid(variable_predictions))
+
+    clauses_index = tf.abs(flat_clauses) - 1  # Just star indexing from 0. DIMACS standard start variables from 1
+    vars = tf.gather(variables, clauses_index)  # Gather clauses of variables
+
+    # Inverse in form (1 - x) for positive clause literal and x for negative
+    float_clauses = tf.cast(flat_clauses, tf.float32)
+    vars = vars * tf.expand_dims(tf.sign(float_clauses), axis=-1)
+    inverse_vars = tf.expand_dims(tf.clip_by_value(float_clauses, 0, 1), axis=-1) - vars
+
+    # multiply all values in a clause together, satisfied clause is of value 0
+    varsum = tf.math.unsorted_segment_prod(inverse_vars, clauses_mask, clauses.nrows())
+    return tf.math.reduce_sum(varsum) # count not satisfied ones
+
 
 def softplus_log_square_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
     return tf.square(softplus_log_loss(variable_predictions, clauses, eps))
