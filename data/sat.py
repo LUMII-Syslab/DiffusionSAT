@@ -13,7 +13,7 @@ from mk_problem import Problem
 
 class RandomKSAT(Dataset):
 
-    def __init__(self) -> None:
+    def __init__(self, **kwargs) -> None:
         train_dir = 'data_files/train/sr5'
         test_dir = 'data_files/test/sr5'
 
