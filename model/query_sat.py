@@ -16,7 +16,7 @@ class QuerySAT(Model):
         self.variables_norm = LayerNormalization(axis=-1)
         self.clauses_norm = LayerNormalization(axis=-1)
 
-        self.update_gate = MLP(vote_layers, feature_maps, feature_maps, name="update_gate")
+        self.update_gate = MLP(vote_layers, feature_maps * 2, feature_maps, name="update_gate")
 
         # self.forget_gate = MLP(msg_layers, feature_maps, feature_maps,
         #                        out_activation=tf.sigmoid,
@@ -25,10 +25,11 @@ class QuerySAT(Model):
 
         self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output")
         self.variables_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query")
-        self.clause_update = MLP(vote_layers, feature_maps, feature_maps, name="clause_update")
+        #self.clause_update = MLP(vote_layers, feature_maps * 2, feature_maps, name="clause_update")
         #self.clause_update_gate = MLP(vote_layers, feature_maps, feature_maps, out_activation = tf.sigmoid, out_bias = -1, name="clause_update_gate")
-        self.query_pos_inter = MLP(msg_layers, query_maps * 2, query_maps, name="query_pos_inter")
-        self.query_neg_inter = MLP(msg_layers, query_maps * 2, query_maps, name="query_neg_inter")
+        #self.query_pos_inter = MLP(msg_layers, query_maps * 2, query_maps, name="query_pos_inter")
+        #self.query_neg_inter = MLP(msg_layers, query_maps * 2, query_maps, name="query_neg_inter")
+        self.clause_mlp = MLP(vote_layers, feature_maps * 3, feature_maps + 2*query_maps, name="clause_update")
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -70,17 +71,22 @@ class QuerySAT(Model):
 
             # Aggregate loss over positive edges (x)
             clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
-            variables_loss_pos = self.query_pos_inter(clause_unit)
+            clause_data = self.clause_mlp(clause_unit)
+            variables_loss_pos = clause_data[:,0:self.query_maps]
+            variables_loss_neg = clause_data[:, self.query_maps:2*self.query_maps]
+            new_clause_value = clause_data[:, 2 * self.query_maps:]
+            #variables_loss_pos = self.query_pos_inter(clause_unit)
             variables_loss_pos = tf.sparse.sparse_dense_matmul(adj_matrix_pos, variables_loss_pos)
 
             # Aggregate loss over negative edges (not x)
-            variables_loss_neg = self.query_neg_inter(clause_unit)
+            #variables_loss_neg = self.query_neg_inter(clause_unit)
             variables_loss_neg = tf.sparse.sparse_dense_matmul(adj_matrix_neg, variables_loss_neg)
-            new_clause_value = self.clause_update(clause_unit)
+            #new_clause_value = self.clause_update(clause_unit)
             new_clause_value = self.clauses_norm(new_clause_value, training=training)*0.25
             #new_clause_gate = self.clause_update_gate(clause_unit)
             #tf.summary.histogram("clause_gate" + str(step), new_clause_gate)
-            clause_state = new_clause_value#(1 - new_clause_gate) * clause_state + new_clause_gate * new_clause_value
+            #clause_state = (1 - new_clause_gate) * clause_state + new_clause_gate * new_clause_value
+            clause_state = new_clause_value# + 0.1*clause_state
 
 
             unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
@@ -90,7 +96,8 @@ class QuerySAT(Model):
             new_variables = self.variables_norm(new_variables, training=training)*0.25  # TODO: Rethink normalization
             #tf.summary.histogram("gate" + str(step), forget_gate)
 
-            variables = new_variables#(1 - forget_gate) * variables + forget_gate * new_variables
+            #variables = (1 - forget_gate) * variables + forget_gate * new_variables
+            variables = new_variables# + 0.1*variables
 
             logits = self.variables_output(variables)
             step_logits = step_logits.write(step, logits)
