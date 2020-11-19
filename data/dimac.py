@@ -93,7 +93,7 @@ class DIMACDataset(Dataset):
             file = [f"p cnf {n_vars} {len(clauses)}"]
             file += [f"{' '.join(c)} 0" for c in clauses]
 
-            out_filename = output_folder / f"formula_{n_vars}_{len(clauses)}_{idx}.dimacs"
+            out_filename = output_folder / f"sat_{n_vars}_{len(clauses)}_{idx}.dimacs"
             with open(out_filename, 'w') as f:
                 f.write('\n'.join(file))
 

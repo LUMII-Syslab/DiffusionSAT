@@ -51,7 +51,7 @@ class Config:
 
         config_parser.add_argument('--train_steps', type=int, default=cls.train_steps)
         config_parser.add_argument('--warmup', type=float, default=cls.warmup)
-        config_parser.add_argument('--learning_rate', type=float, default=cls.warmup)
+        config_parser.add_argument('--learning_rate', type=float, default=cls.learning_rate)
 
         config_parser.add_argument('--model', type=str, default=cls.model, const=cls.model, nargs='?',
                                    choices=ModelRegistry().registered_names)
