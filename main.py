@@ -20,7 +20,7 @@ def main():
     #                                          total_steps=config.train_steps,
     #                                          warmup_proportion=config.warmup)
     # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
-    optimizer = AdaBeliefOptimizer(config.learning_rate, clip_gradients=True)
+    optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.5, clip_gradients=True)
     optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
 
     train(dataset, model, optimizer)
