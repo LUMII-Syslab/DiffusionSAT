@@ -1,8 +1,7 @@
 from abc import abstractmethod
 
-from data.k_sat import RandomKSAT
+from data.k_sat import KSATVariables, KSATLiterals
 from data.tsp import EuclideanTSP
-from model.feedforward_sat import FeedForwardSAT
 from model.matrix_se import MatrixSE
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
@@ -33,7 +32,6 @@ class ModelRegistry(Registry):
         return {
             "query_sat": QuerySAT,
             "neuro_sat": NeuroSAT,
-            "feedforward_sat": FeedForwardSAT,
             "matrix_se": MatrixSE
         }
 
@@ -43,6 +41,7 @@ class DatasetRegistry(Registry):
     @property
     def registry(self) -> dict:
         return {
-            "random_k_sat": RandomKSAT,
+            "k_sat_variables": KSATVariables,
+            "k_sat_literals": KSATLiterals,
             "euclidean_tsp": EuclideanTSP
         }

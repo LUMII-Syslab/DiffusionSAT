@@ -9,10 +9,10 @@ from data.dimac import DIMACDataset
 from loss.sat import softplus_log_square_loss
 
 
-class RandomKSAT(DIMACDataset):
+class KSATVariables(DIMACDataset):
 
     def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
-        super(RandomKSAT, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+        super(KSATVariables, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000
         self.test_size = 3000
         self.min_vars = 3
@@ -67,16 +67,17 @@ class RandomKSAT(DIMACDataset):
     def remove_duplicate_clauses(clauses):
         return list({tuple(sorted(x)) for x in clauses})
 
-    def __prepare_data(self, data):
+    def create_adj_matrices(self, data):
         dense_shape = tf.stack([tf.reduce_sum(data["variable_count"]), tf.reduce_sum(data["clauses_in_formula"])])
         dense_shape = tf.cast(dense_shape, tf.int64)
 
-        return {"adjacency_matrix_pos": self.create_adjacency_matrix(data["adj_indices_pos"], dense_shape),
-                "adjacency_matrix_neg": self.create_adjacency_matrix(data["adj_indices_neg"], dense_shape),
-                "clauses": tf.cast(data["batched_clauses"], tf.int32),
-                "variable_count": data["variable_count"],
-                "normal_clauses": data["clauses"]
-                }
+        return {
+            "adjacency_matrix_pos": self.create_adjacency_matrix(data["adj_indices_pos"], dense_shape),
+            "adjacency_matrix_neg": self.create_adjacency_matrix(data["adj_indices_neg"], dense_shape),
+            "clauses": tf.cast(data["batched_clauses"], tf.int32),
+            "variable_count": data["variable_count"],
+            "normal_clauses": data["clauses"]
+        }
 
     @staticmethod
     def create_adjacency_matrix(indices, dense_shape):
@@ -85,7 +86,7 @@ class RandomKSAT(DIMACDataset):
                                       dense_shape=dense_shape)
 
     def prepare_dataset(self, dataset: tf.data.Dataset):
-        return dataset.map(self.__prepare_data, tf.data.experimental.AUTOTUNE)
+        return dataset.map(self.create_adj_matrices, tf.data.experimental.AUTOTUNE)
 
     @tf.function(input_signature=[tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
@@ -104,9 +105,11 @@ class RandomKSAT(DIMACDataset):
         return {"clauses": step_data["clauses"]}
 
     def filter_model_inputs(self, step_data) -> dict:  # TODO: Not good because dataset needs to know about model
-        return {"adj_matrix_pos": step_data["adjacency_matrix_pos"],
-                "adj_matrix_neg": step_data["adjacency_matrix_neg"],
-                "clauses": step_data["clauses"]}
+        return {
+            "adj_matrix_pos": step_data["adjacency_matrix_pos"],
+            "adj_matrix_neg": step_data["adjacency_matrix_neg"],
+            "clauses": step_data["clauses"]
+        }
 
     @tf.function(input_signature=[tf.TensorSpec(shape=[None, None, 1], dtype=tf.float32)],
                  experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
@@ -153,3 +156,39 @@ class RandomKSAT(DIMACDataset):
             total = prediction.shape[0]
 
         return correct / total, 1 if correct_pred else 0
+
+
+class KSATLiterals(KSATVariables):
+
+    def create_adj_matrices(self, data):
+        var_count = tf.reduce_sum(data["variable_count"])
+        neg = data["adj_indices_neg"]
+
+        shape = [tf.shape(neg)[0], 1]
+
+        offset = tf.ones(shape, dtype=tf.int32) * var_count
+        zeros = tf.zeros(shape, dtype=tf.int32)
+        offset = tf.concat([offset, zeros], axis=-1)
+        offset = tf.cast(offset, tf.int64)
+        neg = neg + offset
+
+        dense_shape = tf.stack([var_count * 2, tf.reduce_sum(data["clauses_in_formula"])])
+        dense_shape = tf.cast(dense_shape, tf.int64)
+
+        adj = tf.concat([data["adj_indices_pos"], neg], axis=0)
+
+        return {
+            "adjacency_matrix": self.create_adjacency_matrix(adj, dense_shape),
+            "clauses": tf.cast(data["batched_clauses"], tf.int32),
+            "variable_count": data["variable_count"],
+            "normal_clauses": data["clauses"]
+        }
+
+    def filter_loss_inputs(self, step_data) -> dict:
+        return {"clauses": step_data["clauses"]}
+
+    def filter_model_inputs(self, step_data) -> dict:  # TODO: Not good because dataset needs to know about model
+        return {
+            "adj_matrix": step_data["adjacency_matrix"],
+            "clauses": step_data["clauses"]
+        }
