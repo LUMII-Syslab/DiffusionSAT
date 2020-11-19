@@ -99,7 +99,7 @@ class KSATVariables(DIMACDataset):
 
         step_count = tf.shape(predictions)[0]
         step_count = tf.cast(step_count, dtype=tf.float32)
-        return loss / step_count
+        return loss / 16 # 16 = query_sat total rounds
 
     def filter_loss_inputs(self, step_data) -> dict:
         return {"clauses": step_data["clauses"]}
