@@ -146,14 +146,21 @@ class DIMACDataset(Dataset):
         if not data_folder.exists():
             data_folder.mkdir(parents=True)
 
+        dataset_id = 0
+        dataset_filename = data_folder / f"data_{dataset_id}.tfrecord"
+        batches_in_file = 200
+        tfwriter = tf.io.TFRecordWriter(str(dataset_filename), options)
+
         for idx, batch in enumerate(batches):
             batch_data = self.prepare_example(batch)
-            batch_file = data_folder / f"batch_{idx}.tfrecord"
-            with tf.io.TFRecordWriter(str(batch_file), options) as tfwriter:
-                tfwriter.write(batch_data.SerializeToString())
-
-            if idx % 50 == 0:
+            tfwriter.write(batch_data.SerializeToString())
+            if idx % batches_in_file == 0:
                 print(f"{idx} batches ready...")
+                tfwriter.flush()
+                tfwriter.close()
+                dataset_id += 1
+                dataset_filename = data_folder / f"data_{dataset_id}.tfrecord"
+                tfwriter = tf.io.TFRecordWriter(str(dataset_filename), options)
 
         print(f"Created {len(batches)} data batches in {data_folder}...\n")
 
