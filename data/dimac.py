@@ -232,7 +232,8 @@ class DIMACDataset(Dataset):
         if current_batch:
             batches.append(current_batch)
 
-        return random.shuffle(batches)
+        random.shuffle(batches)
+        return batches
 
     @tf.function
     def feature_from_file(self, data_record):
