@@ -1,3 +1,4 @@
+import random
 import shutil
 from abc import abstractmethod
 from pathlib import Path
@@ -231,7 +232,7 @@ class DIMACDataset(Dataset):
         if current_batch:
             batches.append(current_batch)
 
-        return batches
+        return random.shuffle(batches)
 
     @tf.function
     def feature_from_file(self, data_record):
