@@ -49,7 +49,8 @@ class QuerySAT(Model):
         n_vars = shape[0]
         n_clauses = shape[1]
 
-        #variables = tf.random.truncated_normal([n_vars, self.feature_maps], stddev=0.25)
+        #variables = tf.random.truncated_normal([n_vars, self.feature_maps], stddev=0.025)
+        #clause_state = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
         variables = self.zero_state(n_vars, self.feature_maps)
         clause_state = self.zero_state(n_clauses, self.feature_maps)
         step_logits = tf.TensorArray(tf.float32, size=0, dynamic_size = True, clear_after_read=True)
@@ -58,8 +59,8 @@ class QuerySAT(Model):
         for step in tf.range(self.rounds):
             with tf.GradientTape() as grad_tape:
                 grad_tape.watch(variables)
-                #v1 = tf.concat([variables, tf.random.normal([n_vars, self.query_maps])], axis=-1)
-                query = self.variables_query(variables)
+                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
+                query = self.variables_query(v1)
                 clauses_loss = softplus_loss(query, clauses)
                 step_loss = tf.reduce_sum(clauses_loss)
             variables_grad = grad_tape.gradient(step_loss, query)
