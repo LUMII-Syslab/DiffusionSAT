@@ -5,6 +5,7 @@ from data.tsp import EuclideanTSP
 from model.matrix_se import MatrixSE
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
+from data.CNFGen import SAT_3
 
 
 class Registry:
@@ -43,5 +44,6 @@ class DatasetRegistry(Registry):
         return {
             "k_sat_variables": KSATVariables,
             "k_sat_literals": KSATLiterals,
+            "3-sat":SAT_3,
             "euclidean_tsp": EuclideanTSP
         }
