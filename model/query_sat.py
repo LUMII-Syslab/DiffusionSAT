@@ -2,14 +2,14 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 
 from layers.layer_normalization import LayerNormalization
-from loss.sat import softplus_loss, softplus_log_square_loss
+from loss.sat import softplus_loss, softplus_log_square_loss, unsat_clause_count
 from model.mlp import MLP
 from utils.summary import log_as_histogram
 
 
 class QuerySAT(Model):
 
-    def __init__(self, feature_maps=256, msg_layers=3, vote_layers=3, rounds=16, query_maps = 64, **kwargs):
+    def __init__(self, feature_maps=256, msg_layers=3, vote_layers=3, rounds=32, query_maps = 64, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.rounds = rounds
 
@@ -49,17 +49,18 @@ class QuerySAT(Model):
         n_vars = shape[0]
         n_clauses = shape[1]
 
-        #variables = tf.random.truncated_normal([n_vars, self.feature_maps], stddev=0.25)
+        #variables = tf.random.truncated_normal([n_vars, self.feature_maps], stddev=0.025)
+        #clause_state = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
         variables = self.zero_state(n_vars, self.feature_maps)
         clause_state = self.zero_state(n_clauses, self.feature_maps)
-        step_logits = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
-        step_losses = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
+        step_logits = tf.TensorArray(tf.float32, size=0, dynamic_size = True, clear_after_read=True)
+        step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size = True, clear_after_read=True)
 
         for step in tf.range(self.rounds):
             with tf.GradientTape() as grad_tape:
                 grad_tape.watch(variables)
-                #v1 = tf.concat([variables, tf.random.normal([n_vars, self.query_maps])], axis=-1)
-                query = self.variables_query(variables)
+                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
+                query = self.variables_query(v1)
                 clauses_loss = softplus_loss(query, clauses)
                 step_loss = tf.reduce_sum(clauses_loss)
             variables_grad = grad_tape.gradient(step_loss, query)
@@ -101,7 +102,11 @@ class QuerySAT(Model):
 
             logits = self.variables_output(variables)
             step_logits = step_logits.write(step, logits)
-            step_losses = step_losses.write(step, tf.reduce_sum(softplus_log_square_loss(logits, clauses)))
+            logit_loss = tf.reduce_sum(softplus_log_square_loss(logits, clauses))
+            step_losses = step_losses.write(step, logit_loss)
+            n_unsat_clauses = unsat_clause_count(logits, clauses)
+            #tf.summary.scalar("unsat_clauses" + str(step), n_unsat_clauses)
+            if logit_loss < 0.5 and n_unsat_clauses == 0: break
 
             # due to the loss at each level, gradients accumulate on the backward pass and may become very large for the first layers
             # reduce the gradient magnitude to remedy this
@@ -111,5 +116,7 @@ class QuerySAT(Model):
         step_logits_tensor = step_logits.stack()  # step_count x literal_count
         last_layer_loss = tf.reduce_sum(softplus_log_square_loss(step_logits_tensor[-1], clauses))
         tf.summary.scalar("last_layer_loss", last_layer_loss)
-        log_as_histogram("step_losses", step_losses.stack())
+        #log_as_histogram("step_losses", step_losses.stack())
+        tf.summary.scalar("steps_taken", step)
+        #todo: step_losses have already the total loss, no need to recalculate it again later
         return step_logits_tensor

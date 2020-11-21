@@ -5,7 +5,7 @@ import time
 import tensorflow as tf
 from tensorflow.keras import Model
 
-from config import config
+from config import Config
 from model_runner import ModelRunner
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
@@ -13,14 +13,14 @@ from utils.measure import Timer
 
 
 def main():
-    model = ModelRegistry().resolve(config.model)()
-    dataset = DatasetRegistry().resolve(config.task)()
+    model = ModelRegistry().resolve(Config.model)()
+    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir, force_data_gen=Config.force_data_gen)
 
     # optimizer = tfa.optimizers.RectifiedAdam(config.learning_rate,
     #                                          total_steps=config.train_steps,
     #                                          warmup_proportion=config.warmup)
     # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
-    optimizer = AdaBeliefOptimizer(config.learning_rate, beta_1 = 0.5, clip_gradients=True)
+    optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.5, clip_gradients=True)
     optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
 
     train(dataset, model, optimizer)
@@ -28,7 +28,7 @@ def main():
 
 
 def train(dataset, model: Model, optimizer):
-    writer = tf.summary.create_file_writer(config.train_dir)
+    writer = tf.summary.create_file_writer(Config.train_dir)
     writer.set_as_default()
     ckpt, manager, runner = prepare_model(dataset, model, optimizer)
 
@@ -39,7 +39,7 @@ def train(dataset, model: Model, optimizer):
 
     # runner.print_summary([x for x in itertools.islice(train_data, 1)][0])
     # TODO: Check against step in checkpoint
-    for step_data in itertools.islice(train_data, config.train_steps + 1):
+    for step_data in itertools.islice(train_data, Config.train_steps + 1):
         tf.summary.experimental.set_step(ckpt.step)
         loss, gradients = runner.train_step(step_data)
 
@@ -83,7 +83,7 @@ def train(dataset, model: Model, optimizer):
 
 def prepare_model(dataset, model, optimizer):
     ckpt = tf.train.Checkpoint(step=tf.Variable(0, dtype=tf.int64), optimizer=optimizer, model=model)
-    manager = tf.train.CheckpointManager(ckpt, config.train_dir, max_to_keep=config.ckpt_count)
+    manager = tf.train.CheckpointManager(ckpt, Config.train_dir, max_to_keep=Config.ckpt_count)
 
     ckpt.restore(manager.latest_checkpoint)
     if manager.latest_checkpoint:
@@ -125,18 +125,16 @@ def test(dataset, model, optimizer):
 
 
 if __name__ == '__main__':
-    global config
-    config = config.parse_args()
+    config = Config.parse_config()
+    tf.config.run_functions_eagerly(Config.eager)
 
-    tf.config.run_functions_eagerly(config.eager)
-
-    if config.restore:
-        print(f"Restoring model from last checkpoint in '{config.restore}'!")
-        config.train_dir = config.restore
+    if Config.restore:
+        print(f"Restoring model from last checkpoint in '{Config.restore}'!")
+        Config.train_dir = Config.restore
     else:
         current_date = time.strftime("%y_%m_%d_%T", time.gmtime(time.time()))
-        label = "_" + config.label if config.label else ""
-        config.train_dir = config.train_dir + "/" + config.task + "_" + current_date + label
+        label = "_" + Config.label if Config.label else ""
+        Config.train_dir = Config.train_dir + "/" + Config.task + "_" + current_date + label
 
     main()
 
