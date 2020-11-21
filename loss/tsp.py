@@ -1,8 +1,5 @@
-import copy
-
 import tensorflow as tf
-from scipy.sparse import lil_matrix
-from scipy.sparse.csgraph._traversal import connected_components
+from loss.tsp_ineq import ineq
 
 
 def sample_logistic(shape, eps=1e-20):
@@ -36,63 +33,13 @@ def tsp_loss(predictions, adjacency_matrix, noise=0):
     x = x / (tf.reduce_sum(x, 2, keepdims=True) + 1e-10)
     cost1 = tf.reduce_mean(x * graph)  # minimizējamais vienādojums
 
-    AA = []
-    x2 = copy.deepcopy(x.numpy())  # TODO(@Elīza): I believe we can live without deepcopy and numpy if tenor is used
-    # TODO(@Elīza): Optimize this, can something be cached or precomputed, can we parallelize it along batch dimension?
-    for g in range(len(x2)):
-        graph = x2[g]
-        G = []  # G* - sakārto šķautnes pēc svariem
-        for i in range(node_count):
-            for j in range(node_count):
-                G.append((graph[i][j] + graph[j][i], (i, j)))
-        G.sort(reverse=True)
-
-        ind = []
-        cnt = 0
-        F = lil_matrix((node_count, node_count))
-        for edge in G:  # šis notiks O(n) reizes
-            i = edge[1][0]  # šķautnes virsotnes
-            j = edge[1][1]
-            C = connected_components(F)[1]  # F grafa komponentes
-            if C[i] != C[j]:  # ja šķautne pieder dažādām F komponentēm
-                F[i, j] = 1  # pievieno šķautni F grafam
-                F[j, i] = 1  # abos virzienos?
-                S = {i, j}  # S kopai pievieno visas virsotnes no tās F komponentes, kurā ir edge
-
-                for k in range(len(C)):
-                    if k != i and k != j and (C[k] == C[i] or C[k] == C[j]):
-                        S.add(k)
-
-                if len(S) == node_count:
-                    break
-
-                sum = 0
-                ind_tmp = []
-                for i in range(node_count):
-                    for j in range(node_count):
-                        if (i in S and j not in S) or (j in S and i not in S):
-                            sum += graph[i][j]
-                            ind_tmp.append([cnt, node_count * i + j])
-
-                if sum < 2:
-                    ind.extend(ind_tmp)
-                    cnt += 1
-
-        if cnt != 0:
-            adj_matrix = tf.SparseTensor(values=[1.] * len(ind), indices=ind,
-                                         dense_shape=[cnt, node_count * node_count])
-            AA.append([g, adj_matrix])
-
-    cost4 = 0.
+    inequalities = ineq(x)
     x = tf.reshape(x, (batch_size, node_count * node_count, 1))
-    for (nr, adj_matrix) in AA:
-        tmp = tf.sparse.sparse_dense_matmul(adj_matrix, x[nr])
-        cost4 += tf.reduce_sum(2. - tmp) / tf.cast(batch_size, dtype=tf.float32)  # ņem summu visiem viena grafa pārkāpumiem
 
-    # multiplied_dims = []
-    # for i in range(x.shape[-1]):
-    #     multiplied_dims.append(tf.expand_dims(tf.sparse.reduce_sum(A * x[:, :, i][:, None, :], axis=-1), -1))
-    # result = tf.concat(multiplied_dims, -1)
+    cost4 = 0
+    for inequality in inequalities:
+        tmp = tf.sparse.sparse_dense_matmul(inequality[1], x[inequality[0]])
+        cost4 += tf.reduce_sum(tf.pow(2 - tmp, 2)) / tf.cast(batch_size, tf.float32)
 
     cost4 *= 0.05
     # print(cost1.numpy()*5, cost2.numpy(), cost3.numpy(), cost4.numpy())

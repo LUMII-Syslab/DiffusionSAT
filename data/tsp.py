@@ -33,6 +33,8 @@ class EuclideanTSP(Dataset):
                     graph[i][j] = math.sqrt(
                         (coords[u][i][0] - coords[u][j][0]) ** 2 + (coords[u][i][1] - coords[u][j][1]) ** 2)
             graphs.append(graph.tolist())
+
+
         # # random attālumi:
         # graphs = np.random.rand(count, n, n)
         # for i in range(count):

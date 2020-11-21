@@ -38,7 +38,6 @@ def train(dataset, model: Model, optimizer):
     train_data = dataset.train_data()
 
     # runner.print_summary([x for x in itertools.islice(train_data, 1)][0])
-
     # TODO: Check against step in checkpoint
     for step_data in itertools.islice(train_data, config.train_steps + 1):
         tf.summary.experimental.set_step(ckpt.step)
@@ -140,3 +139,4 @@ if __name__ == '__main__':
         config.train_dir = config.train_dir + "/" + config.task + "_" + current_date + label
 
     main()
+
