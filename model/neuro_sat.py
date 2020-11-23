@@ -49,7 +49,8 @@ class NeuroSAT(Model):
             CL_pre_msgs = self.CL_msg(c_state[0])
             CL_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, CL_pre_msgs)
 
-            _, l_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(l_state[0], n_vars)], axis=1), states=l_state)
+            _, l_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(l_state[0], n_vars)], axis=1),
+                                       states=l_state)
 
         literals = l_state[0]
 
