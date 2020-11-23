@@ -1,10 +1,10 @@
 import copy
 import tensorflow as tf
 
-
+#TODO(@Elīza): šajā failā atstāt visu, kas nesaistās ar tensorflow
 def subtour_constraints(predictions_tensor):
     batch_size, node_count, *_ = tf.shape(predictions_tensor)
-    predictions = copy.deepcopy(predictions_tensor.numpy()) # TODO(@Elīza): I believe we can live without deepcopy and numpy if tenor is used
+    predictions = predictions_tensor.numpy()
 
     # TODO(@Elīza): Optimize this, can something be cached or precomputed, can we parallelize it along batch dimension?
 
