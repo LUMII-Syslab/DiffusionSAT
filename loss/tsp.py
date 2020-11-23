@@ -1,10 +1,10 @@
 import tensorflow as tf
-from loss.tsp_ineq import ineq
+from loss.tsp_cost_subtours import subtour_constraints
 
 
 def sample_logistic(shape, eps=1e-20):
-    U = tf.random.uniform(shape, minval=eps, maxval=1 - eps)
-    return tf.math.log(U / (1 - U))
+    sample = tf.random.uniform(shape, minval=eps, maxval=1 - eps)
+    return tf.math.log(sample / (1 - sample))
 
 
 def inverse_identity(size):
@@ -19,28 +19,26 @@ def tsp_loss(predictions, adjacency_matrix, noise=0):
     :return:
     """
 
-    # TODO(@Elīza): rename with meaningful variable names
     batch_size, node_count, *_ = tf.shape(predictions)
-    u = sample_logistic(shape=[batch_size, node_count, node_count])
     graph = tf.reshape(adjacency_matrix, shape=[batch_size, node_count, node_count])
 
-    x = tf.reshape(predictions, shape=[batch_size, node_count, node_count]) + u * noise
-    x = tf.sigmoid(x) * inverse_identity(node_count)  # ietver 1. nosacījumu
+    distribution = sample_logistic(shape=[batch_size, node_count, node_count])
+    predictions = tf.reshape(predictions, shape=[batch_size, node_count, node_count]) + distribution * noise
+    predictions = tf.sigmoid(predictions) * inverse_identity(node_count)
 
-    cost2 = tf.reduce_mean((1 - tf.reduce_sum(x, 1)) ** 2)  # 2. nosacījums
-    cost3 = tf.reduce_mean((1 - tf.reduce_sum(x, 2)) ** 2)  # 3. nosacījums
-    x = x / (tf.reduce_sum(x, 1, keepdims=True) + 1e-10)
-    x = x / (tf.reduce_sum(x, 2, keepdims=True) + 1e-10)
-    cost1 = tf.reduce_mean(x * graph)  # minimizējamais vienādojums
+    cost_incoming = tf.reduce_mean((1 - tf.reduce_sum(predictions, 1)) ** 2)
+    cost_outgoing = tf.reduce_mean((1 - tf.reduce_sum(predictions, 2)) ** 2)
+    predictions = predictions / (tf.reduce_sum(predictions, 1, keepdims=True) + 1e-10)
+    predictions = predictions / (tf.reduce_sum(predictions, 2, keepdims=True) + 1e-10)
+    cost_length = tf.reduce_mean(predictions * graph)
 
-    inequalities = ineq(x)
-    x = tf.reshape(x, (batch_size, node_count * node_count, 1))
+    cost_subtours = 0
+    subtours = subtour_constraints(predictions)
+    predictions = tf.reshape(predictions, (batch_size, node_count * node_count, 1))
 
-    cost4 = 0
-    for inequality in inequalities:
-        tmp = tf.sparse.sparse_dense_matmul(inequality[1], x[inequality[0]])
-        cost4 += tf.reduce_sum(tf.pow(2 - tmp, 2)) / tf.cast(batch_size, tf.float32)
+    for i, subtour in subtours:
+        tmp = tf.sparse.sparse_dense_matmul(subtour, predictions[i])
+        cost_subtours += tf.reduce_sum(tf.pow(2 - tmp, 2)) / tf.cast(batch_size, tf.float32)
 
-    cost4 *= 0.05
-    # print(cost1.numpy()*5, cost2.numpy(), cost3.numpy(), cost4.numpy())
-    return cost1 + cost2 + cost3 + cost4
+    cost_subtours *= 0.05
+    return cost_length + cost_incoming + cost_outgoing + cost_subtours

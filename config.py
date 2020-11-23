@@ -12,11 +12,11 @@ class Config:
     eager = False
 
     optimizer = 'radam'
-    train_steps = 300000
+    train_steps = 100000
     warmup = 0.0
     learning_rate = 0.0001
-    model = 'query_sat'
-    task = 'k_sat_variables'
+    model = 'matrix_se'
+    task = 'euclidean_tsp'
 
     restore = None
     label = ""

@@ -4,16 +4,15 @@ import numpy as np
 import tensorflow as tf
 
 from data.dataset import Dataset
-
 from loss.tsp import tsp_loss
 
 
 class EuclideanTSP(Dataset):
 
     # TODO(@Emīls): Move batch_size to config and add kwargs to datasets
-    def __init__(self, n=8, count=1500, batch_size=15, **kwargs) -> None:
-        self.n = n  # TODO(@Elīza): Meaningful names for variables
-        self.count = count
+    def __init__(self, n_vertices=8, dataset_size=1500, batch_size=15, **kwargs) -> None:
+        self.n_vertices = n_vertices
+        self.dataset_size = dataset_size
         self.batch_size = batch_size
 
     def train_data(self) -> tf.data.Dataset:
@@ -23,24 +22,17 @@ class EuclideanTSP(Dataset):
         return data
 
     def __generate_data(self) -> tf.data.Dataset:
-        # eiklīda attālumi
-        coords = np.random.rand(self.count, self.n, 2)  # punktu koordinātas
-        graphs = []
-        for u in range(self.count):
-            graph = np.empty(shape=(self.n, self.n))
-            for i in range(self.n):
-                for j in range(self.n):
-                    graph[i][j] = math.sqrt(
-                        (coords[u][i][0] - coords[u][j][0]) ** 2 + (coords[u][i][1] - coords[u][j][1]) ** 2)
-            graphs.append(graph.tolist())
+        coords = np.random.rand(self.dataset_size, self.n_vertices, 2)  # punktu koordinātas
+        adj_matrices = []
+        for k in range(self.dataset_size):
+            adj_matrix = np.empty(shape=(self.n_vertices, self.n_vertices))
+            for i in range(self.n_vertices):
+                for j in range(self.n_vertices):
+                    adj_matrix[i][j] = math.sqrt(
+                        (coords[k][i][0] - coords[k][j][0]) ** 2 + (coords[k][i][1] - coords[k][j][1]) ** 2)
+            adj_matrices.append(adj_matrix.tolist())
 
-
-        # # random attālumi:
-        # graphs = np.random.rand(count, n, n)
-        # for i in range(count):
-        #     for j in range(n):
-        #         graphs[i][j][j] = 0
-        data = tf.data.Dataset.from_tensor_slices({"adjacency_matrix": graphs, "coordinates:": coords})
+        data = tf.data.Dataset.from_tensor_slices({"adjacency_matrix": adj_matrices, "coordinates:": coords})
         data = data.batch(self.batch_size)
         return data
 
