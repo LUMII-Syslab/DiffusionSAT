@@ -17,6 +17,8 @@ def compute_adj_indices(clauses):
 
 
 class DIMACDataset(Dataset):
+    """ Base class for datasets that are based on DIMACS files.
+    """
 
     def __init__(self, data_dir, force_data_gen=False, max_nodes_per_batch=5000, shuffle_size=100, **kwargs) -> None:
         self.force_data_gen = force_data_gen

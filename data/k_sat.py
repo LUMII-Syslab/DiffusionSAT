@@ -9,6 +9,9 @@ from data.dimac import DIMACDataset
 
 
 class KSATVariables(DIMACDataset):
+    """ Dataset from NeuroSAT paper, just for variables. Dataset generates k-SAT
+    instances with variable count in [min_size, max_size].
+    """
 
     def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
         super(KSATVariables, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
@@ -137,7 +140,9 @@ class KSATVariables(DIMACDataset):
 
 
 class KSATLiterals(KSATVariables):
-
+    """ Dataset from NeuroSAT paper. Dataset generates k-SAT
+    instances with variable count in [min_size, max_size].
+    """
     def create_adj_matrices(self, data):
         var_count = tf.reduce_sum(data["variable_count"])
         neg = data["adj_indices_neg"]

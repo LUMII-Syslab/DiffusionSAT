@@ -4,6 +4,9 @@ import tensorflow as tf
 
 
 class Dataset(metaclass=ABCMeta):
+    """ Base dataset that other datasets must implement to be compliant
+    with training framework.
+    """
 
     @abstractmethod
     def train_data(self) -> tf.data.Dataset:
