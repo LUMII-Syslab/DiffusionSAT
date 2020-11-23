@@ -15,8 +15,8 @@ class NeuroSAT(Model):
         self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
         self.C_init = self.add_weight(name="C_init", shape=[1, feature_maps], initializer=init, trainable=True)
 
-        self.LC_msg = MLP(msg_layers, feature_maps, feature_maps, name="LC_msg")
-        self.CL_msg = MLP(msg_layers, feature_maps, feature_maps, name="CL_msg")
+        self.LC_msg = MLP(msg_layers, feature_maps, feature_maps, name="LC_msg", do_layer_norm=False)
+        self.CL_msg = MLP(msg_layers, feature_maps, feature_maps, name="CL_msg", do_layer_norm=False)
 
         self.L_update = LSTMCell(feature_maps, name="L_update")
         self.C_update = LSTMCell(feature_maps, name="C_update")
