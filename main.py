@@ -41,7 +41,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     train_data = dataset.train_data()
 
     # TODO: Check against step in checkpoint
-    for step_data in itertools.islice(train_data, Config.train_steps + 1):
+    for step_data in itertools.islice(train_data, Config.train_steps + 1):  # TODO: Here is slowdown, don't use islice
         tf.summary.experimental.set_step(ckpt.step)
 
         model_data = dataset.filter_model_inputs(step_data)

@@ -1,3 +1,4 @@
+from abc import abstractmethod
 from enum import Enum
 
 import numpy as np
@@ -9,7 +10,11 @@ import utils.shuffle as shuffle_utils
 from layers.layer_normalization import LayerNormalization
 
 
-class MatrixSE(tf.keras.Model):
+class MatrixSE(tf.keras.layers.Layer):
+    """
+    Generic version of Matrix-SE. Use it in model class and add loss and training functions.
+    For example see TSPMatrixSE.
+    """
 
     def __init__(self, feature_maps=64, output_features=1, block_count=1, **kwargs):
         super(MatrixSE, self).__init__(**kwargs)
@@ -17,7 +22,6 @@ class MatrixSE(tf.keras.Model):
         self.benes_blocks = [BenesBlock() for _ in range(block_count)]
         self.output_layer = Dense(output_features, name="output_layer")
 
-    @tf.function
     def call(self, inputs, training=None, mask=None):
         """
         :param inputs: tensor [batch_size, height, width, feature_maps], where height == width
