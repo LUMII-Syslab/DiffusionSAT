@@ -1,15 +1,17 @@
 import tensorflow as tf
 from tensorflow.keras.layers import LSTMCell
 from tensorflow.keras.models import Model
+from loss.sat import softplus_log_square_loss
 
 from model.mlp import MLP
 
 
 class NeuroSAT(Model):
 
-    def __init__(self, feature_maps=128, msg_layers=3, vote_layers=3, rounds=16, **kwargs):
+    def __init__(self, optimizer, feature_maps=128, msg_layers=3, vote_layers=3, rounds=16, **kwargs):
         super().__init__(**kwargs, name="NeuroSAT")
         self.rounds = rounds
+        self.optimizer = optimizer
 
         init = tf.initializers.RandomNormal()
         self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
@@ -26,10 +28,6 @@ class NeuroSAT(Model):
         self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
         self.feature_maps = feature_maps
 
-    @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
-                                  tf.TensorSpec(shape=(), dtype=tf.bool)],
-                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
     def call(self, adj_matrix, clauses=None, training=None, mask=None):
         shape = tf.shape(adj_matrix)  # inputs is sparse adjacency matrix
         n_lits = shape[0]
@@ -51,15 +49,41 @@ class NeuroSAT(Model):
             CL_pre_msgs = self.CL_msg(c_state[0])
             CL_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, CL_pre_msgs)
 
-            _, l_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(l_state[0], n_vars)], axis=1),
-                                       states=l_state)
+            _, l_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(l_state[0], n_vars)], axis=1), states=l_state)
 
         literals = l_state[0]
 
         variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
         logits = self.L_vote(variables)
-        return tf.expand_dims(logits, axis=[0])  # Size of n_vars
+        return logits
 
     @staticmethod
     def flip(literals, n_vars):
         return tf.concat([literals[n_vars:(2 * n_vars), :], literals[0:n_vars, :]], axis=0)
+
+    @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
+                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL
+                 )
+    def train_step(self, adj_matrix, clauses):
+        with tf.GradientTape() as tape:
+            logits = self.call(adj_matrix, clauses, training=True)
+            loss = tf.reduce_sum(softplus_log_square_loss(logits, clauses))
+            gradients = tape.gradient(loss, self.trainable_variables)
+            self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+
+        return {
+            "loss": loss,
+            "gradients": gradients
+        }
+
+    @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
+                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
+    def predict_step(self, adj_matrix, clauses):
+        predictions = self.call(adj_matrix, clauses, training=False)
+
+        return {
+            "loss": tf.reduce_sum(softplus_log_square_loss(predictions, clauses)),
+            "prediction": tf.squeeze(predictions, axis=-1)
+        }

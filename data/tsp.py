@@ -42,17 +42,8 @@ class EuclideanTSP(Dataset):
     def test_data(self) -> tf.data.Dataset:
         return self.test_data()
 
-    def loss(self, predictions, adj_matrix):
-        return tsp_loss(predictions, adj_matrix)
-
-    def filter_loss_inputs(self, step_data) -> dict:
-        return {"adj_matrix": step_data["adjacency_matrix"]}
-
     def filter_model_inputs(self, step_data) -> dict:
-        return {"inputs": step_data["adjacency_matrix"]}
-
-    def interpret_model_output(self, model_output) -> tf.Tensor:
-        return model_output
+        return {"adj_matrix": step_data["adjacency_matrix"]}
 
     def accuracy(self, predictions, step_data):
         return 0., 0.  # tuple: accuracy, total_accuracy
