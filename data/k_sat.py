@@ -87,7 +87,7 @@ class KSATVariables(DIMACDataset):
     def prepare_dataset(self, dataset: tf.data.Dataset):
         return dataset.map(self.create_adj_matrices, tf.data.experimental.AUTOTUNE)
 
-    def filter_model_inputs(self, step_data) -> dict:  # TODO: Not good because dataset needs to know about model
+    def filter_model_inputs(self, step_data) -> dict:
         return {
             "adj_matrix_pos": step_data["adjacency_matrix_pos"],
             "adj_matrix_neg": step_data["adjacency_matrix_neg"],
