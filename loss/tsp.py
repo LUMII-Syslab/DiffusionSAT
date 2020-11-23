@@ -26,10 +26,10 @@ def tsp_loss(predictions, adjacency_matrix, noise=0):
     predictions = tf.reshape(predictions, shape=[batch_size, node_count, node_count]) + distribution * noise
     predictions = tf.sigmoid(predictions) * inverse_identity(node_count)
 
-    cost_incoming = tf.reduce_mean((1 - tf.reduce_sum(predictions, 1)) ** 2)
-    cost_outgoing = tf.reduce_mean((1 - tf.reduce_sum(predictions, 2)) ** 2)
-    predictions = predictions / (tf.reduce_sum(predictions, 1, keepdims=True) + 1e-10)
-    predictions = predictions / (tf.reduce_sum(predictions, 2, keepdims=True) + 1e-10)
+    cost_incoming = tf.reduce_mean(tf.square(1 - tf.reduce_sum(predictions, 1)))
+    cost_outgoing = tf.reduce_mean(tf.square(1 - tf.reduce_sum(predictions, 2)))
+    predictions = predictions / (tf.reduce_sum(predictions, 1, keepdims=True) + 1e-6)
+    predictions = predictions / (tf.reduce_sum(predictions, 2, keepdims=True) + 1e-6)
     cost_length = tf.reduce_mean(predictions * graph)
 
     cost_subtours = 0
@@ -38,7 +38,7 @@ def tsp_loss(predictions, adjacency_matrix, noise=0):
 
     for i, subtour in subtours:
         tmp = tf.sparse.sparse_dense_matmul(subtour, predictions[i])
-        cost_subtours += tf.reduce_sum(tf.pow(2 - tmp, 2)) / tf.cast(batch_size, tf.float32)
+        cost_subtours += tf.reduce_sum(tf.square(2 - tmp)) / tf.cast(batch_size, tf.float32)
 
     cost_subtours *= 0.05
     return cost_length + cost_incoming + cost_outgoing + cost_subtours
