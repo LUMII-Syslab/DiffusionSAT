@@ -16,12 +16,11 @@ class MatrixSE(tf.keras.layers.Layer):
     For example see TSPMatrixSE.
     """
 
-    def __init__(self, feature_maps=64, output_features=1, block_count=1, **kwargs):
+    def __init__(self, block_count=1, **kwargs):
         super(MatrixSE, self).__init__(**kwargs)
-        self.input_layer = Dense(feature_maps, activation=tf.nn.relu, name="input_layer")
         self.benes_blocks = [BenesBlock() for _ in range(block_count)]
-        self.output_layer = Dense(output_features, name="output_layer")
 
+    @tf.function
     def call(self, inputs, training=None, mask=None):
         """
         :param inputs: tensor [batch_size, height, width, feature_maps], where height == width
@@ -31,15 +30,12 @@ class MatrixSE(tf.keras.layers.Layer):
         """
         input_shape = inputs.get_shape().as_list()
 
-        inputs = tf.expand_dims(inputs, axis=-1)
-        hidden = self.input_layer(inputs)
-
-        hidden = ZOrderFlatten()(hidden)
+        hidden = ZOrderFlatten()(inputs)
         for block in self.benes_blocks:
             hidden = block(hidden, training=training)
         hidden = ZOrderUnflatten()(hidden, width=input_shape[1], height=input_shape[2])
 
-        return self.output_layer(hidden)
+        return hidden
 
 
 class QuaternarySwitchUnit(tf.keras.layers.Layer):

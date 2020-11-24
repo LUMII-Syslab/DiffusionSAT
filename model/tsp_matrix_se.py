@@ -1,18 +1,25 @@
 from loss.tsp import tsp_loss
 from layers.matrix_se import MatrixSE
 import tensorflow as tf
+from tensorflow.keras.layers import Dense
 
 
 class TSPMatrixSE(tf.keras.Model):
 
-    def __init__(self, optimizer, feature_maps=64, output_features=1, block_count=1, **kwargs):
+    def __init__(self, optimizer, feature_maps = 64, block_count = 1, **kwargs):
         super(TSPMatrixSE, self).__init__(**kwargs)
         self.optimizer = optimizer
-        self.matrix_se = MatrixSE(feature_maps, output_features, block_count)
+        self.matrix_se = MatrixSE(block_count)
+        self.input_layer = Dense(feature_maps, activation=None, name="input_layer")
+        self.logits_layer = Dense(1, activation=None, name="logits_layer")
+
 
     @tf.function
     def call(self, inputs, training=None, mask=None):
-        return self.matrix_se(inputs, training=training)
+        state = self.input_layer(tf.expand_dims(inputs, -1))
+        state = self.matrix_se(state, training=training)
+        logits = self.logits_layer(state)
+        return logits
 
     def train_step(self, adj_matrix):
         with tf.GradientTape() as tape:
