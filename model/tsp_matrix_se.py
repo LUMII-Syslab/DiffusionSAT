@@ -21,10 +21,10 @@ class TSPMatrixSE(tf.keras.Model):
         logits = self.logits_layer(state)
         return logits
 
-    def train_step(self, adj_matrix):
+    def train_step(self, adj_matrix, coords):
         with tf.GradientTape() as tape:
             predictions = self.call(adj_matrix, training=True)
-            loss = tsp_loss(predictions, adj_matrix)
+            loss = tsp_loss(predictions, adj_matrix, coords)
             gradients = tape.gradient(loss, self.trainable_variables)
             self.optimize(gradients)
         return {
@@ -36,10 +36,10 @@ class TSPMatrixSE(tf.keras.Model):
     def optimize(self, gradients):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-    def predict_step(self, adj_matrix):
+    def predict_step(self, adj_matrix, coords):
         predictions = self.call(adj_matrix, training=False)
 
         return {
-            "loss": tsp_loss(predictions, adj_matrix),
+            "loss": tsp_loss(predictions, adj_matrix, coords),
             "prediction": tf.squeeze(predictions, axis=-1)
         }

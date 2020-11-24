@@ -1,4 +1,4 @@
-from loss.tsp import tsp_loss
+from loss.unsupervised_tsp import tsp_unsupervised_loss
 from layers.matrix_se import MatrixSE
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
@@ -24,7 +24,7 @@ class MultistepTSP(tf.keras.Model):
         for step in tf.range(self.rounds):
             state = self.matrix_se(state, training=training)
             logits = self.logits_layer(state)
-            loss = tsp_loss(logits, inputs)
+            loss = tsp_unsupervised_loss(logits, inputs)
             total_loss += loss
             last_loss = loss
 
