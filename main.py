@@ -1,36 +1,39 @@
 import itertools
 import time
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import tensorflow as tf
 from tensorflow.keras import Model
 
 from config import Config
-from model_runner import ModelRunner
+from data.dataset import Dataset
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
 
 
 def main():
-    model = ModelRegistry().resolve(Config.model)()
-    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir, force_data_gen=Config.force_data_gen)
-
     # optimizer = tfa.optimizers.RectifiedAdam(config.learning_rate,
     #                                          total_steps=config.train_steps,
     #                                          warmup_proportion=config.warmup)
     # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
+
     optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.5, clip_gradients=True)
     optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
 
-    train(dataset, model, optimizer)
-    test(dataset, model, optimizer)
+    model = ModelRegistry().resolve(Config.model)(optimizer=optimizer)
+    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir, force_data_gen=Config.force_data_gen)
+
+    ckpt, manager = prepare_checkpoints(model, optimizer)
+    train(dataset, model, ckpt, manager)
+
+    mean_acc, mean_total_acc = calculate_accuracy(dataset, dataset.test_data(), model)
+    print(f"Accuracy: {mean_acc.result().numpy():.4f}")
+    print(f"Total fully correct: {mean_total_acc.result().numpy():.4f}")
 
 
-def train(dataset, model: Model, optimizer):
+def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     writer = tf.summary.create_file_writer(Config.train_dir)
     writer.set_as_default()
-    ckpt, manager, runner = prepare_model(dataset, model, optimizer)
 
     mean_loss = tf.metrics.Mean()
     timer = Timer(start_now=True)
@@ -38,11 +41,14 @@ def train(dataset, model: Model, optimizer):
     train_data = dataset.train_data()
 
     # runner.print_summary([x for x in itertools.islice(train_data, 1)][0])
-    # TODO: Check against step in checkpoint
-    for step_data in itertools.islice(train_data, Config.train_steps + 1):
-        tf.summary.experimental.set_step(ckpt.step)
-        loss, gradients = runner.train_step(step_data)
 
+    # TODO: Check against step in checkpoint
+    for step_data in itertools.islice(train_data, Config.train_steps + 1):  # TODO: Here is slowdown, don't use islice
+        tf.summary.experimental.set_step(ckpt.step)
+
+        model_data = dataset.filter_model_inputs(step_data)
+        model_output = model.train_step(**model_data)
+        loss, gradients = model_output["loss"], model_output["gradients"]
         mean_loss.update_state(loss)
 
         if int(ckpt.step) % 100 == 0:
@@ -64,7 +70,7 @@ def train(dataset, model: Model, optimizer):
                         tf.summary.histogram(var.name, var, step=int(ckpt.step))
 
         if int(ckpt.step) % 1000 == 0:
-            mean_acc, mean_total_acc = validate_model(validation_data, runner, dataset.accuracy)
+            mean_acc, mean_total_acc = calculate_accuracy(dataset, validation_data, model, steps=100)
             with tf.name_scope("accuracy"):
                 with writer.as_default():
                     tf.summary.scalar("accuracy", mean_acc, step=int(ckpt.step))
@@ -72,7 +78,7 @@ def train(dataset, model: Model, optimizer):
             print(f"Validation accuracy: {mean_acc.numpy():.4f}; total accuracy {mean_total_acc.numpy():.4f}")
 
         if int(ckpt.step) % 1000 == 0:
-            save_path = manager.save()
+            save_path = ckpt_manager.save()
             print(f"Saved checkpoint for step {int(ckpt.step)}: {save_path}")
 
         if int(ckpt.step) % 100 == 0:
@@ -81,7 +87,7 @@ def train(dataset, model: Model, optimizer):
         ckpt.step.assign_add(1)
 
 
-def prepare_model(dataset, model, optimizer):
+def prepare_checkpoints(model, optimizer):
     ckpt = tf.train.Checkpoint(step=tf.Variable(0, dtype=tf.int64), optimizer=optimizer, model=model)
     manager = tf.train.CheckpointManager(ckpt, Config.train_dir, max_to_keep=Config.ckpt_count)
 
@@ -91,37 +97,23 @@ def prepare_model(dataset, model, optimizer):
     else:
         print("Initializing new model!")
 
-    runner = ModelRunner(model, dataset, optimizer)
-
-    return ckpt, manager, runner
+    return ckpt, manager
 
 
-def validate_model(data, runner, accuracy_fn):  # TODO: Validation and test is basically same function. Merge them.
+def calculate_accuracy(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None):
     mean_acc = tf.metrics.Mean()
     mean_total_acc = tf.metrics.Mean()
 
-    for step_data in itertools.islice(data, 100):  # TODO: Add this to config
-        prediction = runner.prediction(step_data)
-        accuracy, total_accuracy = accuracy_fn(prediction, step_data)
+    iterator = itertools.islice(data, steps) if steps else data
+
+    for step_data in iterator:
+        model_input = dataset.filter_model_inputs(step_data)
+        output = model.predict_step(**model_input)
+        accuracy, total_accuracy = dataset.accuracy(output["prediction"], step_data)
         mean_acc.update_state(accuracy)
         mean_total_acc.update_state(total_accuracy)
 
     return mean_acc.result(), mean_total_acc.result()
-
-
-def test(dataset, model, optimizer):
-    ckpt, manager, runner = prepare_model(dataset, model, optimizer)
-
-    mean_acc = tf.metrics.Mean()
-    mean_total_acc = tf.metrics.Mean()
-    for step_data in dataset.test_data():
-        prediction = runner.prediction(step_data)
-        accuracy, total_accuracy = dataset.accuracy(prediction, step_data)
-        mean_acc.update_state(accuracy)
-        mean_total_acc.update_state(total_accuracy)
-
-    print(f"Accuracy: {mean_acc.result().numpy():.4f}")
-    print(f"Total fully correct: {mean_total_acc.result().numpy():.4f}")
 
 
 if __name__ == '__main__':
@@ -137,4 +129,3 @@ if __name__ == '__main__':
         Config.train_dir = Config.train_dir + "/" + Config.task + "_" + current_date + label
 
     main()
-

@@ -6,10 +6,12 @@ from pysat.formula import CNF
 from pysat.solvers import Cadical
 
 from data.dimac import DIMACDataset
-from loss.sat import softplus_log_square_loss
 
 
 class KSATVariables(DIMACDataset):
+    """ Dataset from NeuroSAT paper, just for variables. Dataset generates k-SAT
+    instances with variable count in [min_size, max_size].
+    """
 
     def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
         super(KSATVariables, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
@@ -88,33 +90,12 @@ class KSATVariables(DIMACDataset):
     def prepare_dataset(self, dataset: tf.data.Dataset):
         return dataset.map(self.create_adj_matrices, tf.data.experimental.AUTOTUNE)
 
-    @tf.function(input_signature=[tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
-                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
-    def loss(self, predictions, clauses):
-        loss = 0.0
-        for logits in predictions:  # TODO: Rewrite this without loop
-            per_clause = softplus_log_square_loss(logits, clauses)
-            loss += tf.reduce_sum(per_clause)
-
-        step_count = tf.shape(predictions)[0]
-        step_count = tf.cast(step_count, dtype=tf.float32)
-        return loss / 16 # 16 = query_sat total rounds
-
-    def filter_loss_inputs(self, step_data) -> dict:
-        return {"clauses": step_data["clauses"]}
-
-    def filter_model_inputs(self, step_data) -> dict:  # TODO: Not good because dataset needs to know about model
+    def filter_model_inputs(self, step_data) -> dict:
         return {
             "adj_matrix_pos": step_data["adjacency_matrix_pos"],
             "adj_matrix_neg": step_data["adjacency_matrix_neg"],
             "clauses": step_data["clauses"]
         }
-
-    @tf.function(input_signature=[tf.TensorSpec(shape=[None, None, 1], dtype=tf.float32)],
-                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
-    def interpret_model_output(self, model_output):
-        return tf.squeeze(model_output[-1], axis=-1)  # Take logits only from the last step
 
     @staticmethod
     def split_batch(predictions, variable_count):
@@ -159,7 +140,9 @@ class KSATVariables(DIMACDataset):
 
 
 class KSATLiterals(KSATVariables):
-
+    """ Dataset from NeuroSAT paper. Dataset generates k-SAT
+    instances with variable count in [min_size, max_size].
+    """
     def create_adj_matrices(self, data):
         var_count = tf.reduce_sum(data["variable_count"])
         neg = data["adj_indices_neg"]
@@ -183,9 +166,6 @@ class KSATLiterals(KSATVariables):
             "variable_count": data["variable_count"],
             "normal_clauses": data["clauses"]
         }
-
-    def filter_loss_inputs(self, step_data) -> dict:
-        return {"clauses": step_data["clauses"]}
 
     def filter_model_inputs(self, step_data) -> dict:
         return {

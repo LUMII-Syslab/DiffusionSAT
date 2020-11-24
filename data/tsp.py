@@ -7,9 +7,8 @@ import tensorflow as tf
 
 from data.dataset import Dataset
 
-from loss.supervised_tsp import tsp_supervised_loss
 from loss.supervised_tsp import get_path_with_Concorde
-from loss.unsupervised_tsp import tsp_unsupervised_loss
+
 
 class EuclideanTSP(Dataset):
 
@@ -51,19 +50,8 @@ class EuclideanTSP(Dataset):
         data = data.repeat()
         return data
 
-    def loss(self, predictions, adj_matrix, coords):
-        supervised_loss = tsp_supervised_loss(predictions, adj_matrix, coords)
-        unsupervised_loss = tsp_unsupervised_loss(predictions, adj_matrix)
-        return supervised_loss + unsupervised_loss
-
-    def filter_loss_inputs(self, step_data) -> dict:
-        return {"adj_matrix": step_data["adjacency_matrix"], "coords": step_data["coordinates"]}
-
     def filter_model_inputs(self, step_data) -> dict:
-        return {"inputs": step_data["adjacency_matrix"]}
-
-    def interpret_model_output(self, model_output) -> tf.Tensor:
-        return model_output
+        return {"adj_matrix": step_data["adjacency_matrix"], "coords": step_data["coordinates"]}
 
     def accuracy(self, predictions, step_data):
         # calculates two accuracy metrics:

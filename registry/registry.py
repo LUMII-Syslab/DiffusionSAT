@@ -2,11 +2,11 @@ from abc import abstractmethod
 
 from data.k_sat import KSATVariables, KSATLiterals
 from data.tsp import EuclideanTSP
-from model.matrix_se import MatrixSE
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
+from model.tsp_matrix_se import TSPMatrixSE
 from data.CNFGen import SAT_3
-
+from model.tsp_multistep import MultistepTSP
 
 class Registry:
 
@@ -33,7 +33,8 @@ class ModelRegistry(Registry):
         return {
             "query_sat": QuerySAT,
             "neuro_sat": NeuroSAT,
-            "matrix_se": MatrixSE
+            "tsp_matrix_se": TSPMatrixSE,
+            "multistep_tsp": MultistepTSP
         }
 
 
@@ -44,6 +45,6 @@ class DatasetRegistry(Registry):
         return {
             "k_sat_variables": KSATVariables,
             "k_sat_literals": KSATLiterals,
-            "3-sat":SAT_3,
+            "3-sat": SAT_3,
             "euclidean_tsp": EuclideanTSP
         }

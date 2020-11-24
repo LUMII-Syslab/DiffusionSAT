@@ -6,16 +6,16 @@ from registry.registry import ModelRegistry, DatasetRegistry
 class Config:
     train_dir = '/host-dir/np-solver'
     data_dir = '/host-dir/data'
-    force_data_gen = True
+    force_data_gen = False
 
     ckpt_count = 3
     eager = False
 
     optimizer = 'radam'
-    train_steps = 300000
+    train_steps = 100000
     warmup = 0.0
     learning_rate = 0.0001
-    model = 'matrix_se'
+    model = 'tsp_matrix_se'
     task = 'euclidean_tsp'
 
     restore = None
