@@ -11,45 +11,41 @@ from loss.supervised_tsp import tsp_supervised_loss
 from loss.supervised_tsp import get_path_with_Concorde
 from loss.unsupervised_tsp import tsp_unsupervised_loss
 
-class EuclideanTSP(Dataset):
+class LabeledTSP(Dataset):
 
     # TODO(@Emīls): Move batch_size to config and add kwargs to datasets
-    def __init__(self, node_count=8, **kwargs) -> None:
+    def __init__(self, node_count=8, count=5000, batch_size=16, **kwargs) -> None:
         self.node_count = node_count
+        self.count = count
+        self.batch_size = batch_size
 
     def train_data(self) -> tf.data.Dataset:
-        data = self.__generate_data(node_count=self.node_count, dataset_size=5000, batch_size=16)
+        data = self.__generate_data()
         data = data.shuffle(10000)
         data = data.repeat()
         return data
 
-    def __generate_data(self, node_count, dataset_size, batch_size) -> tf.data.Dataset:
+    def __generate_data(self) -> tf.data.Dataset:
         # generates 2D Euclidean coordinates and the corresponding adjacency matrices
-        coords = np.random.rand(dataset_size, node_count, 2)
+        coords = np.random.rand(self.count, self.node_count, 2)
         graphs = []
-        for u in range(dataset_size):
-            graph = np.empty(shape=(node_count, node_count))
-            for i in range(node_count):
-                for j in range(node_count):
+        for u in range(self.count):
+            graph = np.empty(shape=(self.node_count, self.node_count))
+            for i in range(self.node_count):
+                for j in range(self.node_count):
                     graph[i][j] = math.sqrt(
                         (coords[u][i][0] - coords[u][j][0]) ** 2 + (coords[u][i][1] - coords[u][j][1]) ** 2)
             graphs.append(graph.tolist())
 
         data = tf.data.Dataset.from_tensor_slices({"adjacency_matrix": graphs, "coordinates": coords})
-        data = data.batch(batch_size)
+        data = data.batch(self.batch_size)
         return data
 
     def validation_data(self) -> tf.data.Dataset:
-        data = self.__generate_data(node_count=self.node_count, dataset_size=512, batch_size=64)
-        data = data.shuffle(10000)
-        data = data.repeat()
-        return data
+        return self.train_data()
 
     def test_data(self) -> tf.data.Dataset:
-        data = self.__generate_data(node_count=self.node_count, dataset_size=512, batch_size=64)
-        data = data.shuffle(10000)
-        data = data.repeat()
-        return data
+        return self.validation_data()
 
     def loss(self, predictions, adj_matrix, coords):
         supervised_loss = tsp_supervised_loss(predictions, adj_matrix, coords)
@@ -67,9 +63,8 @@ class EuclideanTSP(Dataset):
 
     def accuracy(self, predictions, step_data):
         # calculates two accuracy metrics:
-        # 1) optimality gap of the greedy_search(model(graph))
-        # 2) optimality gap of the greedy_search(graph)
-        # if the model helps, 1 should be larger than 2
+        # 1) optimality gap of the greedy search on the model's output
+        # 2) optimality gap of the greedy search on the adjacency matrix
 
         # getting numpy arrays of predictions, coordinates and adjacency matrices
         batch_size, node_count, *_ = tf.shape(predictions)
@@ -111,16 +106,14 @@ class EuclideanTSP(Dataset):
         raw_greedy_optimality_gap = raw_optimal_path_len_sum / raw_greedy_path_len_sum
         return model_greedy_optimality_gap, raw_greedy_optimality_gap
 
-    # def visualize_TSP(self, predictions, step_data):
-    #     # getting numpy arrays of predictions, coordinates and adjacency matrices
-    #     batch_size, node_count, *_ = tf.shape(predictions)
-    #     predictions_reshaped = tf.reshape(predictions, shape=[batch_size, node_count, node_count])
-    #     coordinates_reshaped = tf.reshape(step_data["coordinates"], shape=[batch_size, node_count, 2])
-    #     predictions_np = copy.deepcopy(predictions_reshaped.numpy())
-    #     coordinates_np = copy.deepcopy(coordinates_reshaped.numpy())
-    #
-    #     random_index = np.random.randint(low=0, high=batch_size, size=2)[0]
-    #     draw_graph(predictions_np[random_index], coordinates_np[random_index], "pink")
+
+
+
+
+
+
+
+
 
 
 
@@ -178,6 +171,7 @@ def get_path_from_score_greedy(score, shortest=False):
 
 def get_path_from_score_beam(score, beam_size=50, branch_factor=4, shortest=False):
     # Beam search the best edge to unvisited vertex
+
     """
     score (2D np array) - a input adjacency matrix
     beam_size (int) - the number of simultaneously considered paths (size when pruned)
@@ -213,6 +207,7 @@ def get_path_from_score_beam(score, beam_size=50, branch_factor=4, shortest=Fals
                 new_pair[0].append(v)
                 paths.append(new_pair)
 
+
         paths = paths[current_n_paths:]  # delete the paths with no continuation
         paths = Sort_Pairs(paths)  # sort by score_sum
         paths = paths[-beam_size:]  # takes the best paths
@@ -245,26 +240,3 @@ def get_path_len(adj_matrix, path):
     for i in range(len(path)-1):
         path_len += adj_matrix[path[i],path[i+1]]
     return path_len
-
-# def draw_graph(x, coords, colour="cyan"):
-#     if(colour == "pink"):
-#         red = 1.
-#         green = 0.
-#     else:
-#         red = 0.
-#         green = 1.
-#     min_val = np.amin(x)
-#     max_val = np.amax(x)
-#     x = x - min_val  # make it start at 0
-#     x = x/(max_val-min_val)  # norm it to range [0-1]
-#     n_vertices = len(coords)
-#     # x are adjacency matrix, coords are the coordinates of the vertices
-#     plt.scatter(coords[:, 0], coords[:, 1], color='k')
-#     for i in range(n_vertices):
-#         for j in range(i):
-#             both_edges = max(x[i][j], x[j][i])
-#             one_edge = min(x[i][j], x[j][i])
-#             ratio = max(x[i][j], x[j][i])
-#             color = (red, green, ratio)  # red, if one-directional edge, pink if both directions
-#             plt.plot([coords[i][0], coords[j][0]], [coords[i][1], coords[j][1]], alpha=both_edges, color=color, lw='3')
-#     plt.show()

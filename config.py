@@ -6,7 +6,7 @@ from registry.registry import ModelRegistry, DatasetRegistry
 class Config:
     train_dir = '/host-dir/np-solver'
     data_dir = '/host-dir/data'
-    force_data_gen = False
+    force_data_gen = True
 
     ckpt_count = 3
     eager = False
@@ -15,8 +15,8 @@ class Config:
     train_steps = 300000
     warmup = 0.0
     learning_rate = 0.0001
-    model = 'query_sat'
-    task = 'k_sat_variables'
+    model = 'matrix_se'
+    task = 'euclidean_tsp'
 
     restore = None
     label = ""

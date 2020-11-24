@@ -11,7 +11,7 @@ def inverse_identity(size):
     return tf.ones(shape=[size, size]) - tf.eye(size)
 
 
-def tsp_loss(predictions, adjacency_matrix, noise=0):
+def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0):
     """
     :param predictions: TODO: Describe what and with what dimensions is expected as input
     :param adjacency_matrix:
