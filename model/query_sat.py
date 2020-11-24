@@ -32,7 +32,7 @@ class QuerySAT(Model):
         # self.clause_update_gate = MLP(vote_layers, feature_maps, feature_maps, out_activation = tf.sigmoid, out_bias = -1, name="clause_update_gate")
         # self.query_pos_inter = MLP(msg_layers, query_maps * 2, query_maps, name="query_pos_inter")
         # self.query_neg_inter = MLP(msg_layers, query_maps * 2, query_maps, name="query_neg_inter")
-        self.clause_mlp = MLP(vote_layers, feature_maps * 3, feature_maps + 2 * query_maps, name="clause_update")
+        self.clause_mlp = MLP(vote_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update")
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -72,15 +72,15 @@ class QuerySAT(Model):
             # Aggregate loss over positive edges (x)
             clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
             clause_data = self.clause_mlp(clause_unit)
-            variables_loss_pos = clause_data[:, 0:self.query_maps]
-            variables_loss_neg = clause_data[:, self.query_maps:2 * self.query_maps]
-            new_clause_value = clause_data[:, 2 * self.query_maps:]
+            variables_loss_all = clause_data[:, 0:self.query_maps]
+            #variables_loss_neg = clause_data[:, self.query_maps:2 * self.query_maps]
+            new_clause_value = clause_data[:, self.query_maps:]
             # variables_loss_pos = self.query_pos_inter(clause_unit)
-            variables_loss_pos = tf.sparse.sparse_dense_matmul(adj_matrix_pos, variables_loss_pos)
+            variables_loss_pos = tf.sparse.sparse_dense_matmul(adj_matrix_pos, variables_loss_all)
 
             # Aggregate loss over negative edges (not x)
             # variables_loss_neg = self.query_neg_inter(clause_unit)
-            variables_loss_neg = tf.sparse.sparse_dense_matmul(adj_matrix_neg, variables_loss_neg)
+            variables_loss_neg = tf.sparse.sparse_dense_matmul(adj_matrix_neg, variables_loss_all)
             # new_clause_value = self.clause_update(clause_unit)
             new_clause_value = self.clauses_norm(new_clause_value, training=training) * 0.25
             # new_clause_gate = self.clause_update_gate(clause_unit)
