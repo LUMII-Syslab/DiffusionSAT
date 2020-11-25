@@ -11,7 +11,7 @@ def inverse_identity(size):
     return tf.ones(shape=[size, size]) - tf.eye(size)
 
 
-def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0):
+def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = False):
     """
     :param predictions: TODO: Describe what and with what dimensions is expected as input
     :param adjacency_matrix:
@@ -41,4 +41,10 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0):
         cost_subtours += tf.reduce_sum(tf.square(2 - tmp)) / tf.cast(batch_size, tf.float32)
 
     cost_subtours *= 0.05
+    if log_in_tb:
+        tf.summary.scalar("cost_length", cost_length)
+        tf.summary.scalar("cost_incoming", cost_incoming)
+        tf.summary.scalar("cost_outgoing", cost_outgoing)
+        tf.summary.scalar("cost_subtours", cost_subtours)
+
     return cost_length + cost_incoming + cost_outgoing + cost_subtours

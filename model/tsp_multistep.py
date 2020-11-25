@@ -3,16 +3,21 @@ from layers.matrix_se import MatrixSE
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
 
+def inv_sigmoid(y):
+    return tf.math.log(y / (1 - y))
+
 
 class MultistepTSP(tf.keras.Model):
 
-    def __init__(self, optimizer, feature_maps = 64, block_count = 1, rounds = 4, **kwargs):
+    def __init__(self, optimizer, feature_maps = 64, block_count = 1, rounds = 1, **kwargs):
         super(MultistepTSP, self).__init__(**kwargs)
         self.optimizer = optimizer
         self.matrix_se = MatrixSE(block_count)
         self.input_layer = Dense(feature_maps, activation=None, name="input_layer")
         self.logits_layer = Dense(1, activation=None, name="logits_layer")
         self.rounds = rounds
+        n_vertices = 8 #todo: get from somewhere
+        self.logit_bias = inv_sigmoid(1.0/n_vertices)
 
 
     def call(self, inputs, training=None, mask=None):
@@ -23,8 +28,8 @@ class MultistepTSP(tf.keras.Model):
 
         for step in tf.range(self.rounds):
             state = self.matrix_se(state, training=training)
-            logits = self.logits_layer(state)
-            loss = tsp_unsupervised_loss(logits, inputs)
+            logits = self.logits_layer(state)+self.logit_bias
+            loss = tsp_unsupervised_loss(logits, inputs, log_in_tb = training and step==self.rounds-1)
             total_loss += loss
             last_loss = loss
 
