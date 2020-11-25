@@ -24,8 +24,8 @@ class AttentionSAT(Model):
         self.update_gate = MLP(vote_layers, feature_maps * 2, feature_maps, name="update_gate")
         self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output")
         self.variables_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query")
-        self.clause_pos_mlp = GraphAttentionLayer(feature_maps, feature_maps, name="clause_update_pos")
-        self.clause_neg_mlp = GraphAttentionLayer(feature_maps, feature_maps, name="clause_update_neg")
+        self.clause_pos_mlp = GraphAttentionLayer(feature_maps * 2, feature_maps, name="clause_update_pos")
+        self.clause_neg_mlp = GraphAttentionLayer(feature_maps * 2, feature_maps, name="clause_update_neg")
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -62,7 +62,6 @@ class AttentionSAT(Model):
             variables_loss_neg = self.clause_neg_mlp(variables, clauses_loss, adj_matrix_neg)
 
             unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
-
             new_variables = self.update_gate(unit)
             new_variables = self.variables_norm(new_variables, training=training) * 0.25  # TODO: Rethink normalization
 
