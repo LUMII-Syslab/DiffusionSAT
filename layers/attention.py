@@ -3,6 +3,18 @@ import tensorflow_addons as tfa
 from tensorflow.keras.layers import Dense
 
 
+def matmul_with_sparse_mask(a: tf.Tensor, b: tf.Tensor, mask: tf.SparseTensor, scale=1):
+    """ Should give the same result as matmul(a,transpose(b))*mask, but calculation is significantly faster.
+    TODO: Check that there is no error!
+    """
+    a_val = tf.gather(a, mask.indices[:, 0])
+    b_val = tf.gather(b, mask.indices[:, 1])
+    dot = tf.reduce_sum(a_val * b_val, axis=-1)
+    dot = dot * scale
+
+    return tf.SparseTensor(mask.indices, dot, dense_shape=mask.dense_shape)
+
+
 class GraphAttentionLayer(tf.keras.layers.Layer):
     """
     Simple scaled dot-product attention for graph neural network.
@@ -15,6 +27,7 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
         self.hidden_nmaps = hidden_nmaps
         self.output_nmaps = output_nmaps
         self.activation = activation
+        self.use_sparse_mul = True
 
         self.query_layer = Dense(hidden_nmaps, activation=tfa.activations.gelu)
         self.key_layer = Dense(hidden_nmaps, activation=tfa.activations.gelu)
@@ -32,10 +45,13 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
         k = self.key_layer(memory)
         v = self.value_layer(memory)
 
-        coef = tf.matmul(q, tf.linalg.matrix_transpose(k))  # result [n, m]
-        coef = coef / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))  # result [n, m]
-        coef = coef * adj_matrix
+        if self.use_sparse_mul:
+            scale = 1 / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))
+            coef = matmul_with_sparse_mask(q, k, adj_matrix, scale)
+        else:
+            coef = tf.matmul(q, tf.transpose(k))  # result [n, m]
+            coef = coef / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))  # result [n, m]
+            coef = coef * adj_matrix
 
         out = tf.sparse.softmax(coef)  # result [n, m]
-        # out = tf.layers.dropout(out, training=self._is_training)
         return tf.sparse.sparse_dense_matmul(out, v)  # result [n, output_nmaps]
