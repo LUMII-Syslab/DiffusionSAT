@@ -30,7 +30,7 @@ class MultistepTSP(tf.keras.Model):
 
         return logits, total_loss, last_loss
 
-    def train_step(self, adj_matrix):
+    def train_step(self, adj_matrix, coords):
         with tf.GradientTape() as tape:
             predictions, total_loss, last_loss = self.call(adj_matrix, training=True)
             gradients = tape.gradient(total_loss, self.trainable_variables)
@@ -44,7 +44,7 @@ class MultistepTSP(tf.keras.Model):
     def optimize(self, gradients):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-    def predict_step(self, adj_matrix):
+    def predict_step(self, adj_matrix, coords):
         predictions, total_loss, last_loss = self.call(adj_matrix, training=False)
 
         return {

@@ -31,10 +31,6 @@ def tsp_supervised_loss(predictions, adjacency_matrix, coords):
     return loss
 
 
-
-
-
-
 class suppress_stdout_stderr(object):
     '''
     A context manager for doing a "deep suppression" of stdout and stderr in

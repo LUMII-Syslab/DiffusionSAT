@@ -15,7 +15,7 @@ class Config:
     train_steps = 100000
     warmup = 0.0
     learning_rate = 0.0001
-    model = 'tsp_matrix_se'
+    model = 'multistep_tsp'
     task = 'euclidean_tsp'
 
     restore = None
