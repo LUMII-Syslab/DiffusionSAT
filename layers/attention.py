@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
-import tensorflow_addons as tfa
 
 
 def matmul_with_sparse_mask(a: tf.Tensor, b: tf.Tensor, mask: tf.SparseTensor, scale=1, activation=None):
@@ -57,14 +56,14 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
         results = []
         for i in range(self.heads):
             if self.use_sparse_mul:
-                scale = 1 / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))
+                scale = 1 / tf.sqrt(tf.cast(self.hidden_nmaps // self.heads, tf.float32))
                 coef = matmul_with_sparse_mask(q[i], k[i], adj_matrix, scale)
                 coef = tf.sparse.softmax(tf.sparse.transpose(coef))  # result [n, m]
             else:
-                coef = tf.matmul(q, tf.transpose(k))  # result [n, m]
+                coef = tf.matmul(q[i], tf.transpose(k[i]))  # result [n, m]
                 coef = coef / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))  # result [n, m]
                 coef = coef * adj_matrix
-                coef = tf.sparse.softmax(coef)  # result [n, m]
+                coef = tf.sparse.softmax(tf.sparse.transpose(coef))  # result [n, m]
 
             res = tf.sparse.sparse_dense_matmul(coef, v[i], adjoint_a=True)  # result [n, output_nmaps]
             results.append(res)
