@@ -53,8 +53,8 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
 
             if self.use_sparse_mul:
                 scale = 1 / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))
-                coef = matmul_with_sparse_mask(q, k, adj_matrix, activation=tf.sigmoid)
-                # coef = tf.sparse.softmax(coef)  # result [n, m]
+                coef = matmul_with_sparse_mask(q, k, adj_matrix)
+                coef = tf.sparse.softmax(coef)  # result [n, m]
             else:
                 coef = tf.matmul(q, tf.transpose(k))  # result [n, m]
                 coef = coef / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))  # result [n, m]
@@ -65,7 +65,8 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
             results.append(res)
 
             # coef = tf.sparse.reorder(coef)
-            # image = tf.sparse.to_dense(coef)[:128, :256]
+            # image = tf.sparse.slice(coef, [0, 0], [128, 256])
+            # image = tf.sparse.to_dense(image)
             # image = image / tf.math.reduce_max(image)
             # image = tf.expand_dims(image, axis=-1)
             # image = tf.expand_dims(image, axis=0)
