@@ -1,104 +1,78 @@
 import tensorflow as tf
+from tensorflow.keras.layers import LSTMCell
 from tensorflow.keras.models import Model
-from tensorflow.keras.optimizers import Optimizer
 
 from layers.attention import GraphAttentionLayer
-from layers.layer_normalization import LayerNormalization
-from loss.sat import softplus_loss, softplus_log_square_loss, unsat_clause_count
+from loss.sat import softplus_log_square_loss
 from model.mlp import MLP
 
 
 class AttentionSAT(Model):
 
-    def __init__(self, optimizer: Optimizer,
-                 feature_maps=256, msg_layers=3,
-                 vote_layers=3, rounds=32,
-                 query_maps=64, **kwargs):
-        super().__init__(**kwargs, name="AttentionSAT")
+    def __init__(self, optimizer, feature_maps=128, msg_layers=3, vote_layers=3, rounds=16, **kwargs):
+        super().__init__(**kwargs, name="NeuroSAT")
         self.rounds = rounds
         self.optimizer = optimizer
 
-        self.variables_norm = LayerNormalization(axis=-1)
-        self.clauses_norm = LayerNormalization(axis=-1)
+        init = tf.initializers.RandomNormal()
+        self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
+        self.C_init = self.add_weight(name="C_init", shape=[1, feature_maps], initializer=init, trainable=True)
 
-        self.update_gate = MLP(vote_layers, feature_maps * 2, feature_maps, name="update_gate")
-        self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output")
-        self.variables_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query")
-        self.clause_pos_mlp = GraphAttentionLayer(feature_maps * 2, feature_maps, name="clause_update_pos")
-        self.clause_neg_mlp = GraphAttentionLayer(feature_maps * 2, feature_maps, name="clause_update_neg")
+        self.LC_msg = MLP(msg_layers, feature_maps, feature_maps, name="LC_msg", do_layer_norm=False)
+        self.CL_msg = MLP(msg_layers, feature_maps, feature_maps, name="CL_msg", do_layer_norm=False)
 
+        self.L_update = LSTMCell(feature_maps, name="L_update")
+        self.C_update = LSTMCell(feature_maps, name="C_update")
+
+        self.L_vote = MLP(vote_layers, feature_maps * 2, 1, name="L_vote")
+
+        self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
         self.feature_maps = feature_maps
-        self.query_maps = query_maps
 
-    def zero_state(self, n_units, n_features, stddev=0.25):
-        onehot = tf.one_hot(tf.zeros([n_units], dtype=tf.int64), n_features)
-        onehot -= 1 / n_features
-        onehot = onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
-        return onehot
-
-    def call(self, adj_matrix_pos, adj_matrix_neg, clauses=None, training=None, mask=None):
-        shape = tf.shape(adj_matrix_pos)
-        n_vars = shape[0]
+    def call(self, adj_matrix, clauses=None, training=None, mask=None):
+        shape = tf.shape(adj_matrix)  # inputs is sparse adjacency matrix
+        n_lits = shape[0]
         n_clauses = shape[1]
+        n_vars = n_lits // 2
 
-        variables = self.zero_state(n_vars, self.feature_maps)
-        clause_state = self.zero_state(n_clauses, self.feature_maps)
-        step_logits = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
-        step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+        l_output = tf.tile(self.L_init / self.denom, [n_lits, 1])
+        c_output = tf.tile(self.C_init / self.denom, [n_clauses, 1])
 
-        for step in tf.range(self.rounds):
-            with tf.GradientTape() as grad_tape:
-                grad_tape.watch(variables)
-                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
-                query = self.variables_query(v1)
-                clauses_loss = softplus_loss(query, clauses)
-                step_loss = tf.reduce_sum(clauses_loss)
-            variables_grad = grad_tape.gradient(step_loss, query)
+        l_state = [l_output, tf.zeros([n_lits, self.feature_maps])]
+        c_state = [c_output, tf.zeros([n_clauses, self.feature_maps])]
 
-            # Aggregate loss over positive edges (x)
-            variables_loss_pos = self.clause_pos_mlp(variables, clauses_loss, adj_matrix_pos)
+        for _ in tf.range(self.rounds):
+            LC_pre_msgs = self.LC_msg(l_state[0])
+            LC_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, LC_pre_msgs, adjoint_a=True)
 
-            # Aggregate loss over negative edges (not x)
-            variables_loss_neg = self.clause_neg_mlp(variables, clauses_loss, adj_matrix_neg)
+            _, c_state = self.C_update(inputs=LC_msgs, states=c_state)
 
-            unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
-            new_variables = self.update_gate(unit)
-            new_variables = self.variables_norm(new_variables, training=training) * 0.25  # TODO: Rethink normalization
+            CL_pre_msgs = self.CL_msg(c_state[0])
+            CL_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, CL_pre_msgs)
 
-            variables = new_variables
+            _, l_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(l_state[0], n_vars)], axis=1),
+                                       states=l_state)
 
-            logits = self.variables_output(variables)
+        literals = l_state[0]
 
-            step_logits = step_logits.write(step, logits)
-            logit_loss = tf.reduce_sum(softplus_log_square_loss(logits, clauses))
-            step_losses = step_losses.write(step, logit_loss)
-            n_unsat_clauses = unsat_clause_count(logits, clauses)
-            if logit_loss < 0.5 and n_unsat_clauses == 0:
-                break
+        variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
+        logits = self.L_vote(variables)
+        return logits
 
-            # due to the loss at each level, gradients accumulate on the backward pass and may become very large for the first layers
-            # reduce the gradient magnitude to remedy this
-            variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
-            clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
-
-        step_logits_tensor = step_logits.stack()  # step_count x literal_count
-        last_layer_loss = tf.reduce_sum(softplus_log_square_loss(step_logits_tensor[-1], clauses))
-        tf.summary.scalar("last_layer_loss", last_layer_loss)
-        # log_as_histogram("step_losses", step_losses.stack())
-        tf.summary.scalar("steps_taken", step)
-
-        return step_logits_tensor[-1], tf.reduce_mean(step_losses.stack())
+    @staticmethod
+    def flip(literals, n_vars):
+        return tf.concat([literals[n_vars:(2 * n_vars), :], literals[0:n_vars, :]], axis=0)
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
-    def train_step(self, adj_matrix_pos, adj_matrix_neg, clauses):
-
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
+                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL
+                 )
+    def train_step(self, adj_matrix, clauses):
         with tf.GradientTape() as tape:
-            _, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, training=True)
-            train_vars = self.trainable_variables
-            gradients = tape.gradient(loss, train_vars)
-            self.optimizer.apply_gradients(zip(gradients, train_vars))
+            logits = self.call(adj_matrix, clauses, training=True)
+            loss = tf.reduce_sum(softplus_log_square_loss(logits, clauses))
+            gradients = tape.gradient(loss, self.trainable_variables)
+            self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         return {
             "loss": loss,
@@ -106,12 +80,12 @@ class AttentionSAT(Model):
         }
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
-    def predict_step(self, adj_matrix_pos, adj_matrix_neg, clauses):
-        predictions, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, training=False)
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
+                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
+    def predict_step(self, adj_matrix, clauses):
+        predictions = self.call(adj_matrix, clauses, training=False)
 
         return {
-            "loss": loss,
+            "loss": tf.reduce_sum(softplus_log_square_loss(predictions, clauses)),
             "prediction": tf.squeeze(predictions, axis=-1)
         }
