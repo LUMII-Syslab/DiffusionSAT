@@ -3,6 +3,7 @@ from tensorflow.keras.layers import LSTMCell
 from tensorflow.keras.models import Model
 
 from layers.attention import GraphAttentionLayer
+from layers.layer_normalization import LayerNormalization
 from loss.sat import softplus_log_square_loss
 from model.mlp import MLP
 
@@ -18,13 +19,18 @@ class AttentionSAT(Model):
         self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
         self.C_init = self.add_weight(name="C_init", shape=[1, feature_maps], initializer=init, trainable=True)
 
-        self.LC_msg = MLP(msg_layers, feature_maps, feature_maps, name="LC_msg", do_layer_norm=False)
-        self.CL_msg = MLP(msg_layers, feature_maps, feature_maps, name="CL_msg", do_layer_norm=False)
+        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
+        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
 
-        self.L_update = LSTMCell(feature_maps, name="L_update")
-        self.C_update = LSTMCell(feature_maps, name="C_update")
+        self.attention_l = GraphAttentionLayer(feature_maps, feature_maps, name="attention_l")
+        self.attention_c = GraphAttentionLayer(feature_maps, feature_maps, name="attention_c")
+        self.layer_norm_1 = LayerNormalization(axis=-1)
+        self.layer_norm_2 = LayerNormalization(axis=-1)
 
-        self.L_vote = MLP(vote_layers, feature_maps * 2, 1, name="L_vote")
+        self.layer_norm_3 = LayerNormalization(axis=-1)
+        self.layer_norm_4 = LayerNormalization(axis=-1)
+
+        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, name="L_vote")
 
         self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
         self.feature_maps = feature_maps
@@ -38,25 +44,19 @@ class AttentionSAT(Model):
         l_output = tf.tile(self.L_init / self.denom, [n_lits, 1])
         c_output = tf.tile(self.C_init / self.denom, [n_clauses, 1])
 
-        l_state = [l_output, tf.zeros([n_lits, self.feature_maps])]
-        c_state = [c_output, tf.zeros([n_clauses, self.feature_maps])]
-
         for _ in tf.range(self.rounds):
-            LC_pre_msgs = self.LC_msg(l_state[0])
-            LC_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, LC_pre_msgs, adjoint_a=True)
+            new_clauses = self.attention_c(c_output, l_output, tf.sparse.transpose(adj_matrix))
+            c_output = self.layer_norm_2(c_output + new_clauses)
+            new_clauses2 = self.clauses_mlp(c_output, training=training)
+            c_output = self.layer_norm_4(c_output + new_clauses2)
 
-            _, c_state = self.C_update(inputs=LC_msgs, states=c_state)
+            new_literals = self.attention_l(l_output, c_output, adj_matrix)
+            l_output = self.layer_norm_1(l_output + self.flip(new_literals, n_vars))
+            new_literals2 = self.literals_mlp(l_output, training=training)
+            l_output = self.layer_norm_3(l_output + new_literals2)
 
-            CL_pre_msgs = self.CL_msg(c_state[0])
-            CL_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, CL_pre_msgs)
-
-            _, l_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(l_state[0], n_vars)], axis=1),
-                                       states=l_state)
-
-        literals = l_state[0]
-
-        variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
-        logits = self.L_vote(variables)
+        variables = tf.concat([l_output[:n_vars], l_output[n_vars:]], axis=1)  # n_vars x 2
+        logits = self.output_layer(variables)
         return logits
 
     @staticmethod

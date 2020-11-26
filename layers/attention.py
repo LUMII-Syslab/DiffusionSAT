@@ -1,8 +1,5 @@
 import tensorflow as tf
-import tensorflow_addons as tfa
 from tensorflow.keras.layers import Dense
-
-from layers.layer_normalization import LayerNormalization
 
 
 def matmul_with_sparse_mask(a: tf.Tensor, b: tf.Tensor, mask: tf.SparseTensor, scale=1, activation=None):
@@ -25,17 +22,19 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
     rest of the nodes are masked out using adjacency matrix.
     """
 
-    def __init__(self, hidden_nmaps, output_nmaps, activation=tf.nn.leaky_relu, **kwargs):
+    def __init__(self, hidden_nmaps, output_nmaps, activation=None, **kwargs):
         super().__init__(**kwargs)
         self.hidden_nmaps = hidden_nmaps
         self.output_nmaps = output_nmaps
         self.activation = activation
         self.use_sparse_mul = True
+        self.heads = 8
 
-        self.query_layer = Dense(hidden_nmaps, activation=tfa.activations.gelu)
-        self.key_layer = Dense(hidden_nmaps, activation=tfa.activations.gelu)
-        self.value_layer = Dense(output_nmaps, activation=tfa.activations.gelu)
-        self.layer_norm = LayerNormalization()
+        self.query_layer = [Dense(hidden_nmaps // self.heads, activation=tf.nn.leaky_relu) for x in range(self.heads)]
+        self.key_layer = [Dense(hidden_nmaps // self.heads, activation=tf.nn.leaky_relu) for x in range(self.heads)]
+        self.value_layer = [Dense(output_nmaps // self.heads, activation=tf.nn.leaky_relu) for x in range(self.heads)]
+
+        self.output_weight = Dense(output_nmaps)
 
     def call(self, query: tf.Tensor, memory: tf.Tensor, adj_matrix: tf.sparse.SparseTensor, **kwargs):
         """
@@ -45,19 +44,24 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
         :param kwargs:
         :return:
         """
-        q = self.query_layer(query)
-        k = self.key_layer(memory)
-        v = self.value_layer(memory)
+        results = []
+        for i in range(self.heads):
+            q = self.query_layer[i](query)
+            k = self.key_layer[i](memory)
+            v = self.value_layer[i](memory)
 
-        if self.use_sparse_mul:
-            scale = 1 / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))
-            coef = matmul_with_sparse_mask(q, k, adj_matrix, scale)
-            coef = tf.sparse.softmax(coef)  # result [n, m]
-        else:
-            coef = tf.matmul(q, tf.transpose(k))  # result [n, m]
-            coef = coef / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))  # result [n, m]
-            coef = coef * adj_matrix
-            # coef = tf.sparse.softmax(coef)  # result [n, m]
+            if self.use_sparse_mul:
+                scale = 1 / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))
+                coef = matmul_with_sparse_mask(q, k, adj_matrix, scale)
+                coef = tf.sparse.softmax(coef)  # result [n, m]
+            else:
+                coef = tf.matmul(q, tf.transpose(k))  # result [n, m]
+                coef = coef / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))  # result [n, m]
+                coef = coef * adj_matrix
+                coef = tf.sparse.softmax(coef)  # result [n, m]
 
-        result = tf.sparse.sparse_dense_matmul(coef, v)  # result [n, output_nmaps]
-        return result
+            res = tf.sparse.sparse_dense_matmul(coef, v)  # result [n, output_nmaps]
+            results.append(res)
+
+        output = tf.concat(results, axis=-1)
+        return self.output_weight(output)
