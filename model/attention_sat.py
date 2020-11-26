@@ -20,11 +20,11 @@ class AttentionSAT(Model):
         self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
         self.C_init = self.add_weight(name="C_init", shape=[1, feature_maps], initializer=init, trainable=True)
 
-        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
-        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
+        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tfa.activations.gelu, do_layer_norm=False)
+        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tfa.activations.gelu, do_layer_norm=False)
 
-        self.attention_l = GraphAttentionLayer(feature_maps, feature_maps, activation=tfa.activations.gelu, name="attention_l")
-        self.attention_c = GraphAttentionLayer(feature_maps, feature_maps, activation=tfa.activations.gelu, name="attention_c")
+        self.attention_l = GraphAttentionLayer(feature_maps * 2, feature_maps, name="attention_l")
+        self.attention_c = GraphAttentionLayer(feature_maps * 2, feature_maps, name="attention_c")
         self.layer_norm_1 = LayerNormalization(axis=-1)
         self.layer_norm_2 = LayerNormalization(axis=-1)
 
