@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
+import tensorflow_addons as tfa
 
 
 def matmul_with_sparse_mask(a: tf.Tensor, b: tf.Tensor, mask: tf.SparseTensor, scale=1, activation=None):
@@ -22,17 +23,17 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
     rest of the nodes are masked out using adjacency matrix.
     """
 
-    def __init__(self, hidden_nmaps, output_nmaps, activation=None, **kwargs):
+    def __init__(self, hidden_nmaps, output_nmaps, activation=tfa.activations.gelu, **kwargs):
         super().__init__(**kwargs)
         self.hidden_nmaps = hidden_nmaps
         self.output_nmaps = output_nmaps
         self.activation = activation
         self.use_sparse_mul = True
-        self.heads = 8
+        self.heads = 1
 
-        self.query_layer = [Dense(hidden_nmaps // self.heads, activation=tf.nn.leaky_relu) for x in range(self.heads)]
-        self.key_layer = [Dense(hidden_nmaps // self.heads, activation=tf.nn.leaky_relu) for x in range(self.heads)]
-        self.value_layer = [Dense(output_nmaps // self.heads, activation=tf.nn.leaky_relu) for x in range(self.heads)]
+        self.query_layer = [Dense(hidden_nmaps // self.heads, activation=activation) for _ in range(self.heads)]
+        self.key_layer = [Dense(hidden_nmaps // self.heads, activation=activation) for _ in range(self.heads)]
+        self.value_layer = [Dense(output_nmaps // self.heads, activation=activation) for _ in range(self.heads)]
 
         self.output_weight = Dense(output_nmaps)
 
@@ -52,8 +53,8 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
 
             if self.use_sparse_mul:
                 scale = 1 / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))
-                coef = matmul_with_sparse_mask(q, k, adj_matrix, scale)
-                coef = tf.sparse.softmax(coef)  # result [n, m]
+                coef = matmul_with_sparse_mask(q, k, adj_matrix, activation=tf.sigmoid)
+                # coef = tf.sparse.softmax(coef)  # result [n, m]
             else:
                 coef = tf.matmul(q, tf.transpose(k))  # result [n, m]
                 coef = coef / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))  # result [n, m]
@@ -62,6 +63,11 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
 
             res = tf.sparse.sparse_dense_matmul(coef, v)  # result [n, output_nmaps]
             results.append(res)
+
+        # image = tf.sparse.to_dense(coef)[:128, :256]
+        # image = tf.expand_dims(image, axis=-1)
+        # image = tf.expand_dims(image, axis=0)
+        # tf.summary.image("coef", image)
 
         output = tf.concat(results, axis=-1)
         return self.output_weight(output)

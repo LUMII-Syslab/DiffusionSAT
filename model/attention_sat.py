@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.layers import LSTMCell
 from tensorflow.keras.models import Model
+import tensorflow_addons as tfa
 
 from layers.attention import GraphAttentionLayer
 from layers.layer_normalization import LayerNormalization
@@ -22,8 +23,8 @@ class AttentionSAT(Model):
         self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
         self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
 
-        self.attention_l = GraphAttentionLayer(feature_maps, feature_maps, name="attention_l")
-        self.attention_c = GraphAttentionLayer(feature_maps, feature_maps, name="attention_c")
+        self.attention_l = GraphAttentionLayer(feature_maps, feature_maps, activation=tfa.activations.gelu, name="attention_l")
+        self.attention_c = GraphAttentionLayer(feature_maps, feature_maps, activation=tfa.activations.gelu, name="attention_c")
         self.layer_norm_1 = LayerNormalization(axis=-1)
         self.layer_norm_2 = LayerNormalization(axis=-1)
 
@@ -41,8 +42,8 @@ class AttentionSAT(Model):
         n_clauses = shape[1]
         n_vars = n_lits // 2
 
-        l_output = tf.tile(self.L_init / self.denom, [n_lits, 1])
-        c_output = tf.tile(self.C_init / self.denom, [n_clauses, 1])
+        l_output = tf.random.truncated_normal([n_vars, self.feature_maps], stddev=0.025)
+        c_output = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
 
         for _ in tf.range(self.rounds):
             new_clauses = self.attention_c(c_output, l_output, tf.sparse.transpose(adj_matrix))
