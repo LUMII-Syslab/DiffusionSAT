@@ -29,7 +29,7 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
         self.output_nmaps = output_nmaps
         self.activation = activation
         self.use_sparse_mul = True
-        self.heads = 1
+        self.heads = 4
 
         self.query_layer = [Dense(hidden_nmaps // self.heads, activation=activation) for _ in range(self.heads)]
         self.key_layer = [Dense(hidden_nmaps // self.heads, activation=activation) for _ in range(self.heads)]
@@ -64,10 +64,12 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
             res = tf.sparse.sparse_dense_matmul(coef, v)  # result [n, output_nmaps]
             results.append(res)
 
-        # image = tf.sparse.to_dense(coef)[:128, :256]
-        # image = tf.expand_dims(image, axis=-1)
-        # image = tf.expand_dims(image, axis=0)
-        # tf.summary.image("coef", image)
+            # coef = tf.sparse.reorder(coef)
+            # image = tf.sparse.to_dense(coef)[:128, :256]
+            # image = image / tf.math.reduce_max(image)
+            # image = tf.expand_dims(image, axis=-1)
+            # image = tf.expand_dims(image, axis=0)
+            # tf.summary.image(f"coef_head_{i}", image)
 
         output = tf.concat(results, axis=-1)
         return self.output_weight(output)

@@ -42,8 +42,11 @@ class AttentionSAT(Model):
         n_clauses = shape[1]
         n_vars = n_lits // 2
 
-        l_output = tf.random.truncated_normal([n_vars, self.feature_maps], stddev=0.025)
-        c_output = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
+        l_output = tf.tile(self.L_init / self.denom, [n_lits, 1])
+        c_output = tf.tile(self.C_init / self.denom, [n_clauses, 1])
+
+        # variables = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.025)
+        # clause_state = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
 
         for _ in tf.range(self.rounds):
             new_clauses = self.attention_c(c_output, l_output, tf.sparse.transpose(adj_matrix))
