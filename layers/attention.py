@@ -23,7 +23,7 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
     rest of the nodes are masked out using adjacency matrix.
     """
 
-    def __init__(self, hidden_nmaps, output_nmaps, activation=tfa.activations.gelu, **kwargs):
+    def __init__(self, hidden_nmaps, output_nmaps, activation=tf.nn.relu, **kwargs):
         super().__init__(**kwargs)
         self.hidden_nmaps = hidden_nmaps
         self.output_nmaps = output_nmaps
@@ -31,9 +31,9 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
         self.use_sparse_mul = True
         self.heads = 4
 
-        self.query_layer = [Dense(hidden_nmaps // self.heads, activation=activation) for _ in range(self.heads)]
-        self.key_layer = [Dense(hidden_nmaps // self.heads, activation=activation) for _ in range(self.heads)]
-        self.value_layer = [Dense(output_nmaps // self.heads, activation=activation) for _ in range(self.heads)]
+        self.query_layer = Dense(hidden_nmaps, activation=activation)
+        self.key_layer = Dense(hidden_nmaps, activation=activation)
+        self.value_layer = Dense(output_nmaps, activation=activation)
 
         self.output_weight = Dense(output_nmaps)
 
@@ -45,23 +45,28 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
         :param kwargs:
         :return:
         """
+
+        q = self.query_layer(query)
+        k = self.key_layer(memory)
+        v = self.value_layer(memory)
+
+        q = tf.split(q, num_or_size_splits=self.heads, axis=-1)
+        k = tf.split(k, num_or_size_splits=self.heads, axis=-1)
+        v = tf.split(v, num_or_size_splits=self.heads, axis=-1)
+
         results = []
         for i in range(self.heads):
-            q = self.query_layer[i](query)
-            k = self.key_layer[i](memory)
-            v = self.value_layer[i](memory)
-
             if self.use_sparse_mul:
                 scale = 1 / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))
-                coef = matmul_with_sparse_mask(q, k, adj_matrix)
-                coef = tf.sparse.softmax(coef)  # result [n, m]
+                coef = matmul_with_sparse_mask(q[i], k[i], adj_matrix, scale)
+                coef = tf.sparse.softmax(tf.sparse.transpose(coef))  # result [n, m]
             else:
                 coef = tf.matmul(q, tf.transpose(k))  # result [n, m]
                 coef = coef / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))  # result [n, m]
                 coef = coef * adj_matrix
                 coef = tf.sparse.softmax(coef)  # result [n, m]
 
-            res = tf.sparse.sparse_dense_matmul(coef, v)  # result [n, output_nmaps]
+            res = tf.sparse.sparse_dense_matmul(coef, v[i], adjoint_a=True)  # result [n, output_nmaps]
             results.append(res)
 
             # coef = tf.sparse.reorder(coef)
