@@ -2,15 +2,14 @@ import tensorflow as tf
 from tensorflow.keras.layers import Dense
 
 
-def matmul_with_sparse_mask(a: tf.Tensor, b: tf.Tensor, mask: tf.SparseTensor, scale=1, activation=None):
-    """ Should give the same result as matmul(a,transpose(b))*mask, but calculation is significantly faster.
+def matmul_with_sparse_mask(a: tf.Tensor, b: tf.Tensor, mask: tf.SparseTensor, scale=1):
+    """ Gives the same result as matmul(a,transpose(b))*mask, but calculation
+     is significantly faster for sparse masks.
     """
     a_val = tf.gather(a, mask.indices[:, 0])
     b_val = tf.gather(b, mask.indices[:, 1])
     dot = tf.reduce_sum(a_val * b_val, axis=-1)
-
-    if activation:
-        dot = activation(dot * scale)
+    dot = dot * scale
 
     return tf.SparseTensor(mask.indices, dot, dense_shape=mask.dense_shape)
 
@@ -41,8 +40,7 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
         :param query: [n, nmaps_1]
         :param memory: [m, nmaps_2]
         :param adj_matrix: sparse matrix with dense shape [n, m]
-        :param kwargs:
-        :return:
+        :return: softmax(matmul(q,transpose(k))*adj_matrix)*v : [n, output_nmaps]
         """
 
         q = self.query_layer(query)
@@ -61,7 +59,7 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
                 coef = tf.sparse.softmax(tf.sparse.transpose(coef))  # result [n, m]
             else:
                 coef = tf.matmul(q[i], tf.transpose(k[i]))  # result [n, m]
-                coef = coef / tf.sqrt(tf.cast(self.hidden_nmaps, tf.float32))  # result [n, m]
+                coef = coef / tf.sqrt(tf.cast(self.hidden_nmaps // self.heads, tf.float32))  # result [n, m]
                 coef = coef * adj_matrix
                 coef = tf.sparse.softmax(tf.sparse.transpose(coef))  # result [n, m]
 
