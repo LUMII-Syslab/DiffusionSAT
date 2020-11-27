@@ -1,7 +1,6 @@
 import tensorflow as tf
 from loss.tsp_cost_subtours import subtour_constraints
 
-
 def sample_logistic(shape, eps=1e-20):
     sample = tf.random.uniform(shape, minval=eps, maxval=1 - eps)
     return tf.math.log(sample / (1 - sample))
