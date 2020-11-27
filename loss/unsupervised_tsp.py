@@ -1,5 +1,6 @@
 import tensorflow as tf
-from loss.tsp_cost_subtours import subtour_constraints
+import pyximport; pyximport.install()
+from loss.tsp_subtours_cy import subtours
 
 def sample_logistic(shape, eps=1e-20):
     sample = tf.random.uniform(shape, minval=eps, maxval=1 - eps)
@@ -21,7 +22,7 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = Fa
     batch_size, node_count, *_ = tf.shape(predictions)
     graph = tf.reshape(adjacency_matrix, shape=[batch_size, node_count, node_count])
 
-    #todo: maybe this method should use already post-sigmoid predictions
+    # todo: maybe this method should use already post-sigmoid predictions
     distribution = sample_logistic(shape=[batch_size, node_count, node_count])
     predictions = tf.reshape(predictions, shape=[batch_size, node_count, node_count]) + distribution * noise
     predictions = tf.sigmoid(predictions) * inverse_identity(node_count)
@@ -37,12 +38,16 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = Fa
         sum_with_reverse = predictions + tf.transpose(predictions,[0,2,1])
         cost_subtours = tf.reduce_sum(tf.square(tf.nn.relu(sum_with_reverse - 1))) / tf.cast(batch_size, tf.float32)
     else:
-        subtours = subtour_constraints(predictions)
-        predictions = tf.reshape(predictions, (batch_size, node_count * node_count, 1))
+        predictions_list = list(predictions.numpy()) # vajag deepcopy?
+        subtours_cy = subtours(batch_size, node_count, predictions_list)
 
-        for i, subtour in subtours:
+        predictions = tf.reshape(predictions, (batch_size, node_count * node_count, 1))
+        for i, subtour_edges, subtours_added in subtours_cy:
+            subtour = tf.SparseTensor(values=[1.] * len(subtour_edges), indices=subtour_edges,
+                                      dense_shape=[subtours_added, node_count * node_count])
             tmp = tf.sparse.sparse_dense_matmul(subtour, predictions[i])
             cost_subtours += tf.reduce_sum(tf.square(2 - tmp)) / tf.cast(batch_size, tf.float32)
+
 
     # scale to return values in reasonable range
     cost_subtours *= 0.05 * 100
