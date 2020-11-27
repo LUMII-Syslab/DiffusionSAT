@@ -64,10 +64,13 @@ class MultistepTSP(tf.keras.Model):
     def optimize(self, gradients):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
+    def log_visualizations(self, adj_matrix, coords):
+        predictions, total_loss, last_loss = self.call(adj_matrix, training=False)
+        figure = self.draw_graph(tf.sigmoid(predictions[0, :, :, 0]).numpy(), coords[0].numpy())  # todo: make image only once per checkpoint
+        tf.summary.image("graph", tf.cast(plot_to_image(figure), tf.float32) / 255.0)
+
     def predict_step(self, adj_matrix, coords):
         predictions, total_loss, last_loss = self.call(adj_matrix, training=False)
-        figure = self.draw_graph(tf.sigmoid(predictions[0, :, :, 0]).numpy(), coords[0].numpy()) #todo: make image only once per checkpoint
-        tf.summary.image("graph", tf.cast(plot_to_image(figure), tf.float32) / 255.0)
 
         return {
             "loss": last_loss,

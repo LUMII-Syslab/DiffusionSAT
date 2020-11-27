@@ -92,6 +92,12 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                       f"input_beam: {input_beam.numpy():.2f}%; "
                       f"input_random: {input_random.numpy():.2f}%; ")
 
+            if Config.model == 'multistep_tsp':
+                iterator = itertools.islice(validation_data, 1)
+                for step_data in iterator:
+                    model_input = dataset.filter_model_inputs(step_data)
+                    model.log_visualizations(**model_input)
+
         if int(ckpt.step) % 1000 == 0:
             save_path = ckpt_manager.save()
             print(f"Saved checkpoint for step {int(ckpt.step)}: {save_path}")
