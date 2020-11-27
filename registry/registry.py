@@ -5,7 +5,7 @@ from data.tsp import EuclideanTSP
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
 from model.tsp_matrix_se import TSPMatrixSE
-from data.CNFGen import SAT_3, Clique
+from data.CNFGen import SAT_3, Clique, DomSet
 from model.tsp_multistep import MultistepTSP
 
 class Registry:
@@ -47,5 +47,6 @@ class DatasetRegistry(Registry):
             "k_sat_literals": KSATLiterals,
             "3-sat": SAT_3,
             "clique": Clique,
+            "dominating_set": DomSet,
             "euclidean_tsp": EuclideanTSP
         }

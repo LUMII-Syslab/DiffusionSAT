@@ -77,6 +77,21 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                     tf.summary.scalar("total_accuracy", mean_total_acc, step=int(ckpt.step))
             print(f"Validation accuracy: {mean_acc.numpy():.4f}; total accuracy {mean_total_acc.numpy():.4f}")
 
+            if Config.task == 'euclidean_tsp':
+                model_greedy, input_greedy, model_beam, input_beam, input_random = calculate_TSP_metrics(dataset, validation_data, model, steps=100)
+                with tf.name_scope("TSP_metrics"):
+                    with writer.as_default():
+                        tf.summary.scalar("model/greedy", model_greedy, step=int(ckpt.step))
+                        tf.summary.scalar("input/greedy", input_greedy, step=int(ckpt.step))
+                        tf.summary.scalar("model/beam", model_beam, step=int(ckpt.step))
+                        tf.summary.scalar("input/beam", input_beam, step=int(ckpt.step))
+                        tf.summary.scalar("input/random", input_random, step=int(ckpt.step))
+                print(f"model_greedy: {model_greedy.numpy():.2f}%; "
+                      f"input_greedy {input_greedy.numpy():.2f}%; "
+                      f"model_beam: {model_beam.numpy():.2f}%; "
+                      f"input_beam: {input_beam.numpy():.2f}%; "
+                      f"input_random: {input_random.numpy():.2f}%; ")
+
         if int(ckpt.step) % 1000 == 0:
             save_path = ckpt_manager.save()
             print(f"Saved checkpoint for step {int(ckpt.step)}: {save_path}")
@@ -114,6 +129,28 @@ def calculate_accuracy(dataset: Dataset, data: tf.data.Dataset, model: Model, st
         mean_total_acc.update_state(total_accuracy)
 
     return mean_acc.result(), mean_total_acc.result()
+
+
+def calculate_TSP_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None):
+    mean_model_greedy = tf.metrics.Mean()
+    mean_input_greedy = tf.metrics.Mean()
+    mean_model_beam   = tf.metrics.Mean()
+    mean_input_beam   = tf.metrics.Mean()
+    mean_input_random = tf.metrics.Mean()
+
+    iterator = itertools.islice(data, steps) if steps else data
+
+    for step_data in iterator:
+        model_input = dataset.filter_model_inputs(step_data)
+        output = model.predict_step(**model_input)
+        model_greedy, input_greedy, model_beam, input_beam, input_random = dataset.TSP_metrics(output["prediction"], step_data)
+        mean_model_greedy.update_state(model_greedy)
+        mean_input_greedy.update_state(input_greedy)
+        mean_model_beam.update_state(model_beam)
+        mean_input_beam.update_state(input_beam)
+        mean_input_random.update_state(input_random)
+
+    return mean_model_greedy.result(), mean_input_greedy.result(), mean_model_beam.result(), mean_input_beam.result(), mean_input_random.result()
 
 
 if __name__ == '__main__':

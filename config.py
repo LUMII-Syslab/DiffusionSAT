@@ -15,8 +15,8 @@ class Config:
     train_steps = 100000
     warmup = 0.0
     learning_rate = 0.0001
-    model = 'multistep_tsp'
-    task = 'euclidean_tsp'
+    model = 'tsp_matrix_se'  # query_sat, neuro_sat, tsp_matrix_se, multistep_tsp
+    task = 'euclidean_tsp'  # k_sat_variables, k_sat_literals, 3-sat, clique, euclidean_tsp
 
     restore = None
     label = ""
