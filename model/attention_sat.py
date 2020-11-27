@@ -1,7 +1,6 @@
 import tensorflow as tf
-from tensorflow.keras.layers import LSTMCell
 from tensorflow.keras.models import Model
-import tensorflow_addons as tfa
+from tensorflow.keras.optimizers import Optimizer
 
 from layers.attention import GraphAttentionLayer
 from layers.layer_normalization import LayerNormalization
@@ -11,17 +10,17 @@ from model.mlp import MLP
 
 class AttentionSAT(Model):
 
-    def __init__(self, optimizer, feature_maps=128, msg_layers=3, vote_layers=3, rounds=16, **kwargs):
-        super().__init__(**kwargs, name="NeuroSAT")
+    def __init__(self, optimizer: Optimizer, feature_maps=128, msg_layers=3, vote_layers=3, rounds=16, **kwargs):
+        super().__init__(**kwargs, name="AttentionSAT")
         self.rounds = rounds
         self.optimizer = optimizer
 
-        init = tf.initializers.RandomNormal()
-        self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
-        self.C_init = self.add_weight(name="C_init", shape=[1, feature_maps], initializer=init, trainable=True)
+        # init = tf.initializers.RandomNormal()
+        # self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
+        # self.C_init = self.add_weight(name="C_init", shape=[1, feature_maps], initializer=init, trainable=True)
 
-        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tfa.activations.gelu, do_layer_norm=False)
-        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tfa.activations.gelu, do_layer_norm=False)
+        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tf.nn.relu, do_layer_norm=False)
+        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tf.nn.relu, do_layer_norm=False)
 
         self.attention_l = GraphAttentionLayer(feature_maps * 2, feature_maps, name="attention_l")
         self.attention_c = GraphAttentionLayer(feature_maps * 2, feature_maps, name="attention_c")
@@ -42,13 +41,15 @@ class AttentionSAT(Model):
         n_clauses = shape[1]
         n_vars = n_lits // 2
 
-        l_output = tf.tile(self.L_init / self.denom, [n_lits, 1])
-        c_output = tf.tile(self.C_init / self.denom, [n_clauses, 1])
+        # l_output = tf.tile(self.L_init / self.denom, [n_lits, 1])
+        # c_output = tf.tile(self.C_init / self.denom, [n_clauses, 1])
 
-        # variables = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.025)
-        # clause_state = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
+        l_output = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.025)
+        c_output = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
 
-        for _ in tf.range(self.rounds):
+        step_logits = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
+        step_loss = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
+        for step in tf.range(self.rounds):
             new_clauses = self.attention_c(c_output, l_output, tf.sparse.transpose(adj_matrix))
             c_output = self.layer_norm_2(c_output + new_clauses)
             new_clauses2 = self.clauses_mlp(c_output, training=training)
@@ -58,23 +59,29 @@ class AttentionSAT(Model):
             l_output = self.layer_norm_1(l_output + self.flip(new_literals, n_vars))
             new_literals2 = self.literals_mlp(l_output, training=training)
             l_output = self.layer_norm_3(l_output + new_literals2)
+            #
+            # l_output = tf.stop_gradient(l_output) * 0.2 + l_output * 0.8
+            # c_output = tf.stop_gradient(c_output) * 0.2 + c_output * 0.8
 
-        variables = tf.concat([l_output[:n_vars], l_output[n_vars:]], axis=1)  # n_vars x 2
-        logits = self.output_layer(variables)
-        return logits
+            variables = tf.concat([l_output[:n_vars], l_output[n_vars:]], axis=1)  # n_vars x 2
+            logits = self.output_layer(variables)
+            step_logits = step_logits.write(step, logits)
+
+            loss = softplus_log_square_loss(logits, clauses)
+            loss = tf.reduce_sum(loss)
+            step_loss = step_loss.write(step, loss)
+
+        return step_logits.stack()[-1], tf.reduce_mean(step_loss.stack())
 
     @staticmethod
     def flip(literals, n_vars):
         return tf.concat([literals[n_vars:(2 * n_vars), :], literals[0:n_vars, :]], axis=0)
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL
-                 )
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
     def train_step(self, adj_matrix, clauses):
         with tf.GradientTape() as tape:
-            logits = self.call(adj_matrix, clauses, training=True)
-            loss = tf.reduce_sum(softplus_log_square_loss(logits, clauses))
+            logits, loss = self.call(adj_matrix, clauses, training=True)
             gradients = tape.gradient(loss, self.trainable_variables)
             self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
@@ -84,12 +91,11 @@ class AttentionSAT(Model):
         }
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
     def predict_step(self, adj_matrix, clauses):
-        predictions = self.call(adj_matrix, clauses, training=False)
+        predictions, loss = self.call(adj_matrix, clauses, training=False)
 
         return {
-            "loss": tf.reduce_sum(softplus_log_square_loss(predictions, clauses)),
+            "loss": loss,
             "prediction": tf.squeeze(predictions, axis=-1)
         }

@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
-import tensorflow_addons as tfa
 
 
 def matmul_with_sparse_mask(a: tf.Tensor, b: tf.Tensor, mask: tf.SparseTensor, scale=1):
@@ -22,7 +21,7 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
     rest of the nodes are masked out using adjacency matrix.
     """
 
-    def __init__(self, hidden_nmaps, output_nmaps, activation=tfa.activations.gelu, **kwargs):
+    def __init__(self, hidden_nmaps, output_nmaps, activation=tf.nn.relu, **kwargs):
         super().__init__(**kwargs)
         self.hidden_nmaps = hidden_nmaps
         self.output_nmaps = output_nmaps
@@ -53,7 +52,7 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
         v = tf.split(v, num_or_size_splits=self.heads, axis=-1)
 
         results = []
-        for i in range(self.heads):
+        for i in range(self.heads): # TODO: Can this be done in parallel?
             if self.use_sparse_mul:
                 scale = 1 / tf.sqrt(tf.cast(self.hidden_nmaps // self.heads, tf.float32))
                 coef = matmul_with_sparse_mask(q[i], k[i], adj_matrix, scale)

@@ -16,7 +16,7 @@ class KSATVariables(DIMACDataset):
     def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
         super(KSATVariables, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 300000
-        self.test_size = 1000
+        self.test_size = 10000
         self.min_vars = 3
         self.max_vars = 100
 
