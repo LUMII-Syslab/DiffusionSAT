@@ -6,6 +6,7 @@ from layers.attention import GraphAttentionLayer
 from layers.layer_normalization import LayerNormalization
 from loss.sat import softplus_log_square_loss
 from model.mlp import MLP
+import tensorflow_addons as tfa
 
 
 class AttentionSAT(Model):
@@ -19,8 +20,8 @@ class AttentionSAT(Model):
         # self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
         # self.C_init = self.add_weight(name="C_init", shape=[1, feature_maps], initializer=init, trainable=True)
 
-        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tf.nn.relu, do_layer_norm=False)
-        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tf.nn.relu, do_layer_norm=False)
+        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tfa.activations.gelu, do_layer_norm=False)
+        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tfa.activations.gelu, do_layer_norm=False)
 
         self.attention_l = GraphAttentionLayer(feature_maps * 2, feature_maps, name="attention_l")
         self.attention_c = GraphAttentionLayer(feature_maps * 2, feature_maps, name="attention_c")
@@ -30,7 +31,7 @@ class AttentionSAT(Model):
         self.layer_norm_3 = LayerNormalization(axis=-1)
         self.layer_norm_4 = LayerNormalization(axis=-1)
 
-        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, name="L_vote")
+        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, activation=tfa.activations.gelu, name="L_vote")
 
         self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
         self.feature_maps = feature_maps
