@@ -8,6 +8,7 @@ import tensorflow as tf
 from data.dataset import Dataset
 
 from loss.supervised_tsp import get_path_with_Concorde
+from loss.supervised_tsp import get_score_with_Concorde
 
 
 class EuclideanTSP(Dataset):
@@ -15,9 +16,10 @@ class EuclideanTSP(Dataset):
     # TODO(@Emīls): Move batch_size to config and add kwargs to datasets
     def __init__(self, node_count=16, **kwargs) -> None:
         self.node_count = node_count
+        self.no_labels = False
 
     def train_data(self) -> tf.data.Dataset:
-        data = self.__generate_data(node_count=self.node_count, dataset_size=100000, batch_size=16)
+        data = self.__generate_data(node_count=self.node_count, dataset_size=100000, batch_size=32)
         data = data.shuffle(10000)
         data = data.repeat()
         return data
@@ -26,21 +28,29 @@ class EuclideanTSP(Dataset):
         # generates 2D Euclidean coordinates and the corresponding adjacency matrices
         coords = np.random.rand(dataset_size, node_count, 2)
         graphs = []
+        labels = []
+        print_iteration = 1000
         for u in range(dataset_size):
             graph = np.empty(shape=(node_count, node_count))
             for i in range(node_count):
                 for j in range(node_count):
                     graph[i][j] = math.sqrt(
                         (coords[u][i][0] - coords[u][j][0]) ** 2 + (coords[u][i][1] - coords[u][j][1]) ** 2)
-            # graph = sparsify(graph)
+            if self.no_labels:
+                label = []
+            else:
+                label = get_score_with_Concorde(coords[u])
+                labels.append(label.tolist())
             graphs.append(graph.tolist())
+            if(u%print_iteration==0):
+                print(f"Building TSP dataset: {u}/{dataset_size} done")
 
-        data = tf.data.Dataset.from_tensor_slices({"adjacency_matrix": graphs, "coordinates": coords})
+        data = tf.data.Dataset.from_tensor_slices({"adjacency_matrix": graphs, "coordinates": coords, "labels": labels})
         data = data.batch(batch_size)
         return data
 
     def validation_data(self) -> tf.data.Dataset:
-        data = self.__generate_data(node_count=self.node_count, dataset_size=128, batch_size=1)
+        data = self.__generate_data(node_count=self.node_count, dataset_size=1024, batch_size=2)
         data = data.shuffle(10000)
         data = data.repeat()
         return data
@@ -52,32 +62,26 @@ class EuclideanTSP(Dataset):
         return data
 
     def filter_model_inputs(self, step_data) -> dict:
-        return {"adj_matrix": step_data["adjacency_matrix"], "coords": step_data["coordinates"]}
+        return {"adj_matrix": step_data["adjacency_matrix"], "coords": step_data["coordinates"], "labels": step_data["labels"]}
 
     def accuracy(self, predictions, step_data):
         # calculates (optimal_path_length / found_path_length)
         # where found_path_length = path_length(greedy_search(model(graph)))
 
-        # getting numpy arrays of predictions, coordinates and adjacency matrices
         batch_size, node_count, *_ = tf.shape(predictions)
-        predictions_reshaped = tf.reshape(predictions, shape=[batch_size, node_count, node_count])
-        coordinates_reshaped = tf.reshape(step_data["coordinates"], shape=[batch_size, node_count, 2])
-        adjacency_matrices_reshaped = tf.reshape(step_data["adjacency_matrix"],
-                                                 shape=[batch_size, node_count, node_count])
-        predictions_np = copy.deepcopy(predictions_reshaped.numpy())
-        coordinates_np = copy.deepcopy(coordinates_reshaped.numpy())
-        adjacency_matrices_np = copy.deepcopy(adjacency_matrices_reshaped.numpy())
+        predictions = tf.reshape(predictions, shape=[batch_size, node_count, node_count])
+        coordinates = tf.reshape(step_data["coordinates"], shape=[batch_size, node_count, 2])
 
         input_optimal_path_len_sum = 0
         model_greedy_path_len_sum = 0
 
-        for i in range(len(adjacency_matrices_np)):  # iterate over the batch
-            input_optimal_path = get_path_with_Concorde(coordinates_np[i])
-            input_optimal_path_len = get_path_len(adjacency_matrices_np[i], input_optimal_path)
+        for i in range(batch_size):
+            input_optimal_path = get_path_with_Concorde(coordinates[i])
+            input_optimal_path_len = get_path_len(coordinates[i], input_optimal_path)
             input_optimal_path_len_sum += input_optimal_path_len
 
-            model_greedy_path = get_path_from_score_greedy(predictions_np[i])
-            model_greedy_path_len = get_path_len(adjacency_matrices_np[i], model_greedy_path)
+            model_greedy_path = get_path_from_score_greedy(predictions[i])
+            model_greedy_path_len = get_path_len(coordinates[i], model_greedy_path)
             model_greedy_path_len_sum += model_greedy_path_len
 
         model_greedy_accuracy = input_optimal_path_len_sum / model_greedy_path_len_sum
@@ -99,15 +103,15 @@ class EuclideanTSP(Dataset):
 
         beam_width = 128
 
-        # getting numpy arrays of predictions, coordinates and adjacency matrices
         batch_size, node_count, *_ = tf.shape(predictions)
         predictions_reshaped = tf.reshape(predictions, shape=[batch_size, node_count, node_count])
         coordinates_reshaped = tf.reshape(step_data["coordinates"], shape=[batch_size, node_count, 2])
-        adjacency_matrices_reshaped = tf.reshape(step_data["adjacency_matrix"],
-                                                 shape=[batch_size, node_count, node_count])
-        predictions_np = copy.deepcopy(predictions_reshaped.numpy())
-        coordinates_np = copy.deepcopy(coordinates_reshaped.numpy())
-        adjacency_matrices_np = copy.deepcopy(adjacency_matrices_reshaped.numpy())
+        adjacency_matrices_reshaped = tf.reshape(step_data["adjacency_matrix"], shape=[batch_size, node_count, node_count])
+
+        # beam search is slow without .numpy()
+        predictions_np = predictions_reshaped.numpy()
+        coordinates_np = coordinates_reshaped.numpy()
+        adjacency_matrices_np = adjacency_matrices_reshaped.numpy()
 
         input_optimal_path_len_sum = 0
         input_greedy_path_len_sum = 0
@@ -116,29 +120,29 @@ class EuclideanTSP(Dataset):
         model_beam_path_len_sum = 0
         input_random_path_len_sum = 0
 
-        for i in range(len(adjacency_matrices_np)):  # iterate over the batch
+        for i in range(batch_size):
             input_optimal_path = get_path_with_Concorde(coordinates_np[i])
-            input_optimal_path_len = get_path_len(adjacency_matrices_np[i], input_optimal_path)
+            input_optimal_path_len = get_path_len(coordinates_np[i], input_optimal_path)
             input_optimal_path_len_sum += input_optimal_path_len
 
             input_greedy_path = get_path_from_score_greedy(adjacency_matrices_np[i], shortest=True)
-            input_greedy_path_len = get_path_len(adjacency_matrices_np[i], input_greedy_path)
+            input_greedy_path_len = get_path_len(coordinates_np[i], input_greedy_path)
             input_greedy_path_len_sum += input_greedy_path_len
 
             model_greedy_path = get_path_from_score_greedy(predictions_np[i])
-            model_greedy_path_len = get_path_len(adjacency_matrices_np[i], model_greedy_path)
+            model_greedy_path_len = get_path_len(coordinates_np[i], model_greedy_path)
             model_greedy_path_len_sum += model_greedy_path_len
 
             input_beam_path = get_path_from_score_beam(adjacency_matrices_np[i], shortest=True, beam_width=beam_width)
-            input_beam_path_len = get_path_len(adjacency_matrices_np[i], input_beam_path)
+            input_beam_path_len = get_path_len(coordinates_np[i], input_beam_path)
             input_beam_path_len_sum += input_beam_path_len
 
             model_beam_path = get_path_from_score_beam(predictions_np[i], beam_width=beam_width)
-            model_beam_path_len = get_path_len(adjacency_matrices_np[i], model_beam_path)
+            model_beam_path_len = get_path_len(coordinates_np[i], model_beam_path)
             model_beam_path_len_sum += model_beam_path_len
 
             input_random_path = get_path_from_score_random(adjacency_matrices_np[i])
-            input_random_path_len = get_path_len(adjacency_matrices_np[i], input_random_path)
+            input_random_path_len = get_path_len(coordinates_np[i], input_random_path)
             input_random_path_len_sum += input_random_path_len
 
         model_greedy_optimality_gap = 100*(model_greedy_path_len_sum / input_optimal_path_len_sum - 1)
@@ -148,16 +152,6 @@ class EuclideanTSP(Dataset):
         input_random_optimality_gap = 100*(input_random_path_len_sum / input_optimal_path_len_sum - 1)
         return model_greedy_optimality_gap, input_greedy_optimality_gap, model_beam_optimality_gap, input_beam_optimality_gap, input_random_optimality_gap
 
-    # def visualize_TSP(self, predictions, step_data):
-    #     # getting numpy arrays of predictions, coordinates and adjacency matrices
-    #     batch_size, node_count, *_ = tf.shape(predictions)
-    #     predictions_reshaped = tf.reshape(predictions, shape=[batch_size, node_count, node_count])
-    #     coordinates_reshaped = tf.reshape(step_data["coordinates"], shape=[batch_size, node_count, 2])
-    #     predictions_np = copy.deepcopy(predictions_reshaped.numpy())
-    #     coordinates_np = copy.deepcopy(coordinates_reshaped.numpy())
-    #
-    #     random_index = np.random.randint(low=0, high=batch_size, size=2)[0]
-    #     draw_graph(predictions_np[random_index], coordinates_np[random_index], "pink")
 
 
 def sparsify(graph, percentile_closest=20):
@@ -230,7 +224,7 @@ def get_path_from_score_greedy(score, shortest=False):
     return path
 
 
-def get_path_from_score_beam(score, beam_width=50, branch_factor=4, shortest=False):
+def get_path_from_score_beam(score, beam_width=50, branch_factor=None, shortest=False):
     # Beam search the best edge to unvisited vertex
     """
     score (2D np array) - a input adjacency matrix
@@ -238,6 +232,9 @@ def get_path_from_score_beam(score, beam_width=50, branch_factor=4, shortest=Fal
     branch_factor (int) - number of continuations considered for each path
     shortest (bool) - True if searching for the shortest path, False if for the longest
     """
+
+    if (branch_factor == None):
+        branch_factor = len(score)
 
     if (shortest):
         Sort_Pairs = Sort_Pairs_Shortest
@@ -299,31 +296,16 @@ def Sort_Pairs_Shortest(list_of_pairs):
     return (sorted(list_of_pairs, key=lambda x: -x[1]))
 
 
-def get_path_len(adj_matrix, path):
-    path_len = 0
-    for i in range(len(path) - 1):
-        path_len += adj_matrix[path[i], path[i + 1]]
-    return path_len
+# def get_path_len(adj_matrix, path):
+#     path_len = 0
+#     for i in range(len(path) - 1):
+#         path_len += adj_matrix[path[i], path[i + 1]]
+#     return path_len
 
-# def draw_graph(x, coords, colour="cyan"):
-#     if(colour == "pink"):
-#         red = 1.
-#         green = 0.
-#     else:
-#         red = 0.
-#         green = 1.
-#     min_val = np.amin(x)
-#     max_val = np.amax(x)
-#     x = x - min_val  # make it start at 0
-#     x = x/(max_val-min_val)  # norm it to range [0-1]
-#     n_vertices = len(coords)
-#     # x are adjacency matrix, coords are the coordinates of the vertices
-#     plt.scatter(coords[:, 0], coords[:, 1], color='k')
-#     for i in range(n_vertices):
-#         for j in range(i):
-#             both_edges = max(x[i][j], x[j][i])
-#             one_edge = min(x[i][j], x[j][i])
-#             ratio = max(x[i][j], x[j][i])
-#             color = (red, green, ratio)  # red, if one-directional edge, pink if both directions
-#             plt.plot([coords[i][0], coords[j][0]], [coords[i][1], coords[j][1]], alpha=both_edges, color=color, lw='3')
-#     plt.show()
+def get_path_len(coords, path):
+    path_len = 0
+    for k in range(len(path) - 1):
+        i = path[k]  # vertex from
+        j = path[k + 1]  # vertex to
+        path_len += math.sqrt((coords[i][0] - coords[j][0]) ** 2 + (coords[i][1] - coords[j][1]) ** 2)
+    return path_len

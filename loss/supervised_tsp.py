@@ -1,33 +1,32 @@
 import os
-import copy
-
 import tensorflow as tf
 import numpy as np
 
 from concorde.tsp import TSPSolver  # https://github.com/jvkersch/pyconcorde
 
 
-def tsp_supervised_loss(predictions, adjacency_matrix, coords):
+def inverse_identity(size):
+    return tf.ones(shape=[size, size]) - tf.eye(size)
+
+
+def tsp_supervised_loss(predictions, labels):
     """
     :param predictions: TODO: Describe what and with what dimensions is expected as input
-    :param adjacency_matrix:
-    :param coords:
-    :return:
+    :param labels: matrices with optimal edges marked with ones
+    :return: loss scalar
     """
 
     batch_size, node_count, *_ = tf.shape(predictions)
 
-    predictions_reshaped = tf.reshape(predictions, shape=[batch_size, node_count, node_count])
-    coordinates_reshaped = tf.reshape(coords, shape=[batch_size, node_count, 2])
-    adjacency_matrices_reshaped = tf.reshape(adjacency_matrix, shape=[batch_size, node_count, node_count])
-    coordinates_np = copy.deepcopy(coordinates_reshaped.numpy())
-    adjacency_matrices_np = copy.deepcopy(adjacency_matrices_reshaped.numpy())
+    predictions = tf.reshape(predictions, shape=[batch_size, node_count, node_count])
+    predictions = tf.sigmoid(predictions) * inverse_identity(node_count)
+    labels = tf.reshape(labels, shape=[batch_size, node_count, node_count])
 
     loss = 0
-    for i in range(len(adjacency_matrices_np)):  # iterate over the batch
-        y_true = get_score_with_Concorde(adjacency_matrices_np[i], coordinates_np[i])
-        y_pred = predictions_reshaped[i]
-        loss += tf.keras.losses.mean_squared_error(y_true, y_pred)
+    for i in range(batch_size):  # iterate over the batch
+        y_true = labels[i]
+        y_pred = predictions[i]
+        loss += tf.reduce_sum(tf.keras.losses.mean_squared_error(y_true, y_pred))
     return loss
 
 
@@ -60,17 +59,15 @@ def get_path_with_Concorde(coordinates):
     path = np.append(solution.tour, [solution.tour[0]])  # return to the first node
     return path
 
-def get_score_with_Concorde(adjacency_matrix, coordinates):
+def get_score_with_Concorde(coordinates):
     # outputs a matrix with edges in the optimal path marked by ones.
     node_count = len(coordinates)
     path = get_path_with_Concorde(coordinates)
     output = np.zeros((node_count, node_count))
-    route_distance = 0
     index = path[0]
     for i in range(node_count):
         previous_index = index
         index = path[i+1]
-        route_distance += adjacency_matrix[previous_index, index]
         output[previous_index, index] = 1
         output[index, previous_index] = 1
     return output
