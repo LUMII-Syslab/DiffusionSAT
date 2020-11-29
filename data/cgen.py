@@ -85,7 +85,7 @@ for N_BITS in range(BITS_FROM, BITS_TO+1):
         # Launching the process and reading its output
         out = subprocess.check_output(cmd, shell=True, text=True)
 
-        # Searching for the "CNF: <nvars>" var substing;
+        # Searching for the "CNF: <nvars> var" substring;
         # ok will be true iff <nvars> is between MIN_VARS and MAX_VARS;
         # if not ok, we will delete the file.
         ok = False
