@@ -11,7 +11,7 @@ def inverse_identity(size):
     return tf.ones(shape=[size, size]) - tf.eye(size)
 
 
-def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = False, fast_inaccurate = False):
+def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = False, fast_inaccurate = False, subtour_projection = False):
     """
     :param predictions: TODO: Describe what and with what dimensions is expected as input
     :param adjacency_matrix: assumed to be normalized: adjacency_matrix = adjacency_matrix * tf.math.rsqrt(tf.reduce_mean(tf.square(inputs), axis=[1,2], keepdims=True)+1e-6)
@@ -31,7 +31,6 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = Fa
     cost_outgoing = tf.reduce_mean(tf.square(1 - tf.reduce_sum(predictions, 2)))
     predictions = predictions / (tf.reduce_sum(predictions, 1, keepdims=True) + 1e-6)
     predictions = predictions / (tf.reduce_sum(predictions, 2, keepdims=True) + 1e-6)
-    cost_length = tf.reduce_mean(predictions * graph)
 
     cost_subtours = 0
     if fast_inaccurate:
@@ -42,18 +41,28 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = Fa
         subtours_cy = subtours(batch_size, node_count, predictions_list)
 
         predictions = tf.reshape(predictions, (batch_size, node_count * node_count, 1))
+        projected = tf.unstack(predictions)
         for i, subtour_edges, subtours_added in subtours_cy:
             subtour = tf.SparseTensor(values=[1.] * len(subtour_edges), indices=subtour_edges,
                                       dense_shape=[subtours_added, node_count * node_count])
-            tmp = tf.sparse.sparse_dense_matmul(subtour, predictions[i])
-            cost_subtours += tf.reduce_sum(tf.square(2 - tmp)) / tf.cast(batch_size, tf.float32)
+            cut_weight = tf.sparse.sparse_dense_matmul(subtour, projected[i]) # All these cutweight values are < 2
+            cost_subtours += tf.reduce_sum(tf.square(2 - cut_weight)) / tf.cast(batch_size, tf.float32)
+            if subtour_projection:
+                # add constraint cutweight >= 2.
+                dif = (2-cut_weight) / tf.sparse.reduce_sum(subtour, axis=1, keepdims=True) # how much each prediction should be increased
+                prediction_dif = tf.sparse.sparse_dense_matmul(subtour, dif, adjoint_a=True) # convert to the space of predicions
+                prediction_weight = tf.expand_dims(tf.sparse.reduce_sum(subtour, axis=0), axis=-1) # when several subtours affect one edge, the average should be taken
+                proj = projected[i] + prediction_dif / tf.maximum(prediction_weight, 1.)
 
+                #cut_weight1 = tf.sparse.sparse_dense_matmul(subtour, proj) #sanity check
+                # print(cut_weight, cut_weight1)
+                # print("")
+                projected[i] = proj
 
-    # scale to return values in reasonable range
-    cost_subtours *= 0.05 * 100
-    cost_length *= 100
-    cost_incoming *= 100
-    cost_outgoing *= 100
+        predictions = tf.stack(projected)
+        predictions = tf.reshape(predictions, [batch_size, node_count, node_count])
+
+    cost_length = tf.reduce_mean(predictions * graph)
 
     if log_in_tb:
         tf.summary.scalar("cost/length", cost_length)
@@ -61,4 +70,5 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = Fa
         tf.summary.scalar("cost/outgoing", cost_outgoing)
         tf.summary.scalar("cost/subtours", cost_subtours)
 
-    return cost_length + cost_incoming + cost_outgoing + cost_subtours
+    # scale to return values in reasonable range
+    return cost_length * 100 + cost_incoming * 100 + cost_outgoing * 100 + cost_subtours * 5
