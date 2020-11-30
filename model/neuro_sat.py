@@ -1,14 +1,14 @@
 import tensorflow as tf
 from tensorflow.keras.layers import LSTMCell
 from tensorflow.keras.models import Model
-from loss.sat import softplus_log_square_loss
+from loss.sat import softplus_log_square_loss, softplus_loss
 
 from model.mlp import MLP
 
 
 class NeuroSAT(Model):
 
-    def __init__(self, optimizer, feature_maps=128, msg_layers=3, vote_layers=3, rounds=16, **kwargs):
+    def __init__(self, optimizer, feature_maps=256, msg_layers=3, vote_layers=3, rounds=32, **kwargs):
         super().__init__(**kwargs, name="NeuroSAT")
         self.rounds = rounds
         self.optimizer = optimizer
@@ -40,6 +40,7 @@ class NeuroSAT(Model):
         l_state = [l_output, tf.zeros([n_lits, self.feature_maps])]
         c_state = [c_output, tf.zeros([n_clauses, self.feature_maps])]
 
+        loss = 0.
         for _ in tf.range(self.rounds):
             LC_pre_msgs = self.LC_msg(l_state[0])
             LC_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, LC_pre_msgs, adjoint_a=True)
@@ -51,12 +52,17 @@ class NeuroSAT(Model):
 
             _, l_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(l_state[0], n_vars)], axis=1),
                                        states=l_state)
+            literals = l_state[0]
 
-        literals = l_state[0]
+            variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
+            logits = self.L_vote(variables)
 
-        variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
+            loss = loss + tf.reduce_sum(softplus_log_square_loss(logits, clauses))
+
+        variables = tf.concat([l_state[0][:n_vars], l_state[0][n_vars:]], axis=1)  # n_vars x 2
         logits = self.L_vote(variables)
-        return logits
+
+        return logits, loss / tf.cast(self.rounds, tf.float32)
 
     @staticmethod
     def flip(literals, n_vars):
@@ -68,8 +74,7 @@ class NeuroSAT(Model):
                  )
     def train_step(self, adj_matrix, clauses):
         with tf.GradientTape() as tape:
-            logits = self.call(adj_matrix, clauses, training=True)
-            loss = tf.reduce_sum(softplus_log_square_loss(logits, clauses))
+            logits, loss = self.call(adj_matrix, clauses, training=True)
             gradients = tape.gradient(loss, self.trainable_variables)
             self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
@@ -82,9 +87,9 @@ class NeuroSAT(Model):
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
                  experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
     def predict_step(self, adj_matrix, clauses):
-        predictions = self.call(adj_matrix, clauses, training=False)
+        predictions, loss = self.call(adj_matrix, clauses, training=False)
 
         return {
-            "loss": tf.reduce_sum(softplus_log_square_loss(predictions, clauses)),
+            "loss": loss,
             "prediction": tf.squeeze(predictions, axis=-1)
         }

@@ -4,14 +4,14 @@ from tensorflow.keras.optimizers import Optimizer
 
 from layers.attention import GraphAttentionLayer
 from layers.layer_normalization import LayerNormalization
-from loss.sat import softplus_log_square_loss
+from loss.sat import softplus_log_square_loss, unsat_clause_count
 from model.mlp import MLP
 import tensorflow_addons as tfa
 
 
 class AttentionSAT(Model):
 
-    def __init__(self, optimizer: Optimizer, feature_maps=128, msg_layers=3, vote_layers=3, rounds=16, **kwargs):
+    def __init__(self, optimizer: Optimizer, feature_maps=256, msg_layers=3, vote_layers=3, rounds=24, **kwargs):
         super().__init__(**kwargs, name="AttentionSAT")
         self.rounds = rounds
         self.optimizer = optimizer
@@ -20,18 +20,18 @@ class AttentionSAT(Model):
         # self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
         # self.C_init = self.add_weight(name="C_init", shape=[1, feature_maps], initializer=init, trainable=True)
 
-        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tfa.activations.gelu, do_layer_norm=False)
-        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, activation=tfa.activations.gelu, do_layer_norm=False)
+        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
+        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
 
-        self.attention_l = GraphAttentionLayer(feature_maps * 2, feature_maps, name="attention_l")
-        self.attention_c = GraphAttentionLayer(feature_maps * 2, feature_maps, name="attention_c")
+        self.attention_l = GraphAttentionLayer(feature_maps, feature_maps, name="attention_l")
+        self.attention_c = GraphAttentionLayer(feature_maps, feature_maps, name="attention_c")
         self.layer_norm_1 = LayerNormalization(axis=-1)
         self.layer_norm_2 = LayerNormalization(axis=-1)
 
         self.layer_norm_3 = LayerNormalization(axis=-1)
         self.layer_norm_4 = LayerNormalization(axis=-1)
 
-        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, activation=tfa.activations.gelu, name="L_vote")
+        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, name="L_vote")
 
         self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
         self.feature_maps = feature_maps
@@ -72,6 +72,11 @@ class AttentionSAT(Model):
             loss = tf.reduce_sum(loss)
             step_loss = step_loss.write(step, loss)
 
+            n_unsat_clauses = unsat_clause_count(logits, clauses)
+            if loss < 0.5 and n_unsat_clauses == 0:
+                break
+
+        tf.summary.scalar("steps_taken", step)
         return step_logits.stack()[-1], tf.reduce_mean(step_loss.stack())
 
     @staticmethod

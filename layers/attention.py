@@ -22,7 +22,7 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
     rest of the nodes are masked out using adjacency matrix.
     """
 
-    def __init__(self, hidden_nmaps, output_nmaps, activation=tfa.activations.gelu, **kwargs):
+    def __init__(self, hidden_nmaps, output_nmaps, activation=tf.nn.relu, **kwargs):
         super().__init__(**kwargs)
         self.hidden_nmaps = hidden_nmaps
         self.output_nmaps = output_nmaps
