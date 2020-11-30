@@ -40,7 +40,7 @@ class MatrixSE(tf.keras.layers.Layer):
 
 class QuaternarySwitchUnit(tf.keras.layers.Layer):
 
-    def __init__(self, name, channel_count=4, dropout_rate=0.1, **kwargs):
+    def __init__(self, name, channel_count=4, dropout_rate=0.0, **kwargs):
         super(QuaternarySwitchUnit, self).__init__(name=name, **kwargs)
         self.channel_count = channel_count
         self.dropout_rate = dropout_rate
@@ -148,9 +148,9 @@ class BenesBlock(tf.keras.layers.Layer):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.forward = QuaternarySwitchUnit("forward", dropout_rate=0.1)
-        self.reverse = QuaternarySwitchUnit("reverse", dropout_rate=0.1)
-        self.middle = QuaternarySwitchUnit("middle", dropout_rate=0.1)
+        self.forward = QuaternarySwitchUnit("forward", dropout_rate=0.0)
+        self.reverse = QuaternarySwitchUnit("reverse", dropout_rate=0.0)
+        self.middle = QuaternarySwitchUnit("middle", dropout_rate=0.0)
         self.shuffle_forward = QuaternaryShuffleLayer(ShuffleType.RIGHT)
         self.shuffle_reverse = QuaternaryShuffleLayer(ShuffleType.LEFT)
 
