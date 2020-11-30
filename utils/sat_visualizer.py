@@ -4,12 +4,14 @@ from itertools import islice
 import matplotlib.pyplot as plt
 import networkx as nx
 
-from data.CNFGen import SAT_3
+from data.CNFGen import SAT_3, DomSet
 from data.k_sat import KSATVariables
 
 
 def draw_interaction_graph(var_count: int, clauses: list):
     """ Implements visualization of interactions graphs according to http://www.carstensinz.de/papers/SAT-2005.pdf .
+    Vertices are variables and edge is added between two variables if they
+    are in the same clause. Darker edge means more common places.
     """
     graph = nx.Graph()
     graph.add_nodes_from([(x, {"color": "red"}) for x in range(var_count)])
@@ -43,9 +45,9 @@ def draw_interaction_graph(var_count: int, clauses: list):
 
 
 def draw_factor_graph(var_count: int, clauses: list):
-    """ We draw variables to clauses bipartite graph.
-    Red edge - negative literal. Blue edge - positive literal.
-    Green nodes represents clauses and purple clauses represents variables.
+    """ Draws factor graph of SAT clause.
+    Red edges represent negation. Blue edges represents interpretation as is.
+    Cyan nodes represents clauses and green nodes represents variables.
     """
     clauses_count = len(clauses)
     graph = nx.Graph()
@@ -70,6 +72,47 @@ def draw_factor_graph(var_count: int, clauses: list):
     plt.show()
 
 
+def draw_resolution_graph(clauses: list):
+    """ Draws resolution graph.
+    Resolution graph visualizes the structure of clause dependencies.
+    Vertices are connected by edge if they have one (or more)
+    literals of a different logical value.
+    """
+    clauses_count = len(clauses)
+    graph = nx.Graph()
+    graph.add_nodes_from([x for x in range(clauses_count)])
+
+    set_clauses = [set(c) for c in clauses]
+
+    for idx_1, c1 in enumerate(set_clauses):
+        c1_inverse = {-x for x in c1}
+
+        for idx_2, c2 in enumerate(set_clauses):
+            has_common = c1_inverse.intersection(c2)
+
+            if has_common:
+                if graph.has_edge(idx_1, idx_2):
+                    graph[idx_1][idx_2]["count"] += 1
+                else:
+                    graph.add_edge(idx_1, idx_2, count=1)
+
+    edges = graph.edges
+    node_color = ["purple" for _ in graph]
+    edge_colors = ["grey" for _ in edges]
+
+    options = {
+        "edgelist": edges,
+        "edge_color": edge_colors,
+        "node_color": node_color,
+        "node_size": 20,
+        "width": 1,
+    }
+
+    pos = nx.spring_layout(graph)
+    nx.draw(graph, pos, **options)
+    plt.show()
+
+
 def main():
     dataset = SAT_3("/tmp")
     # dataset = KSATVariables("/tmp")
@@ -78,6 +121,7 @@ def main():
 
     draw_interaction_graph(var_count, clauses)
     draw_factor_graph(var_count, clauses)
+    draw_resolution_graph(clauses)
 
 
 if __name__ == '__main__':
