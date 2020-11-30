@@ -3,6 +3,7 @@ import time
 
 import tensorflow as tf
 from tensorflow.keras import Model
+import tensorflow_addons as tfa
 
 from config import Config
 from data.dataset import Dataset
@@ -12,9 +13,9 @@ from utils.measure import Timer
 
 
 def main():
-    # optimizer = tfa.optimizers.RectifiedAdam(config.learning_rate,
-    #                                          total_steps=config.train_steps,
-    #                                          warmup_proportion=config.warmup)
+    # optimizer = tfa.optimizers.RectifiedAdam(Config.learning_rate,
+    #                                          total_steps=Config.train_steps,
+    #                                          warmup_proportion=Config.warmup)
     # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
 
     optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.5, clip_gradients=True)

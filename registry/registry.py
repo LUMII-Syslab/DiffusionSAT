@@ -2,6 +2,7 @@ from abc import abstractmethod
 
 from data.k_sat import KSATVariables, KSATLiterals
 from data.tsp import EuclideanTSP
+from model.attention_sat import AttentionSAT
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
 from model.tsp_matrix_se import TSPMatrixSE
@@ -31,6 +32,7 @@ class ModelRegistry(Registry):
     @property
     def registry(self) -> dict:
         return {
+            "attention_sat": AttentionSAT,
             "query_sat": QuerySAT,
             "neuro_sat": NeuroSAT,
             "tsp_matrix_se": TSPMatrixSE,
