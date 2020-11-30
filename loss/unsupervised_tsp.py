@@ -71,4 +71,4 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = Fa
         tf.summary.scalar("cost/subtours", cost_subtours)
 
     # scale to return values in reasonable range
-    return cost_length * 100 + cost_incoming * 100 + cost_outgoing * 100 + cost_subtours * 5
+    return cost_length * 500 + cost_incoming * 100 + cost_outgoing * 100 + cost_subtours * 5
