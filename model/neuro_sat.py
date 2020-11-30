@@ -1,8 +1,8 @@
 import tensorflow as tf
 from tensorflow.keras.layers import LSTMCell
 from tensorflow.keras.models import Model
-from loss.sat import softplus_log_square_loss, softplus_loss
 
+from loss.sat import softplus_log_square_loss
 from model.mlp import MLP
 
 
