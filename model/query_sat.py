@@ -19,20 +19,20 @@ class QuerySAT(Model):
         self.variables_norm = LayerNormalization(axis=-1)
         self.clauses_norm = LayerNormalization(axis=-1)
 
-        self.update_gate = MLP(vote_layers, feature_maps * 2, feature_maps, name="update_gate")
+        self.update_gate = MLP(vote_layers, feature_maps * 2, feature_maps, name="update_gate", do_layer_norm=True)
 
         # self.forget_gate = MLP(msg_layers, feature_maps, feature_maps,
         #                        out_activation=tf.sigmoid,
         #                        out_bias = -1,
         #                        name="forget_gate")
 
-        self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output")
-        self.variables_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query")
+        self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output", do_layer_norm=True)
+        self.variables_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query", do_layer_norm=True)
         # self.clause_update = MLP(vote_layers, feature_maps * 2, feature_maps, name="clause_update")
         # self.clause_update_gate = MLP(vote_layers, feature_maps, feature_maps, out_activation = tf.sigmoid, out_bias = -1, name="clause_update_gate")
         # self.query_pos_inter = MLP(msg_layers, query_maps * 2, query_maps, name="query_pos_inter")
         # self.query_neg_inter = MLP(msg_layers, query_maps * 2, query_maps, name="query_neg_inter")
-        self.clause_mlp = MLP(vote_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update")
+        self.clause_mlp = MLP(vote_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=True)
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -52,7 +52,7 @@ class QuerySAT(Model):
         # clause_state = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
         variables = self.zero_state(n_vars, self.feature_maps)
         clause_state = self.zero_state(n_clauses, self.feature_maps)
-        #step_logits = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+        # step_logits = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         last_logits = tf.zeros([n_vars, 1])
         supervised_loss = 0.
@@ -75,7 +75,7 @@ class QuerySAT(Model):
             clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
             clause_data = self.clause_mlp(clause_unit)
             variables_loss_all = clause_data[:, 0:self.query_maps]
-            #variables_loss_neg = clause_data[:, self.query_maps:2 * self.query_maps]
+            # variables_loss_neg = clause_data[:, self.query_maps:2 * self.query_maps]
             new_clause_value = clause_data[:, self.query_maps:]
             # variables_loss_pos = self.query_pos_inter(clause_unit)
             variables_loss_pos = tf.sparse.sparse_dense_matmul(adj_matrix_pos, variables_loss_all)
@@ -101,7 +101,7 @@ class QuerySAT(Model):
             variables = new_variables  # + 0.1*variables
 
             logits = self.variables_output(variables)
-            #step_logits = step_logits.write(step, logits)
+            # step_logits = step_logits.write(step, logits)
             logit_loss = tf.reduce_sum(softplus_log_square_loss(logits, clauses))
             step_losses = step_losses.write(step, logit_loss)
             n_unsat_clauses = unsat_clause_count(logits, clauses)
@@ -117,7 +117,7 @@ class QuerySAT(Model):
             variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
             clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
 
-        #step_logits_tensor = step_logits.stack()  # step_count x literal_count
+        # step_logits_tensor = step_logits.stack()  # step_count x literal_count
         last_layer_loss = tf.reduce_sum(softplus_log_square_loss(last_logits, clauses))
         tf.summary.scalar("last_layer_loss", last_layer_loss)
         # log_as_histogram("step_losses", step_losses.stack())

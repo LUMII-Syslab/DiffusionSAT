@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.layers import LSTMCell
 from tensorflow.keras.models import Model
 
-from loss.sat import softplus_log_square_loss
+from loss.sat import softplus_log_square_loss, unsat_clause_count
 from model.mlp import MLP
 
 
@@ -23,7 +23,7 @@ class NeuroSAT(Model):
         self.L_update = LSTMCell(feature_maps, name="L_update")
         self.C_update = LSTMCell(feature_maps, name="C_update")
 
-        self.L_vote = MLP(vote_layers, feature_maps * 2, 1, name="L_vote")
+        self.L_vote = MLP(vote_layers, feature_maps * 2, 1, name="L_vote", do_layer_norm=False)
 
         self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
         self.feature_maps = feature_maps
@@ -41,7 +41,7 @@ class NeuroSAT(Model):
         c_state = [c_output, tf.zeros([n_clauses, self.feature_maps])]
 
         loss = 0.
-        for _ in tf.range(self.rounds):
+        for steps in tf.range(self.rounds):
             LC_pre_msgs = self.LC_msg(l_state[0])
             LC_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, LC_pre_msgs, adjoint_a=True)
 
@@ -57,12 +57,17 @@ class NeuroSAT(Model):
             variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=1)  # n_vars x 2
             logits = self.L_vote(variables)
 
-            loss = loss + tf.reduce_sum(softplus_log_square_loss(logits, clauses))
+            logits_loss = tf.reduce_sum(softplus_log_square_loss(logits, clauses))
+            loss = loss + logits_loss
+            n_unsat_clauses = unsat_clause_count(logits, clauses)
+
+            if logits_loss < 0.5 and n_unsat_clauses == 0:
+                break
 
         variables = tf.concat([l_state[0][:n_vars], l_state[0][n_vars:]], axis=1)  # n_vars x 2
         logits = self.L_vote(variables)
 
-        return logits, loss / tf.cast(self.rounds, tf.float32)
+        return logits, loss / tf.cast(steps, tf.float32)
 
     @staticmethod
     def flip(literals, n_vars):

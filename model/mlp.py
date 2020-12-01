@@ -9,7 +9,7 @@ class MLP(Model):
     def __init__(self, layer_count, hidden_nmap,
                  out_nmap, activation=tf.nn.relu,
                  out_activation=None, out_bias=None,
-                 do_layer_norm=True, **kwargs):
+                 do_layer_norm=False, **kwargs):
 
         super().__init__(**kwargs)
 

@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
-import tensorflow_addons as tfa
 
 
 def matmul_with_sparse_mask(a: tf.Tensor, b: tf.Tensor, mask: tf.SparseTensor, scale=1):
@@ -22,7 +21,7 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
     rest of the nodes are masked out using adjacency matrix.
     """
 
-    def __init__(self, hidden_nmaps, output_nmaps, activation=tf.nn.relu, **kwargs):
+    def __init__(self, hidden_nmaps, output_nmaps, activation=tf.nn.leaky_relu, **kwargs):
         super().__init__(**kwargs)
         self.hidden_nmaps = hidden_nmaps
         self.output_nmaps = output_nmaps

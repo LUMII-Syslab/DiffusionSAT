@@ -11,27 +11,24 @@ import tensorflow_addons as tfa
 
 class AttentionSAT(Model):
 
-    def __init__(self, optimizer: Optimizer, feature_maps=256, msg_layers=3, vote_layers=3, rounds=24, **kwargs):
+    def __init__(self, optimizer: Optimizer, feature_maps=256, msg_layers=3, vote_layers=3, rounds=16, **kwargs):
         super().__init__(**kwargs, name="AttentionSAT")
         self.rounds = rounds
         self.optimizer = optimizer
 
-        # init = tf.initializers.RandomNormal()
-        # self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
-        # self.C_init = self.add_weight(name="C_init", shape=[1, feature_maps], initializer=init, trainable=True)
+        init = tf.initializers.RandomNormal()
+        self.L_init = self.add_weight(name="L_init", shape=[1, feature_maps], initializer=init, trainable=True)
+        self.C_init = self.add_weight(name="C_init", shape=[1, feature_maps], initializer=init, trainable=True)
 
         self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
         self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
 
         self.attention_l = GraphAttentionLayer(feature_maps, feature_maps, name="attention_l")
         self.attention_c = GraphAttentionLayer(feature_maps, feature_maps, name="attention_c")
-        self.layer_norm_1 = LayerNormalization(axis=-1)
-        self.layer_norm_2 = LayerNormalization(axis=-1)
-
         self.layer_norm_3 = LayerNormalization(axis=-1)
         self.layer_norm_4 = LayerNormalization(axis=-1)
 
-        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, name="L_vote")
+        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, name="L_vote", do_layer_norm=False)
 
         self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
         self.feature_maps = feature_maps
@@ -42,31 +39,29 @@ class AttentionSAT(Model):
         n_clauses = shape[1]
         n_vars = n_lits // 2
 
-        # l_output = tf.tile(self.L_init / self.denom, [n_lits, 1])
-        # c_output = tf.tile(self.C_init / self.denom, [n_clauses, 1])
+        l_output = tf.tile(self.L_init / self.denom, [n_lits, 1])
+        c_output = tf.tile(self.C_init / self.denom, [n_clauses, 1])
+        logits = tf.zeros([n_vars, 1])
 
-        l_output = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.025)
-        c_output = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
+        #
+        # l_output = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.025)
+        # c_output = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
 
-        step_logits = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
         step_loss = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
+
         for step in tf.range(self.rounds):
             new_clauses = self.attention_c(c_output, l_output, tf.sparse.transpose(adj_matrix))
-            c_output = self.layer_norm_2(c_output + new_clauses)
+            c_output = tf.concat([c_output, new_clauses], axis=-1)
             new_clauses2 = self.clauses_mlp(c_output, training=training)
-            c_output = self.layer_norm_4(c_output + new_clauses2)
+            c_output = self.layer_norm_4(new_clauses2)
 
             new_literals = self.attention_l(l_output, c_output, adj_matrix)
-            l_output = self.layer_norm_1(l_output + self.flip(new_literals, n_vars))
+            l_output = tf.concat([l_output, self.flip(new_literals, n_vars)], axis=-1)
             new_literals2 = self.literals_mlp(l_output, training=training)
-            l_output = self.layer_norm_3(l_output + new_literals2)
-            #
-            # l_output = tf.stop_gradient(l_output) * 0.2 + l_output * 0.8
-            # c_output = tf.stop_gradient(c_output) * 0.2 + c_output * 0.8
+            l_output = self.layer_norm_3(new_literals2)
 
             variables = tf.concat([l_output[:n_vars], l_output[n_vars:]], axis=1)  # n_vars x 2
             logits = self.output_layer(variables)
-            step_logits = step_logits.write(step, logits)
 
             loss = softplus_log_square_loss(logits, clauses)
             loss = tf.reduce_sum(loss)
@@ -77,7 +72,7 @@ class AttentionSAT(Model):
                 break
 
         tf.summary.scalar("steps_taken", step)
-        return step_logits.stack()[-1], tf.reduce_mean(step_loss.stack())
+        return logits, tf.reduce_mean(step_loss.stack())
 
     @staticmethod
     def flip(literals, n_vars):
