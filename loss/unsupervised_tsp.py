@@ -20,7 +20,7 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = Fa
     """
 
     batch_size, node_count, *_ = tf.shape(predictions)
-    graph = tf.reshape(adjacency_matrix, shape=[batch_size, node_count, node_count])
+    adjacency_matrix = tf.reshape(adjacency_matrix, shape=[batch_size, node_count, node_count])
 
     # todo: maybe this method should use already post-sigmoid predictions
     distribution = sample_logistic(shape=[batch_size, node_count, node_count])
@@ -34,35 +34,35 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = Fa
 
     cost_subtours = 0
     if fast_inaccurate:
-        sum_with_reverse = predictions + tf.transpose(predictions,[0,2,1])
+        sum_with_reverse = predictions + tf.transpose(predictions, [0, 2, 1])
         cost_subtours = tf.reduce_sum(tf.square(tf.nn.relu(sum_with_reverse - 1))) / tf.cast(batch_size, tf.float32)
+
     else:
-        predictions_list = list(predictions.numpy()) # vajag deepcopy?
+        predictions_list = list(predictions.numpy())
         subtours_cy = subtours(batch_size, node_count, predictions_list)
 
-        predictions = tf.reshape(predictions, (batch_size, node_count * node_count, 1))
-        projected = tf.unstack(predictions)
-        for i, subtour_edges, subtours_added in subtours_cy:
-            subtour = tf.SparseTensor(values=[1.] * len(subtour_edges), indices=subtour_edges,
-                                      dense_shape=[subtours_added, node_count * node_count])
-            cut_weight = tf.sparse.sparse_dense_matmul(subtour, projected[i]) # All these cutweight values are < 2
-            cost_subtours += tf.reduce_sum(tf.square(2 - cut_weight)) / tf.cast(batch_size, tf.float32)
-            if subtour_projection:
-                # add constraint cutweight >= 2.
-                dif = (2-cut_weight) / tf.sparse.reduce_sum(subtour, axis=1, keepdims=True) # how much each prediction should be increased
-                prediction_dif = tf.sparse.sparse_dense_matmul(subtour, dif, adjoint_a=True) # convert to the space of predicions
-                prediction_weight = tf.expand_dims(tf.sparse.reduce_sum(subtour, axis=0), axis=-1) # when several subtours affect one edge, the average should be taken
-                proj = projected[i] + prediction_dif / tf.maximum(prediction_weight, 1.)
+        predictions = tf.reshape(predictions, (batch_size * node_count * node_count, 1))
 
-                #cut_weight1 = tf.sparse.sparse_dense_matmul(subtour, proj) #sanity check
+        if subtours_cy:
+            subtours_sparse = tf.SparseTensor(values=[1.] * len(subtours_cy), indices=subtours_cy,
+                                              dense_shape=[subtours_cy[-1][0] + 1, batch_size * node_count * node_count])
+            cut_weight = tf.sparse.sparse_dense_matmul(subtours_sparse, predictions)  # All these cut_weight values are < 2
+            cost_subtours += tf.reduce_sum(tf.square(2 - cut_weight)) / tf.cast(batch_size, tf.float32)
+
+            if subtour_projection:
+                # add constraint cut_weight >= 2.
+                dif = (2 - cut_weight) / tf.sparse.reduce_sum(subtours_sparse, axis=1, keepdims=True)  # how much each prediction should be increased
+                prediction_dif = tf.sparse.sparse_dense_matmul(subtours_sparse, dif, adjoint_a=True)  # convert to the space of predicions
+                prediction_weight = tf.expand_dims(tf.sparse.reduce_sum(subtours_sparse, axis=0), axis=-1)  # when several subtours affect one edge, the average should be taken
+                predictions = predictions + prediction_dif / tf.maximum(prediction_weight, 1.)
+
+                # cut_weight1 = tf.sparse.sparse_dense_matmul(subtours_sparse, predictions)  # sanity check
                 # print(cut_weight, cut_weight1)
                 # print("")
-                projected[i] = proj
 
-        predictions = tf.stack(projected)
         predictions = tf.reshape(predictions, [batch_size, node_count, node_count])
 
-    cost_length = tf.reduce_mean(predictions * graph)
+    cost_length = tf.reduce_mean(predictions * adjacency_matrix)
 
     if log_in_tb:
         tf.summary.scalar("cost/length", cost_length)
