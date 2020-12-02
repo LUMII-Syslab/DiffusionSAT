@@ -2,7 +2,6 @@ import tensorflow as tf
 import pyximport
 pyximport.install()
 from loss.tsp_subtours_cy import subtours
-import numpy
 
 
 def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb=False, fast_inaccurate=False, subtour_projection=False):
