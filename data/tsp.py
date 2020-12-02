@@ -394,6 +394,7 @@ def get_path_with_Concorde(coordinates):
 def get_score_with_Concorde(coordinates):
     # returns a matrix with edges in the optimal path marked by ones
     node_count = len(coordinates)
+    assert node_count >= 4  # Concorde takes 4+ vertices
     path = get_path_with_Concorde(coordinates)
     output = np.zeros((node_count, node_count))
     index = path[0]
