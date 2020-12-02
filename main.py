@@ -31,6 +31,13 @@ def main():
     print(f"Accuracy: {mean_acc.result().numpy():.4f}")
     print(f"Total fully correct: {mean_total_acc.result().numpy():.4f}")
 
+    if Config.task == 'euclidean_tsp':
+        model_greedy, input_greedy, model_beam, input_beam, input_random = calculate_TSP_metrics(dataset, dataset.test_data(), model)
+        print(f"model_greedy: {model_greedy.numpy():.2f}%; "
+              f"input_greedy {input_greedy.numpy():.2f}%; "
+              f"model_beam: {model_beam.numpy():.2f}%; "
+              f"input_beam: {input_beam.numpy():.2f}%; "
+              f"input_random: {input_random.numpy():.2f}%; ")
 
 def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     writer = tf.summary.create_file_writer(Config.train_dir)
