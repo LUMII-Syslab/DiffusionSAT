@@ -42,7 +42,7 @@ cpdef list subtours(int batch_size, int node_count, predictions):
                     for j in range(node_count):
                         if (i in edge_component) ^ (j in edge_component):
                             cut_weight += graph[i][j]
-                            subtour_check.append([subtours_added, g * node_count + node_count * i + j])
+                            subtour_check.append([subtours_added, g * node_count * node_count + i * node_count + j])
 
                 if cut_weight < 2:
                     subtours_added += 1

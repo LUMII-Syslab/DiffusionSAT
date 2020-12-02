@@ -2,6 +2,7 @@ import tensorflow as tf
 import pyximport
 pyximport.install()
 from loss.tsp_subtours_cy import subtours
+import numpy
 
 
 def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb=False, fast_inaccurate=False, subtour_projection=False):
@@ -40,7 +41,6 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb=Fals
             subtours_sparse = tf.SparseTensor(values=[1.] * len(subtours_cy), indices=subtours_cy,
                                               dense_shape=[subtours_cy[-1][0] + 1, batch_size * node_count * node_count])
             cut_weight = tf.sparse.sparse_dense_matmul(subtours_sparse, predictions)  # All these cut_weight values are < 2
-
             cost_subtours += tf.reduce_sum(tf.square(2 - cut_weight)) / tf.cast(batch_size, tf.float32)
 
             if subtour_projection:
