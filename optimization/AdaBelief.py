@@ -19,7 +19,7 @@ from tensorflow_addons.utils.types import FloatTensorLike
 from typing import Union, Callable, Dict
 from typeguard import typechecked
 
-from tabulate import tabulate
+# from tabulate import tabulate
 #from colorama import Fore, Back, Style
 
 

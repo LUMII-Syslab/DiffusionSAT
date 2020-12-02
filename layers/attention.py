@@ -1,6 +1,8 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
 
+from model.mlp import MLP
+
 
 def matmul_with_sparse_mask(a: tf.Tensor, b: tf.Tensor, mask: tf.SparseTensor, scale=1):
     """ Gives the same result as matmul(a,transpose(b))*mask, but calculation
@@ -14,7 +16,7 @@ def matmul_with_sparse_mask(a: tf.Tensor, b: tf.Tensor, mask: tf.SparseTensor, s
     return tf.SparseTensor(mask.indices, dot, dense_shape=mask.dense_shape)
 
 
-class GraphAttentionLayer(tf.keras.layers.Layer):
+class DotAttentionLayer(tf.keras.layers.Layer):
     """
     Simple scaled dot-product attention for graph neural network.
     Attention coefficients are only calculated for neighbor nodes,
@@ -76,3 +78,20 @@ class GraphAttentionLayer(tf.keras.layers.Layer):
 
         output = tf.concat(results, axis=-1)
         return self.output_weight(output)
+
+
+class MLPAttention(tf.keras.layers.Layer):
+    def __init__(self, hidden_maps, output_maps=1, layer_count=3, **kwargs):
+        super(MLPAttention, self).__init__(**kwargs)
+        self.mlp = MLP(layer_count, hidden_maps, 1, out_activation=tf.sigmoid)
+
+    def call(self, query: tf.Tensor, memory: tf.Tensor, adj_matrix: tf.sparse.SparseTensor, **kwargs):
+        q = tf.gather(query, adj_matrix.indices[:, 0])
+        v = tf.gather(memory, adj_matrix.indices[:, 1])
+        units = tf.concat([q, v], axis=-1)
+
+        result = self.mlp(units)
+        result = tf.squeeze(result, axis=-1)
+        weighted_adj = tf.SparseTensor(adj_matrix.indices, result, dense_shape=adj_matrix.dense_shape)
+
+        return tf.sparse.sparse_dense_matmul(weighted_adj, memory)
