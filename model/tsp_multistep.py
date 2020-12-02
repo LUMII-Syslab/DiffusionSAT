@@ -47,7 +47,8 @@ class MultistepTSP(tf.keras.Model):
         for step in tf.range(self.rounds):
             state = self.matrix_se(state, training=training)
             logits = self.logits_layer(state)+self.logit_bias
-            loss = tsp_unsupervised_loss(logits, inputs_norm, log_in_tb=training and step == self.rounds-1)
+            #loss = tsp_unsupervised_loss(logits, inputs_norm, log_in_tb=training and step == self.rounds-1)
+            loss = tsp_loss(logits, inputs, log_in_tb=training and step == self.rounds - 1, calculate_unsupervised=True)
             total_loss += loss
             last_loss = loss
 
