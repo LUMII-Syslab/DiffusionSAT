@@ -3,7 +3,6 @@ from tensorflow.keras.layers import Dense
 import matplotlib.pyplot as plt
 
 from loss.tsp import tsp_loss
-from loss.unsupervised_tsp import tsp_unsupervised_loss
 from layers.matrix_se import MatrixSE
 from utils.summary import plot_to_image
 from data.tsp import remove_padding, get_unpadded_size
@@ -29,8 +28,7 @@ class TSPMatrixSE(tf.keras.Model):
     def train_step(self, adj_matrix, coords, labels):
         with tf.GradientTape() as tape:
             predictions = self.call(adj_matrix, training=True)
-            loss = tsp_loss(predictions, adj_matrix, labels=labels)
-            # loss = tsp_unsupervised_loss(predictions, adj_matrix)
+            loss = tsp_loss(predictions, adj_matrix, labels=labels, supervised=True, unsupervised=False)
             gradients = tape.gradient(loss, self.trainable_variables)
             self.optimize(gradients)
         return {
@@ -46,8 +44,7 @@ class TSPMatrixSE(tf.keras.Model):
         predictions = self.call(adj_matrix, training=False)
 
         return {
-            "loss": tsp_loss(predictions, adj_matrix, labels=labels),
-            # "loss": tsp_unsupervised_loss(predictions, adj_matrix),
+            # "loss": tsp_loss(predictions, adj_matrix, labels=labels),
             "prediction": tf.squeeze(predictions, axis=-1)
         }
 
