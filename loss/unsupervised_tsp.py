@@ -1,17 +1,10 @@
 import tensorflow as tf
-import pyximport; pyximport.install()
+import pyximport
+pyximport.install()
 from loss.tsp_subtours_cy import subtours
 
-def sample_logistic(shape, eps=1e-20):
-    sample = tf.random.uniform(shape, minval=eps, maxval=1 - eps)
-    return tf.math.log(sample / (1 - sample))
 
-
-def inverse_identity(size):
-    return tf.ones(shape=[size, size]) - tf.eye(size)
-
-
-def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = False, fast_inaccurate = False, subtour_projection = False):
+def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb=False, fast_inaccurate=False, subtour_projection=False):
     """
     :param predictions: TODO: Describe what and with what dimensions is expected as input
     :param adjacency_matrix: assumed to be normalized: adjacency_matrix = adjacency_matrix * tf.math.rsqrt(tf.reduce_mean(tf.square(inputs), axis=[1,2], keepdims=True)+1e-6)
@@ -47,6 +40,7 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = Fa
             subtours_sparse = tf.SparseTensor(values=[1.] * len(subtours_cy), indices=subtours_cy,
                                               dense_shape=[subtours_cy[-1][0] + 1, batch_size * node_count * node_count])
             cut_weight = tf.sparse.sparse_dense_matmul(subtours_sparse, predictions)  # All these cut_weight values are < 2
+
             cost_subtours += tf.reduce_sum(tf.square(2 - cut_weight)) / tf.cast(batch_size, tf.float32)
 
             if subtour_projection:
@@ -72,3 +66,12 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb = Fa
 
     # scale to return values in reasonable range
     return cost_length * 500 + cost_incoming * 100 + cost_outgoing * 100 + cost_subtours * 5
+
+
+def sample_logistic(shape, eps=1e-20):
+    sample = tf.random.uniform(shape, minval=eps, maxval=1 - eps)
+    return tf.math.log(sample / (1 - sample))
+
+
+def inverse_identity(size):
+    return tf.ones(shape=[size, size]) - tf.eye(size)
