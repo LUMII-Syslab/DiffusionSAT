@@ -21,13 +21,12 @@ def tsp_loss(predictions, adjacency_matrix, labels=None, noise=0, log_in_tb=Fals
 
     loss = 0
     if supervised:
-        assert(labels is not None)
         batch_size, padded_size, *_ = tf.shape(predictions)
         predictions = tf.reshape(predictions, shape=[batch_size, padded_size, padded_size])
-        predictions = tf.sigmoid(predictions) * inverse_identity(padded_size)  # sigmoid; sets the diagonal to zeros
-        padding_mask = tf.cast(tf.not_equal(labels, PADDING_VALUE), tf.float32)
-        loss_tensor = tf.math.square(labels - predictions)
-        loss += tf.reduce_mean(padding_mask * loss_tensor)
+        mask = tf.cast(tf.not_equal(labels, PADDING_VALUE), tf.float32) * inverse_identity(padded_size)
+        loss_tensor = tf.nn.sigmoid_cross_entropy_with_logits(labels, predictions)
+        loss_tensor = loss_tensor * mask  # sets padding and diagonal to zeros
+        loss += tf.reduce_mean(loss_tensor)
     if unsupervised:
-        loss += tsp_unsupervised_loss(predictions, adjacency_matrix, noise, log_in_tb, fast_inaccurate, subtour_projection)
+        loss += 0.01*tsp_unsupervised_loss(predictions, adjacency_matrix, noise, log_in_tb, fast_inaccurate, subtour_projection)
     return loss

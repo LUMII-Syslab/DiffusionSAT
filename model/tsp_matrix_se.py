@@ -79,18 +79,21 @@ class TSPMatrixSE(tf.keras.Model):
         # edges in the optimal path are green, other edges are red
         figure = plt.figure(figsize=(5, 5))
         n = coords.shape[0]
-        # draw label
-        for i in range(n):
-            for j in range(i):
-                if label[i,j] == 1 or label[j,i] == 1:
-                    plt.plot([coords[i,0], coords[j,0]], [coords[i,1], coords[j,1]], color=(0., 1., 0.), lw='3')
 
-        # draw solution on top
+        # draw solution
         for i in range(n):
             for j in range(i):
                 larger_edge = max(prediction[i, j], prediction[j, i])
                 one_edge = min(prediction[i,j], prediction[j,i])
                 ratio = one_edge / larger_edge
                 color = (1., 0., ratio)  # red, if one-directional edge, pink if both directions
-                plt.plot([coords[i,0], coords[j,0]], [coords[i,1], coords[j,1]], alpha=larger_edge, color=color, lw='3')
+                alpha = min(1., (prediction[i, j] + prediction[j, i]))
+                plt.plot([coords[i,0], coords[j,0]], [coords[i,1], coords[j,1]], alpha=alpha, color=color, lw='4')
+
+        # draw label on top
+        for i in range(n):
+            for j in range(i):
+                if label[i,j] == 0.5 or label[j,i] == 0.5:
+                    plt.plot([coords[i,0], coords[j,0]], [coords[i,1], coords[j,1]], color='black', lw='2', linestyle='--', dashes=(5, 8))
+
         return figure

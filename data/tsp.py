@@ -401,6 +401,7 @@ def get_score_with_Concorde(coordinates):
     for i in range(node_count):
         previous_index = index
         index = path[i+1]
-        output[previous_index, index] = 1
-        output[index, previous_index] = 1
+        # 0.5 for compatibility with unsupervised loss:
+        output[previous_index, index] = 0.5
+        output[index, previous_index] = 0.5
     return output
