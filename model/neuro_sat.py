@@ -59,8 +59,8 @@ class NeuroSAT(Model):
 
             logits_loss = tf.reduce_sum(softplus_log_square_loss(logits, clauses))
             loss = loss + logits_loss
-            n_unsat_clauses = unsat_clause_count(logits, clauses)
 
+            n_unsat_clauses = unsat_clause_count(logits, clauses)
             if logits_loss < 0.5 and n_unsat_clauses == 0:
                 break
 

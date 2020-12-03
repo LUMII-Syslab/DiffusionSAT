@@ -1,12 +1,14 @@
 from abc import abstractmethod
 
+from data.CNFGen import KColor
+from data.CNFGen import SAT_3, Clique, DomSet, CliqueLiterals
 from data.k_sat import KSATVariables, KSATLiterals
 from data.tsp import EuclideanTSP
 from model.attention_sat import AttentionSAT
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
 from model.tsp_matrix_se import TSPMatrixSE
-from data.CNFGen import SAT_3, Clique, DomSet, KColor
+
 
 class Registry:
 
@@ -48,6 +50,7 @@ class DatasetRegistry(Registry):
             "k_color": KColor,
             "3-sat": SAT_3,
             "clique": Clique,
+            "clique-literals": CliqueLiterals,
             "dominating_set": DomSet,
             "euclidean_tsp": EuclideanTSP
         }

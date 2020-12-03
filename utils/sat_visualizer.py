@@ -4,7 +4,7 @@ from itertools import islice
 import matplotlib.pyplot as plt
 import networkx as nx
 
-from data.CNFGen import SAT_3, DomSet
+from data.CNFGen import SAT_3, DomSet, Clique
 from data.k_sat import KSATVariables
 
 
@@ -114,9 +114,9 @@ def draw_resolution_graph(clauses: list):
 
 
 def main():
-    dataset = SAT_3("/tmp")
+    # dataset = SAT_3("/tmp")
     # dataset = KSATVariables("/tmp")
-    # dataset = DomSet("/tmp")
+    dataset = Clique("/tmp")
     var_count, clauses = [x for x in islice(dataset.train_generator(), 1)][0]
 
     draw_interaction_graph(var_count, clauses)

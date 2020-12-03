@@ -80,18 +80,19 @@ class DotAttentionLayer(tf.keras.layers.Layer):
         return self.output_weight(output)
 
 
-class MLPAttention(tf.keras.layers.Layer):
-    def __init__(self, hidden_maps, output_maps=1, layer_count=3, **kwargs):
-        super(MLPAttention, self).__init__(**kwargs)
-        self.mlp = MLP(layer_count, hidden_maps, 1, out_activation=tf.sigmoid)
+class AdditiveAttention(tf.keras.layers.Layer):
+    def __init__(self, hidden_maps, **kwargs):
+        super(AdditiveAttention, self).__init__(**kwargs)
+        self.unit_mlp = MLP(3, hidden_maps, 1)
 
     def call(self, query: tf.Tensor, memory: tf.Tensor, adj_matrix: tf.sparse.SparseTensor, **kwargs):
         q = tf.gather(query, adj_matrix.indices[:, 0])
-        v = tf.gather(memory, adj_matrix.indices[:, 1])
-        units = tf.concat([q, v], axis=-1)
+        k = tf.gather(memory, adj_matrix.indices[:, 1])
+        units = tf.concat([q, k], axis=-1)
+        units = self.unit_mlp(units)
+        units = tf.squeeze(units, axis=-1)
 
-        result = self.mlp(units)
-        result = tf.squeeze(result, axis=-1)
-        weighted_adj = tf.SparseTensor(adj_matrix.indices, result, dense_shape=adj_matrix.dense_shape)
+        weighted_adj = tf.SparseTensor(adj_matrix.indices, units, dense_shape=adj_matrix.dense_shape)
+        weighted_adj = tf.sparse.softmax(tf.sparse.transpose(weighted_adj))
 
-        return tf.sparse.sparse_dense_matmul(weighted_adj, memory)
+        return tf.sparse.sparse_dense_matmul(weighted_adj, memory, adjoint_a=True)
