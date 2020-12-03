@@ -1,7 +1,7 @@
 import random
 
 import numpy as np
-from cnfgen import RandomKCNF, CliqueFormula, DominatingSet
+from cnfgen import RandomKCNF, CliqueFormula, DominatingSet, GraphColoringFormula
 import networkx as nx
 from pysat.solvers import Cadical
 
@@ -126,4 +126,50 @@ class DomSet(KSATVariables):
                 if is_sat: break
             #print(n_vertices, n_vars, len(iclauses), it)
 
+            yield n_vars, iclauses
+
+
+class KColor(KSATVariables):
+    """
+    Generates the clauses for colorability formula
+    The formula encodes the fact that the graph :math:`G` has a coloring
+    with color set ``colors``. This means that it is possible to
+    assign one among the elements in ``colors``to that each vertex of
+    the graph such that no two adjacent vertices get the same color.
+    """
+
+    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
+        super(KSATVariables, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+        self.train_size = 10000
+        self.test_size = 1000
+        self.min_vertices = 5
+        self.max_vertices = 20
+
+    def train_generator(self) -> tuple:
+        return self.__generator(self.train_size)
+
+    def test_generator(self) -> tuple:
+        return self.__generator(self.test_size)
+
+    def __generator(self, size) -> tuple:
+        for _ in range(size):
+            n_vertices = random.randint(self.min_vertices, self.max_vertices)
+            p = 0.5
+            n_colors = (n_vertices // 5) + 1  # Approximate formula to describe the relation
+            if n_colors == 2:
+                n_colors = 3
+
+            it = 0
+            while(True):
+                it+=1
+                G = nx.generators.erdos_renyi_graph(n_vertices, p)
+
+                F = GraphColoringFormula(G, n_colors)
+                n_vars = len(list(F.variables()))
+                clauses = list(F.clauses())
+                iclauses = [F._compress_clause(x) for x in clauses]
+                with Cadical(bootstrap_with=iclauses) as solver:
+                    is_sat = solver.solve()
+
+                if is_sat: break
             yield n_vars, iclauses

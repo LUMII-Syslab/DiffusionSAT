@@ -6,7 +6,7 @@ from model.attention_sat import AttentionSAT
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
 from model.tsp_matrix_se import TSPMatrixSE
-from data.CNFGen import SAT_3, Clique, DomSet
+from data.CNFGen import SAT_3, Clique, DomSet, KColor
 
 class Registry:
 
@@ -45,6 +45,7 @@ class DatasetRegistry(Registry):
         return {
             "k_sat_variables": KSATVariables,
             "k_sat_literals": KSATLiterals,
+            "k_color": KColor,
             "3-sat": SAT_3,
             "clique": Clique,
             "dominating_set": DomSet,
