@@ -7,32 +7,49 @@ from layers.matrix_se import MatrixSE
 from utils.summary import plot_to_image
 from data.tsp import remove_padding, get_unpadded_size
 
+def inv_sigmoid(y):
+    return tf.math.log(y / (1 - y))
 
 class TSPMatrixSE(tf.keras.Model):
 
-    def __init__(self, optimizer, feature_maps=64, block_count=1, **kwargs):
+    def __init__(self, optimizer, feature_maps=64, block_count=1, rounds=1, **kwargs):
         super(TSPMatrixSE, self).__init__(**kwargs)
         self.optimizer = optimizer
+        self.rounds = rounds
         self.matrix_se = MatrixSE(block_count)
         self.input_layer = Dense(feature_maps, activation=None, name="input_layer")
         self.logits_layer = Dense(1, activation=None, name="logits_layer")
+        n_vertices = 16  # todo: get from somewhere
+        self.logit_bias = inv_sigmoid(1.0 / (n_vertices - 1))
 
 
-    @tf.function
-    def call(self, inputs, training=None, mask=None):
-        state = self.input_layer(tf.expand_dims(inputs, -1))
-        state = self.matrix_se(state, training=training)
-        logits = self.logits_layer(state)
-        return logits
+    #@tf.function # only for supervised
+    def call(self, inputs, training=None, mask=None, labels = None):
+        inputs_norm = inputs * tf.math.rsqrt(tf.reduce_mean(tf.square(inputs), axis=[1, 2], keepdims=True)+1e-6)
+        state = self.input_layer(tf.expand_dims(inputs_norm, -1))*0.25
+        total_loss = 0.
+        logits = None
+        last_loss = None
+
+        for step in tf.range(self.rounds):
+            state = self.matrix_se(state, training=training)
+            logits = self.logits_layer(state)+self.logit_bias
+            if training:
+                #loss = tsp_loss(logits, inputs, log_in_tb=training and step == self.rounds - 1, unsupervised=True)
+                loss = tsp_loss(logits, inputs, labels=labels, supervised=True, unsupervised=False)
+            else: loss = 0.
+            total_loss += loss
+            last_loss = loss
+
+        return logits, total_loss, last_loss
 
     def train_step(self, adj_matrix, coords, labels):
         with tf.GradientTape() as tape:
-            predictions = self.call(adj_matrix, training=True)
-            loss = tsp_loss(predictions, adj_matrix, labels=labels, supervised=True, unsupervised=False)
-            gradients = tape.gradient(loss, self.trainable_variables)
+            predictions, total_loss, last_loss = self.call(adj_matrix, training=True, labels=labels)
+            gradients = tape.gradient(total_loss, self.trainable_variables)
             self.optimize(gradients)
         return {
-            "loss": loss,
+            "loss": last_loss,
             "gradients": gradients
         }
 
@@ -41,7 +58,7 @@ class TSPMatrixSE(tf.keras.Model):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
     def predict_step(self, adj_matrix, coords, labels):
-        predictions = self.call(adj_matrix, training=False)
+        predictions, total_loss, last_loss = self.call(adj_matrix, training=False)
 
         return {
             # "loss": tsp_loss(predictions, adj_matrix, labels=labels),
@@ -49,7 +66,7 @@ class TSPMatrixSE(tf.keras.Model):
         }
 
     def log_visualizations(self, adj_matrix, coords, labels):
-        predictions = self.call(adj_matrix, training=False)
+        predictions, _, _ = self.call(adj_matrix, training=False)
         node_count = get_unpadded_size(coords[0])
         prediction = remove_padding(predictions[0, :, :, 0], unpadded_size=node_count)
         coord = remove_padding(coords[0].numpy(), unpadded_size=node_count)
@@ -62,12 +79,18 @@ class TSPMatrixSE(tf.keras.Model):
         # edges in the optimal path are green, other edges are red
         figure = plt.figure(figsize=(5, 5))
         n = coords.shape[0]
+        # draw label
         for i in range(n):
             for j in range(i):
-                larger_edge = max(prediction[i][j], prediction[j][i])
-                if label[i][j] == 1:
-                    color = (0., 1., 0.)  # green if optimal edge
-                else:
-                    color = (1., 0., 0.)  # red if non-optimal edge
-                plt.plot([coords[i][0], coords[j][0]], [coords[i][1], coords[j][1]], alpha=larger_edge, color=color, lw='3')
+                if label[i,j] == 1 or label[j,i] == 1:
+                    plt.plot([coords[i,0], coords[j,0]], [coords[i,1], coords[j,1]], color=(0., 1., 0.), lw='3')
+
+        # draw solution on top
+        for i in range(n):
+            for j in range(i):
+                larger_edge = max(prediction[i, j], prediction[j, i])
+                one_edge = min(prediction[i,j], prediction[j,i])
+                ratio = one_edge / larger_edge
+                color = (1., 0., ratio)  # red, if one-directional edge, pink if both directions
+                plt.plot([coords[i,0], coords[j,0]], [coords[i,1], coords[j,1]], alpha=larger_edge, color=color, lw='3')
         return figure

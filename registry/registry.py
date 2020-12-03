@@ -7,7 +7,6 @@ from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
 from model.tsp_matrix_se import TSPMatrixSE
 from data.CNFGen import SAT_3, Clique, DomSet
-from model.tsp_multistep import MultistepTSP
 
 class Registry:
 
@@ -36,7 +35,6 @@ class ModelRegistry(Registry):
             "query_sat": QuerySAT,
             "neuro_sat": NeuroSAT,
             "tsp_matrix_se": TSPMatrixSE,
-            "multistep_tsp": MultistepTSP
         }
 
 

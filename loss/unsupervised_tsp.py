@@ -7,7 +7,7 @@ from loss.tsp_subtours_cy import subtours
 def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb=False, fast_inaccurate=False, subtour_projection=False):
     """
     :param predictions: TODO: Describe what and with what dimensions is expected as input
-    :param adjacency_matrix: assumed to be normalized: adjacency_matrix = adjacency_matrix * tf.math.rsqrt(tf.reduce_mean(tf.square(inputs), axis=[1,2], keepdims=True)+1e-6)
+    :param adjacency_matrix:
     :param noise:
     :return:
     """
@@ -55,7 +55,8 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb=Fals
 
         predictions = tf.reshape(predictions, [batch_size, node_count, node_count])
 
-    cost_length = tf.reduce_mean(predictions * adjacency_matrix)
+    adjacency_normalized = adjacency_matrix * tf.math.rsqrt(tf.reduce_mean(tf.square(adjacency_matrix), axis=[1, 2], keepdims=True) + 1e-6)
+    cost_length = tf.reduce_mean(predictions * adjacency_normalized)
 
     if log_in_tb:
         tf.summary.scalar("cost/length", cost_length)
