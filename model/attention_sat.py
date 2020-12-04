@@ -10,7 +10,7 @@ from model.mlp import MLP
 
 class AttentionSAT(Model):
 
-    def __init__(self, optimizer: Optimizer, feature_maps=128, msg_layers=3, vote_layers=3, rounds=32, **kwargs):
+    def __init__(self, optimizer: Optimizer, feature_maps=256, msg_layers=3, vote_layers=3, rounds=32, **kwargs):
         super().__init__(**kwargs, name="AttentionSAT")
         self.rounds = rounds
         self.optimizer = optimizer
