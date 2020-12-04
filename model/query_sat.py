@@ -16,8 +16,8 @@ class QuerySAT(Model):
         self.rounds = rounds
         self.optimizer = optimizer
 
-        self.variables_norm = LayerNormalization(axis=-1)
-        self.clauses_norm = LayerNormalization(axis=-1)
+        self.variables_norm = LayerNormalization(axis=0, subtract_mean=True)
+        self.clauses_norm = LayerNormalization(axis=0, subtract_mean=True)
 
         self.update_gate = MLP(vote_layers, feature_maps * 2, feature_maps, name="update_gate", do_layer_norm=True)
 
