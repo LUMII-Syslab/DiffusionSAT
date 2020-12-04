@@ -21,6 +21,8 @@ BITS_TO = 6
 # Please, notice, that some of these samples may be filtered out, according to the number of generated variables (see below).
 NUMBER_OF_SAMPLES = 2
 
+NUMBER_OF_SHA_ROUNDS = 2 # between 1 and 80
+
 # When generating bits, whether to pad them with zeroes or copy them to fill all 512 bits:
 PAD_WITH_ZEROES = False
 
@@ -79,7 +81,7 @@ for N_BITS in range(BITS_FROM, BITS_TO+1):
         bits = bits[:512] # strip bits to the length of 512
 
         fileName = TARGET_DIR+"/sha1_"+str(N_BITS).zfill(decDigits)+"bits_"+format(i,"0"+str(hexDigits)+"X")+".cnf"
-        cmd = "./cgen encode SHA1 -vM 0b"+bits+" except:1.."+str(N_BITS)+" -r 2 "+fileName # > /dev/null"
+        cmd = "./cgen encode SHA1 -vM 0b"+bits+" except:1.."+str(N_BITS)+" -r "+str(NUMBER_OF_SHA_ROUNDS)+" "+fileName # > /dev/null"
         #-- print(cmd)
 
         # Launching the process and reading its output
