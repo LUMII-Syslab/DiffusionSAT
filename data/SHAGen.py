@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import math
 import sys
+import platform
 import random
 from data.k_sat import KSATVariables
 
@@ -20,7 +21,17 @@ class SHAGen(KSATVariables):
     """ Dataset with random SAT instances based on the SHA1 algorithm. We use cgen inside.
     """
 
-    CGEN_EXECUTABLE = "./data/cgen"
+    CGEN_EXECUTABLE = "./cgen"
+    if platform.system()=="Linux":
+        CGEN_EXECUTABLE = "./data/cgen_linux64"
+        if not os.path.exists(CGEN_EXECUTABLE):
+            CGEN_EXECUTABLE = "./cgen_linux64"
+
+    if platform.system()=="Darwin":
+        CGEN_EXECUTABLE = "./cgen_mac"
+        if not os.path.exists(CGEN_EXECUTABLE):
+            CGEN_EXECUTABLE = "./data/cgen_mac"
+
     TMP_FILE_NAME = "data.tmp"
 
     def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:

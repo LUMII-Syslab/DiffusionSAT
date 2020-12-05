@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import math
 import sys
+import platform
 import random
 
 # SETTINGS #
@@ -29,6 +30,18 @@ PAD_WITH_ZEROES = False
 # Only output files with the number of generated CNF variables in the following bounds:
 MIN_VARS = 20
 MAX_VARS = 100
+
+
+CGEN_EXECUTABLE = "./cgen"
+if platform.system()=="Linux":
+    CGEN_EXECUTABLE = "./data/cgen_linux64"
+    if not os.path.exists(CGEN_EXECUTABLE):
+        CGEN_EXECUTABLE = "./cgen_linux64"
+
+if platform.system()=="Darwin":
+    CGEN_EXECUTABLE = "./cgen_mac"
+    if not os.path.exists(CGEN_EXECUTABLE):
+        CGEN_EXECUTABLE = "./data/cgen_mac"
 
 ############
 
@@ -81,7 +94,7 @@ for N_BITS in range(BITS_FROM, BITS_TO+1):
         bits = bits[:512] # strip bits to the length of 512
 
         fileName = TARGET_DIR+"/sha1_"+str(N_BITS).zfill(decDigits)+"bits_"+format(i,"0"+str(hexDigits)+"X")+".cnf"
-        cmd = "./cgen encode SHA1 -vM 0b"+bits+" except:1.."+str(N_BITS)+" -r "+str(NUMBER_OF_SHA_ROUNDS)+" "+fileName # > /dev/null"
+        cmd = CGEN_EXECUTABLE+" encode SHA1 -vM 0b"+bits+" except:1.."+str(N_BITS)+" -r "+str(NUMBER_OF_SHA_ROUNDS)+" "+fileName # > /dev/null"
         #-- print(cmd)
 
         # Launching the process and reading its output
