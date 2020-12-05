@@ -4,7 +4,7 @@ from tensorflow.keras.optimizers import Optimizer
 
 from layers.attention import AdditiveAttention
 from layers.layer_normalization import LayerNormalization
-from loss.sat import softplus_log_square_loss, unsat_clause_count
+from loss.sat import softplus_log_square_loss, unsat_clause_count, softplus_loss
 from model.mlp import MLP
 
 
@@ -17,6 +17,7 @@ class AttentionSAT(Model):
 
         self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=True)
         self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=True)
+        self.variables_query = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=True)
 
         self.attention_l = AdditiveAttention(feature_maps, name="attention_l")
         self.output_layer = MLP(vote_layers, feature_maps * 2, 1, name="L_vote", do_layer_norm=True)
@@ -36,10 +37,13 @@ class AttentionSAT(Model):
         step_loss = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
 
         for step in tf.range(self.rounds):
-            clauses_state = tf.sparse.sparse_dense_matmul(adj_matrix, l_output, adjoint_a=True)
-            clauses_state = self.clauses_mlp(clauses_state)
 
-            new_literals = self.attention_l(l_output, clauses_state, adj_matrix)
+            variables = tf.concat([l_output[:n_vars], l_output[n_vars:]], axis=1)  # n_vars x 2
+            query = self.variables_query(variables)
+            clauses_loss = softplus_loss(query, clauses)
+            clauses_loss = self.clauses_mlp(clauses_loss)
+
+            new_literals = self.attention_l(l_output, clauses_loss, adj_matrix)
             l_output = self.literals_mlp(tf.concat([l_output, self.flip(new_literals, n_vars)], axis=-1))
             l_output = self.lit_norm(l_output, training=training)
 
