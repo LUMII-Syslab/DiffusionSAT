@@ -37,7 +37,7 @@ class SHAGen(KSATVariables):
     def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
         super(KSATVariables, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000 # maximum number of samples; if there are less, we will stop earlier
-        self.test_size = 5#00
+        self.test_size = 1000
 
         #### constraints ####
         self.bits_from = 2
@@ -52,8 +52,8 @@ class SHAGen(KSATVariables):
            # must be between 0..511; in case of position overflow (bits position + number of generated bits>512), generated bits will be truncated
 
         #### the desired number of variables ####
-        self.min_vars = 30
-        self.max_vars = 40
+        self.min_vars = 4
+        self.max_vars = 1000
         self.max_attempts = 100 # how many times we need to check the number of variables to be within the given range before we stop the generator
 
     def train_generator(self) -> tuple:
@@ -101,7 +101,7 @@ class SHAGen(KSATVariables):
                 cmd = SHAGen.CGEN_EXECUTABLE+" encode SHA1 -vM 0b"+bits+" except:"+str(bits_position+1)+".."+str(min(bits_position+n_bits,512))+" -r "+str(sha_rounds)+" "+SHAGen.TMP_FILE_NAME 
 
                 # Launching the process and reading its output
-                out = subprocess.check_output(cmd, shell=True, text=True)
+                out = subprocess.check_output(cmd, shell=True, universal_newlines=True)
                 #print(cmd,out) # -- debug
 
                 # Searching for the "CNF: <nvars> var" substring;

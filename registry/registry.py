@@ -8,6 +8,7 @@ from model.attention_sat import AttentionSAT
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
 from model.tsp_matrix_se import TSPMatrixSE
+from data.SHAGen import SHAGen
 
 
 class Registry:
@@ -52,5 +53,6 @@ class DatasetRegistry(Registry):
             "clique": Clique,
             "clique-literals": CliqueLiterals,
             "dominating_set": DomSet,
+            "sha-gen": SHAGen,
             "euclidean_tsp": EuclideanTSP
         }
