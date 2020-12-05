@@ -1,6 +1,7 @@
 import tensorflow as tf
+import numpy as np
 import pyximport
-pyximport.install()
+pyximport.install(setup_args={"include_dirs":np.get_include()})
 from loss.tsp_subtours_cy import subtours
 
 
@@ -31,7 +32,7 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb=Fals
         cost_subtours = tf.reduce_sum(tf.square(tf.nn.relu(sum_with_reverse - 1))) / tf.cast(batch_size, tf.float32)
 
     else:
-        predictions_list = list(predictions.numpy())
+        predictions_list = predictions.numpy()
         subtours_cy = subtours(batch_size, node_count, predictions_list)
 
         predictions = tf.reshape(predictions, (batch_size * node_count * node_count, 1))
