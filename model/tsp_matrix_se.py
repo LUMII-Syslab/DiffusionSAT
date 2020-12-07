@@ -13,7 +13,7 @@ def inv_sigmoid(y):
 
 class TSPMatrixSE(tf.keras.Model):
 
-    def __init__(self, optimizer, feature_maps=64, block_count=1, rounds=4, use_matrix_se = False, **kwargs):
+    def __init__(self, optimizer, feature_maps=64, block_count=1, rounds=8, use_matrix_se = False, **kwargs):
         super(TSPMatrixSE, self).__init__(**kwargs)
         self.optimizer = optimizer
         self.rounds = rounds
@@ -44,6 +44,8 @@ class TSPMatrixSE(tf.keras.Model):
             else: loss = 0.
             total_loss += loss
             last_loss = loss
+
+        if training: tf.summary.scalar("last_layer_loss", last_loss)
 
         return logits, total_loss, last_loss
 
