@@ -6,17 +6,21 @@ from loss.tsp import tsp_loss
 from layers.matrix_se import MatrixSE
 from utils.summary import plot_to_image
 from data.tsp import remove_padding, get_unpadded_size
+from layers.dense_gnn import DenseGNN
 
 def inv_sigmoid(y):
     return tf.math.log(y / (1 - y))
 
 class TSPMatrixSE(tf.keras.Model):
 
-    def __init__(self, optimizer, feature_maps=64, block_count=1, rounds=1, **kwargs):
+    def __init__(self, optimizer, feature_maps=64, block_count=1, rounds=4, use_matrix_se = False, **kwargs):
         super(TSPMatrixSE, self).__init__(**kwargs)
         self.optimizer = optimizer
         self.rounds = rounds
-        self.matrix_se = MatrixSE(block_count)
+        if use_matrix_se:
+            self.graph_layer = MatrixSE(block_count)
+        else:
+            self.graph_layer = DenseGNN()
         self.input_layer = Dense(feature_maps, activation=None, name="input_layer")
         self.logits_layer = Dense(1, activation=None, name="logits_layer")
         n_vertices = 16  # todo: get from somewhere
@@ -25,18 +29,18 @@ class TSPMatrixSE(tf.keras.Model):
 
     #@tf.function # only for supervised
     def call(self, inputs, training=None, mask=None, labels = None):
-        inputs_norm = inputs * tf.math.rsqrt(tf.reduce_mean(tf.square(inputs), axis=[1, 2], keepdims=True)+1e-6)
+        inputs_norm = inputs * tf.math.rsqrt(tf.reduce_mean(tf.square(inputs), axis=[1, 2], keepdims=True)+1e-6) #todo: masked norm
         state = self.input_layer(tf.expand_dims(inputs_norm, -1))*0.25
         total_loss = 0.
         logits = None
         last_loss = None
 
         for step in tf.range(self.rounds):
-            state = self.matrix_se(state, training=training)
+            state = self.graph_layer(state, training=training)
             logits = self.logits_layer(state)+self.logit_bias
             if training:
-                #loss = tsp_loss(logits, inputs, log_in_tb=training and step == self.rounds - 1, unsupervised=True)
-                loss = tsp_loss(logits, inputs, labels=labels, supervised=True, unsupervised=False)
+                loss = tsp_loss(logits, inputs, log_in_tb=training and step == self.rounds - 1, unsupervised=True)
+                #loss = tsp_loss(logits, inputs, labels=labels, supervised=True, unsupervised=True)
             else: loss = 0.
             total_loss += loss
             last_loss = loss
