@@ -86,15 +86,15 @@ class AdditiveAttention(tf.keras.layers.Layer):
         self.unit_mlp = MLP(3, hidden_maps, 1, do_layer_norm=False)
         self.memory_mlp = MLP(3, hidden_maps, hidden_maps, do_layer_norm=False)
 
-    def call(self, query: tf.Tensor, keys: tf.Tensor, memory: tf.Tensor, adj_matrix: tf.sparse.SparseTensor, **kwargs):
+    def call(self, query: tf.Tensor, memory: tf.Tensor, adj_matrix: tf.sparse.SparseTensor, **kwargs):
         q = tf.gather(query, adj_matrix.indices[:, 0])
-        k = tf.gather(keys, adj_matrix.indices[:, 1])
+        k = tf.gather(memory, adj_matrix.indices[:, 1])
         units = tf.concat([q, k], axis=-1)
         units = self.unit_mlp(units)
         units = tf.squeeze(units, axis=-1)
 
         weighted_adj = tf.SparseTensor(adj_matrix.indices, units, dense_shape=adj_matrix.dense_shape)
-        weighted_adj = tf.sparse.softmax(tf.sparse.transpose(weighted_adj))
+        weighted_adj = tf.sparse.softmax(tf.sparse.transpose(weighted_adj))  # TODO: Try learnable bias 
 
         # rand = tf.random.normal(())
         # if rand > 0.8:

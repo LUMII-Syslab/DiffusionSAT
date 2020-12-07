@@ -10,7 +10,7 @@ from model.mlp import MLP
 
 class AttentionSAT(Model):
 
-    def __init__(self, optimizer: Optimizer, feature_maps=128, msg_layers=3, vote_layers=3, rounds=32, **kwargs):
+    def __init__(self, optimizer: Optimizer, feature_maps=256, msg_layers=3, vote_layers=3, rounds=32, **kwargs):
         super().__init__(**kwargs, name="AttentionSAT")
         self.rounds = rounds
         self.optimizer = optimizer
@@ -20,7 +20,7 @@ class AttentionSAT(Model):
         self.variables_query = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
 
         self.attention_l = AdditiveAttention(feature_maps, name="attention")
-        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, name="output_layer", do_layer_norm=False)
+        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, name="output_layer", do_layer_norm=True)
         self.lit_norm = LayerNormalization(axis=-1)
 
         self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
@@ -48,15 +48,7 @@ class AttentionSAT(Model):
             query = self.variables_query(variables)
             clauses_loss = softplus_loss(query, clauses)
 
-            l2c = tf.sparse.sparse_dense_matmul(adj_matrix, l_output, adjoint_a=True)
-
-            # if step % self.rounds - 1 == 0:
-            #     image = tf.expand_dims(clauses_loss[:self.feature_maps, :], axis=-1)
-            #     image = tf.expand_dims(image, axis=0)
-            #     tf.summary.image("Clauses_loss", tf.transpose(image, [0, 2, 1, 3]))
-
-
-            new_literals = self.attention_l(query=l_output, keys=tf.concat([clauses_loss, l2c]), memory=clauses_loss, adj_matrix=adj_matrix)
+            new_literals = self.attention_l(query=l_output, memory=clauses_loss, adj_matrix=adj_matrix)
             l_output = self.literals_mlp(tf.concat([l_output, new_literals], axis=-1))
             l_output = self.lit_norm(l_output, training=training)
 
