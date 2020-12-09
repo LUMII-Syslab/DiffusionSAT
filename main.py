@@ -41,7 +41,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     train_data = dataset.train_data()
 
     # TODO: Check against step in checkpoint
-    for step_data in itertools.islice(train_data, Config.train_steps + 1):  # TODO: Here is slowdown, don't use islice
+    for step_data in itertools.islice(train_data, Config.train_steps + 1):
         tf.summary.experimental.set_step(ckpt.step)
 
         model_data = dataset.filter_model_inputs(step_data)
@@ -74,7 +74,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                 metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
                 metric.log_in_stdout(step=int(ckpt.step))
 
-            if Config.task == 'euclidean_tsp':
+            if Config.task == 'euclidean_tsp':  # TODO: Make it similar to metrics
                 iterator = itertools.islice(validation_data, 1)
                 for step_data in iterator:
                     model_input = dataset.filter_model_inputs(step_data)
