@@ -28,5 +28,5 @@ def tsp_loss(predictions, adjacency_matrix, labels=None, noise=0, log_in_tb=Fals
         loss_tensor = loss_tensor * mask  # sets padding and diagonal to zeros
         loss += tf.reduce_mean(loss_tensor)
     if unsupervised:
-        loss += 0.01*tsp_unsupervised_loss(predictions, adjacency_matrix, noise, log_in_tb, fast_inaccurate, subtour_projection)
+        loss += tsp_unsupervised_loss(predictions, adjacency_matrix, noise, log_in_tb, fast_inaccurate, subtour_projection)
     return loss

@@ -45,17 +45,20 @@ class TSPMatrixSE(tf.keras.Model):
             total_loss += loss
             last_loss = loss
 
-        if training: tf.summary.scalar("last_layer_loss", last_loss)
+        if training:
+            tf.summary.scalar("last_layer_loss", last_loss)
+            tf.summary.histogram("logits", logits)
 
         return logits, total_loss, last_loss
 
     def train_step(self, adj_matrix, coords, labels):
         with tf.GradientTape() as tape:
             predictions, total_loss, last_loss = self.call(adj_matrix, training=True, labels=labels)
-            gradients = tape.gradient(total_loss, self.trainable_variables)
-            self.optimize(gradients)
+        gradients = tape.gradient(total_loss, self.trainable_variables)
+        self.optimize(gradients)
+
         return {
-            "loss": last_loss,
+            "loss": total_loss,
             "gradients": gradients
         }
 

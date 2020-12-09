@@ -19,7 +19,7 @@ def main():
     # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
 
     optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.5, clip_gradients=True)
-    optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+    # optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer) # check for accuracy issues!
 
     model = ModelRegistry().resolve(Config.model)(optimizer=optimizer)
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir, force_data_gen=Config.force_data_gen)
@@ -67,10 +67,10 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
             print(f"{int(ckpt.step)}. step;\tloss: {loss_mean:.5f};\ttime: {timer.lap():.3f}s")
             mean_loss.reset_states()
 
-            with tf.name_scope("gradients"):
-                with writer.as_default():
-                    for grd, var in zip(gradients, model.trainable_variables):
-                        tf.summary.histogram(var.name, grd, step=int(ckpt.step))
+            # with tf.name_scope("gradients"):
+            #     with writer.as_default():
+            #         for grd, var in zip(gradients, model.trainable_variables):
+            #             tf.summary.histogram(var.name, grd, step=int(ckpt.step))
 
             with tf.name_scope("variables"):
                 with writer.as_default():
