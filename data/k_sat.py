@@ -2,10 +2,10 @@ import random
 
 import numpy as np
 import tensorflow as tf
-from pysat.formula import CNF
 from pysat.solvers import Cadical
 
 from data.dimac import DIMACDataset
+from metrics.sat_metrics import SATAccuracy
 
 
 class KSATVariables(DIMACDataset):
@@ -97,52 +97,15 @@ class KSATVariables(DIMACDataset):
             "clauses": step_data["clauses"]
         }
 
-    @staticmethod
-    def split_batch(predictions, variable_count):
-        batched_logits = []  # TODO: Can I do it better?
-        i = 0
-        for length in variable_count:
-            batched_logits.append(predictions[i:i + length])
-            i += length
-
-        return batched_logits
-
-    def accuracy(self, prediction, step_data):
-        prediction = tf.round(tf.sigmoid(prediction))
-        prediction = self.split_batch(prediction, step_data["variable_count"])
-
-        mean_acc = tf.metrics.Mean()
-        mean_total_acc = tf.metrics.Mean()
-
-        for pred, clause in zip(prediction, step_data["normal_clauses"]):
-            accuracy, total_accuracy = self.__accuracy_for_single(pred, clause)
-            mean_acc.update_state(accuracy)
-            mean_total_acc.update_state(total_accuracy)
-
-        return mean_acc.result(), mean_total_acc.result()
-
-    @staticmethod
-    def __accuracy_for_single(prediction, clauses):
-        formula = CNF(from_clauses=[x.tolist() for x in clauses.numpy()])  # TODO: is there better way?
-        with Cadical(bootstrap_with=formula.clauses) as solver:
-            assum = [i if prediction[i - 1] == 1 else -i for i in range(1, len(prediction), 1)]
-            correct_pred = solver.solve(assumptions=assum)
-            solver.solve()
-            variables = np.array(solver.get_model())
-            variables[variables < 0] = 0
-            variables[variables > 0] = 1
-
-            equal_elem = np.equal(prediction, variables)
-            correct = np.sum(equal_elem)
-            total = prediction.shape[0]
-
-        return correct / total, 1 if correct_pred else 0
+    def metrics(self) -> list:
+        return [SATAccuracy()]
 
 
 class KSATLiterals(KSATVariables):
     """ Dataset from NeuroSAT paper. Dataset generates k-SAT
     instances with variable count in [min_size, max_size].
     """
+
     def create_adj_matrices(self, data):
         var_count = tf.reduce_sum(data["variable_count"])
         neg = data["adj_indices_neg"]

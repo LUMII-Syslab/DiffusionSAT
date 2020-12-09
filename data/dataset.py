@@ -21,9 +21,9 @@ class Dataset(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def accuracy(self, predictions, step_data) -> tf.Tensor:
+    def filter_model_inputs(self, step_data) -> dict:
         pass
 
     @abstractmethod
-    def filter_model_inputs(self, step_data) -> dict:
+    def metrics(self) -> list:
         pass
