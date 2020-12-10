@@ -83,18 +83,28 @@ class DotAttentionLayer(tf.keras.layers.Layer):
 class AdditiveAttention(tf.keras.layers.Layer):
     def __init__(self, hidden_maps, **kwargs):
         super(AdditiveAttention, self).__init__(**kwargs)
-        self.unit_mlp = MLP(3, hidden_maps, 1, do_layer_norm=False)
-        self.memory_mlp = MLP(3, hidden_maps, hidden_maps, do_layer_norm=False)
+        self.heads = 1
+        self.pre_process = MLP(3, hidden_maps, self.heads, do_layer_norm=True)
+        self.memory_mlp = MLP(3, hidden_maps, hidden_maps, do_layer_norm=True)
 
     def call(self, query: tf.Tensor, memory: tf.Tensor, adj_matrix: tf.sparse.SparseTensor, **kwargs):
         q = tf.gather(query, adj_matrix.indices[:, 0])
         k = tf.gather(memory, adj_matrix.indices[:, 1])
         units = tf.concat([q, k], axis=-1)
-        units = self.unit_mlp(units)
-        units = tf.squeeze(units, axis=-1)
+        units = self.pre_process(units)
+        units = tf.tanh(units)
 
-        weighted_adj = tf.SparseTensor(adj_matrix.indices, units, dense_shape=adj_matrix.dense_shape)
-        weighted_adj = tf.sparse.softmax(tf.sparse.transpose(weighted_adj))  # TODO: Try learnable bias 
+        unit_heads = tf.split(units, self.heads, axis=-1)
+        mem_head = self.memory_mlp(memory)
+        mem_head = tf.split(mem_head, self.heads, axis=-1)
+
+        results = []
+        for unit, mem in zip(unit_heads, mem_head):
+            h = tf.squeeze(unit, axis=-1)
+            weighted_adj = tf.SparseTensor(adj_matrix.indices, h, dense_shape=adj_matrix.dense_shape)
+            tf.summary.histogram("attention_weights", weighted_adj.values)
+            result = tf.sparse.sparse_dense_matmul(weighted_adj, mem)
+            results.append(result)
 
         # rand = tf.random.normal(())
         # if rand > 0.8:
@@ -104,5 +114,4 @@ class AdditiveAttention(tf.keras.layers.Layer):
         #     image = tf.expand_dims(image, axis=0)
         #     tf.summary.image("after_softmax", image / tf.reduce_max(image))
 
-        mem = self.memory_mlp(memory)
-        return tf.sparse.sparse_dense_matmul(weighted_adj, mem, adjoint_a=True)
+        return tf.concat(results, axis=-1)
