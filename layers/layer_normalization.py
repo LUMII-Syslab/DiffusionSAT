@@ -22,3 +22,26 @@ class LayerNormalization(tf.keras.layers.Layer):
 
         variance = tf.reduce_mean(tf.square(inputs), self.axis, keepdims=True)
         return inputs * tf.math.rsqrt(variance + self.epsilon)
+
+class PairNorm(tf.keras.layers.Layer):
+    """ PairNorm: Tackling Oversmoothing in GNNs https://arxiv.org/abs/1909.12223
+    todo: per graph normalization, currently per batch
+    """
+    def __init__(self, epsilon=1e-6, subtract_mean=False, **kwargs):
+        self.epsilon = epsilon
+        self.bias = None
+        self.subtract_mean = subtract_mean
+        super(PairNorm, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        num_units = input_shape.as_list()[-1]
+        if self.subtract_mean:
+            self.bias = self.add_weight("bias", [num_units], initializer=tf.zeros_initializer)
+
+    def call(self, inputs, **kwargs):
+        if self.subtract_mean:  # subtracting mean may not be necessary: https://arxiv.org/abs/1910.07467
+            inputs -= tf.reduce_mean(inputs, axis=0, keepdims=True)
+            inputs += self.bias
+
+        variance = tf.reduce_mean(tf.square(inputs), axis=1, keepdims=True)
+        return inputs * tf.math.rsqrt(variance + self.epsilon)

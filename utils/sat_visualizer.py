@@ -1,11 +1,16 @@
 import itertools
-from itertools import islice
+import math
 
 import matplotlib.pyplot as plt
 import networkx as nx
+import tensorflow as tf
 
-from data.CNFGen import SAT_3, DomSet, Clique
-from data.k_sat import KSATVariables
+from data.SHAGen import SHAGen
+
+
+def normalize(x):
+    vmax = max(x)
+    return [math.log(math.exp(-y / vmax), math.e) for y in x]
 
 
 def draw_interaction_graph(var_count: int, clauses: list):
@@ -24,7 +29,7 @@ def draw_interaction_graph(var_count: int, clauses: list):
             if graph.has_edge(v_p, u_p):
                 graph[v_p][u_p]["count"] += 1
             else:
-                graph.add_edge(abs(v) - 1, abs(u) - 1, count=1)
+                graph.add_edge(v_p, u_p, count=1)
 
     edges = graph.edges
     node_color = ["green" for _ in graph]
@@ -35,7 +40,7 @@ def draw_interaction_graph(var_count: int, clauses: list):
         "edge_color": edge_width,
         "node_color": node_color,
         "node_size": 20,
-        "width": 1.5,
+        "width": 2,
         "edge_cmap": plt.cm.Greys
     }
 
@@ -116,9 +121,10 @@ def draw_resolution_graph(clauses: list):
 def main():
     # dataset = SAT_3("/tmp")
     # dataset = KSATVariables("/tmp")
-    dataset = Clique("/tmp")
-    var_count, clauses = [x for x in islice(dataset.train_generator(), 1)][0]
+    dataset = SHAGen("/tmp")
+    var_count, clauses = [x for x in itertools.islice(dataset.train_generator(), 1)][0]
 
+    print("Min lits in single clause: ", min([len(c) for c in clauses]))
     draw_interaction_graph(var_count, clauses)
     draw_factor_graph(var_count, clauses)
     draw_resolution_graph(clauses)

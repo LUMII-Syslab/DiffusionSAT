@@ -83,7 +83,8 @@ class DotAttentionLayer(tf.keras.layers.Layer):
 class AdditiveAttention(tf.keras.layers.Layer):
     def __init__(self, hidden_maps, **kwargs):
         super(AdditiveAttention, self).__init__(**kwargs)
-        self.unit_mlp = MLP(3, hidden_maps, 1)
+        self.unit_mlp = MLP(3, hidden_maps, 1, do_layer_norm=False)
+        self.memory_mlp = MLP(3, hidden_maps, hidden_maps, do_layer_norm=False)
 
     def call(self, query: tf.Tensor, memory: tf.Tensor, adj_matrix: tf.sparse.SparseTensor, **kwargs):
         q = tf.gather(query, adj_matrix.indices[:, 0])
@@ -93,6 +94,15 @@ class AdditiveAttention(tf.keras.layers.Layer):
         units = tf.squeeze(units, axis=-1)
 
         weighted_adj = tf.SparseTensor(adj_matrix.indices, units, dense_shape=adj_matrix.dense_shape)
-        weighted_adj = tf.sparse.softmax(tf.sparse.transpose(weighted_adj))
+        weighted_adj = tf.sparse.softmax(tf.sparse.transpose(weighted_adj))  # TODO: Try learnable bias 
 
-        return tf.sparse.sparse_dense_matmul(weighted_adj, memory, adjoint_a=True)
+        # rand = tf.random.normal(())
+        # if rand > 0.8:
+        #     image = tf.sparse.slice(tf.sparse.transpose(weighted_adj), [0, 0], [512, 512])
+        #     image = tf.sparse.to_dense(image)
+        #     image = tf.expand_dims(image, axis=-1)
+        #     image = tf.expand_dims(image, axis=0)
+        #     tf.summary.image("after_softmax", image / tf.reduce_max(image))
+
+        mem = self.memory_mlp(memory)
+        return tf.sparse.sparse_dense_matmul(weighted_adj, mem, adjoint_a=True)

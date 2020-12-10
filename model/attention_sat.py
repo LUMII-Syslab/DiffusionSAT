@@ -15,23 +15,29 @@ class AttentionSAT(Model):
         self.rounds = rounds
         self.optimizer = optimizer
 
-        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=True)
-        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=True)
-        self.variables_query = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=True)
+        self.literals_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
+        self.clauses_mlp = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
+        self.variables_query = MLP(msg_layers, feature_maps, feature_maps, do_layer_norm=False)
 
-        self.attention_l = AdditiveAttention(feature_maps, name="attention_l")
-        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, name="L_vote", do_layer_norm=True)
+        self.attention_l = AdditiveAttention(feature_maps, name="attention")
+        self.output_layer = MLP(vote_layers, feature_maps * 2, 1, name="output_layer", do_layer_norm=True)
         self.lit_norm = LayerNormalization(axis=-1)
 
         self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
         self.feature_maps = feature_maps
+
+    def zero_state(self, n_units, n_features, stddev=0.25):
+        onehot = tf.one_hot(tf.zeros([n_units], dtype=tf.int64), n_features)
+        onehot -= 1 / n_features
+        onehot = onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
+        return onehot
 
     def call(self, adj_matrix, clauses=None, training=None, mask=None):
         shape = tf.shape(adj_matrix)  # inputs is sparse adjacency matrix
         n_lits = shape[0]
         n_vars = n_lits // 2
 
-        l_output = tf.random.truncated_normal([n_lits, self.feature_maps], stddev=0.025)
+        l_output = self.zero_state(n_lits, self.feature_maps)
 
         logits = tf.zeros([n_vars, 1])
         step_loss = tf.TensorArray(tf.float32, size=self.rounds, clear_after_read=True)
@@ -41,10 +47,9 @@ class AttentionSAT(Model):
             variables = tf.concat([l_output[:n_vars], l_output[n_vars:]], axis=1)  # n_vars x 2
             query = self.variables_query(variables)
             clauses_loss = softplus_loss(query, clauses)
-            clauses_loss = self.clauses_mlp(clauses_loss)
 
-            new_literals = self.attention_l(l_output, clauses_loss, adj_matrix)
-            l_output = self.literals_mlp(tf.concat([l_output, self.flip(new_literals, n_vars)], axis=-1))
+            new_literals = self.attention_l(query=l_output, memory=clauses_loss, adj_matrix=adj_matrix)
+            l_output = self.literals_mlp(tf.concat([l_output, new_literals], axis=-1))
             l_output = self.lit_norm(l_output, training=training)
 
             variables = tf.concat([l_output[:n_vars], l_output[n_vars:]], axis=1)  # n_vars x 2
