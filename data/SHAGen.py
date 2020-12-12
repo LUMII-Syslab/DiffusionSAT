@@ -5,14 +5,14 @@ import platform
 import random
 import subprocess
 
-from data.k_sat import KSATVariables
+from data.k_sat import KSAT
 
 
 def random_binary_string(n):
     return "".join([str(random.randint(0, 1)) for _ in range(n)])
 
 
-class SHAGen(KSATVariables):
+class SHAGen(KSAT):
     """ Dataset with random SAT instances based on the SHA1 algorithm. We use cgen inside.
     """
 
@@ -30,7 +30,7 @@ class SHAGen(KSATVariables):
     TMP_FILE_NAME = "data.tmp"
 
     def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
-        super(KSATVariables, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+        super(SHAGen, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000  # maximum number of samples; if there are less, we will stop earlier
         self.test_size = 1000
 

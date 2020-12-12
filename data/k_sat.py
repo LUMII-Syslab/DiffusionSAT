@@ -8,13 +8,14 @@ from data.dimac import DIMACDataset
 from metrics.sat_metrics import SATAccuracy
 
 
-class KSATVariables(DIMACDataset):
+class KSAT(DIMACDataset):
     """ Dataset from NeuroSAT paper, just for variables. Dataset generates k-SAT
     instances with variable count in [min_size, max_size].
     """
 
-    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
-        super(KSATVariables, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+    def __init__(self, data_dir, force_data_gen=False, input_mode='variables', **kwargs) -> None:
+        super(KSAT, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+        self.filter = self.__prepare_filter(input_mode)
         self.train_size = 300000
         self.test_size = 10000
         self.min_vars = 3
@@ -70,16 +71,38 @@ class KSATVariables(DIMACDataset):
         return list({tuple(sorted(x)) for x in clauses})
 
     def create_adj_matrices(self, data):
-        dense_shape = tf.stack([tf.reduce_sum(data["variable_count"]), tf.reduce_sum(data["clauses_in_formula"])])
-        dense_shape = tf.cast(dense_shape, tf.int64)
+        var_count = tf.reduce_sum(data["variable_count"])
+        clauses_count = tf.reduce_sum(data["clauses_in_formula"])
+
+        shape = [tf.shape(data["adj_indices_neg"])[0], 1]
+        offset = tf.ones(shape, dtype=tf.int32) * var_count
+        zeros = tf.zeros(shape, dtype=tf.int32)
+        offset = tf.concat([offset, zeros], axis=-1)
+        offset = tf.cast(offset, tf.int64)
+        neg = data["adj_indices_neg"] + offset
+
+        lit_shape = self.create_shape(var_count * 2, clauses_count)
+        var_shape = self.create_shape(var_count, clauses_count)
+        adj_matrix_lit = tf.concat([data["adj_indices_pos"], neg], axis=0)
+        adj_matrix_lit = self.create_adjacency_matrix(adj_matrix_lit, lit_shape)
+
+        adj_matrix_pos = self.create_adjacency_matrix(data["adj_indices_pos"], var_shape)
+        adj_matrix_neg = self.create_adjacency_matrix(data["adj_indices_neg"], var_shape)
 
         return {
-            "adjacency_matrix_pos": self.create_adjacency_matrix(data["adj_indices_pos"], dense_shape),
-            "adjacency_matrix_neg": self.create_adjacency_matrix(data["adj_indices_neg"], dense_shape),
+            "adjacency_matrix_pos": adj_matrix_pos,
+            "adjacency_matrix_neg": adj_matrix_neg,
+            "adjacency_matrix": adj_matrix_lit,
+
             "clauses": tf.cast(data["batched_clauses"], tf.int32),
             "variable_count": data["variable_count"],
             "normal_clauses": data["clauses"]
         }
+
+    @staticmethod
+    def create_shape(variables, clauses):
+        dense_shape = tf.stack([variables, clauses])
+        return tf.cast(dense_shape, tf.int64)
 
     @staticmethod
     def create_adjacency_matrix(indices, dense_shape):
@@ -91,47 +114,23 @@ class KSATVariables(DIMACDataset):
         return dataset.map(self.create_adj_matrices, tf.data.experimental.AUTOTUNE)
 
     def filter_model_inputs(self, step_data) -> dict:
-        return {
-            "adj_matrix_pos": step_data["adjacency_matrix_pos"],
-            "adj_matrix_neg": step_data["adjacency_matrix_neg"],
-            "clauses": step_data["clauses"]
-        }
+        return self.filter(step_data)
 
     def metrics(self) -> list:
         return [SATAccuracy()]
 
-
-class KSATLiterals(KSATVariables):
-    """ Dataset from NeuroSAT paper. Dataset generates k-SAT
-    instances with variable count in [min_size, max_size].
-    """
-
-    def create_adj_matrices(self, data):
-        var_count = tf.reduce_sum(data["variable_count"])
-        neg = data["adj_indices_neg"]
-
-        shape = [tf.shape(neg)[0], 1]
-
-        offset = tf.ones(shape, dtype=tf.int32) * var_count
-        zeros = tf.zeros(shape, dtype=tf.int32)
-        offset = tf.concat([offset, zeros], axis=-1)
-        offset = tf.cast(offset, tf.int64)
-        neg = neg + offset
-
-        dense_shape = tf.stack([var_count * 2, tf.reduce_sum(data["clauses_in_formula"])])
-        dense_shape = tf.cast(dense_shape, tf.int64)
-
-        adj = tf.concat([data["adj_indices_pos"], neg], axis=0)
-
-        return {
-            "adjacency_matrix": self.create_adjacency_matrix(adj, dense_shape),
-            "clauses": tf.cast(data["batched_clauses"], tf.int32),
-            "variable_count": data["variable_count"],
-            "normal_clauses": data["clauses"]
-        }
-
-    def filter_model_inputs(self, step_data) -> dict:
-        return {
-            "adj_matrix": step_data["adjacency_matrix"],
-            "clauses": step_data["clauses"]
-        }
+    def __prepare_filter(self, input_mode):
+        if input_mode == "variables":
+            return lambda step_data: {
+                "adj_matrix_pos": step_data["adjacency_matrix_pos"],
+                "adj_matrix_neg": step_data["adjacency_matrix_neg"],
+                "clauses": step_data["clauses"]
+            }
+        elif input_mode == "literals":
+            return lambda step_data: {
+                "adj_matrix": step_data["adjacency_matrix"],
+                "clauses": step_data["clauses"]
+            }
+        else:
+            raise NotImplementedError(
+                f"{input_mode} is not registered. Available modes \"literals\" or \"variables\"")

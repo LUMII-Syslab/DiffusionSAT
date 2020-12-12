@@ -21,7 +21,9 @@ def main():
     optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)  # check for accuracy issues!
 
     model = ModelRegistry().resolve(Config.model)(optimizer=optimizer)
-    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir, force_data_gen=Config.force_data_gen)
+    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                     force_data_gen=Config.force_data_gen,
+                                                     input_mode=Config.input_mode)
 
     ckpt, manager = prepare_checkpoints(model, optimizer)
     train(dataset, model, ckpt, manager)
