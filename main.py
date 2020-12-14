@@ -18,7 +18,7 @@ def main():
     # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
 
     optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.5, clip_gradients=True)
-    optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)  # check for accuracy issues!
+    # optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)  # check for accuracy issues!
 
     model = ModelRegistry().resolve(Config.model)(optimizer=optimizer)
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
