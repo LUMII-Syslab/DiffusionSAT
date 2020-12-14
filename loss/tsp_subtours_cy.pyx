@@ -5,20 +5,32 @@ cimport numpy as np
 
 @cython.boundscheck(False) # compiler directive
 @cython.wraparound(False) # compiler directive
-cpdef list subtours(int batch_size, int padded_size, np.ndarray[np.float32_t, ndim = 3] predictions, list unpadded_sizes):
+cpdef list subtours(int batch_size, int padded_size, np.ndarray[np.float32_t, ndim = 3] predictions,
+                    np.ndarray[np.float32_t, ndim = 3] adjacency_matrix, int PADDING_VALUE):
     # variable type definitions for cython
     cdef int g, i, j, x, subtours_added, endpoint1, endpoint2, edge_component_id, other_id, node_count
-    cdef double cut_weight, edge1, edge2
+    cdef double cut_weight1, cut_weight2, edge1, edge2
     cdef (double, int, int) edge
     cdef list subtours, sorted_edges, subtour_check
-    cdef np.ndarray[np.int64_t, ndim = 1] components
+    cdef np.ndarray[np.int64_t, ndim = 1] components, unpadded_size
     cdef bint one_component
 
+    # todo nevar smukāk?
+    unpadded_size = np.empty(batch_size, dtype=np.int64)
+    for g in range(batch_size):
+        row = adjacency_matrix[g][0]
+        if row[padded_size-1] != PADDING_VALUE:
+            unpadded_size[g] = padded_size
+        else:
+            unpadded_size[g] = np.where(row == PADDING_VALUE)[0][0]
+
+
+    components = np.zeros(padded_size, dtype=np.int64)
 
     subtours = []
     subtours_added = 0
     for g in range(batch_size):
-        node_count = unpadded_sizes[g]
+        node_count = unpadded_size[g]
         sorted_edges = []
 
         for i in range(node_count):
@@ -29,7 +41,6 @@ cpdef list subtours(int batch_size, int padded_size, np.ndarray[np.float32_t, nd
         sorted_edges.sort(reverse=True)
 
         subtour_edges = []
-        components = np.zeros(node_count, dtype=np.int64)
         for i in range(node_count): components[i] = i
 
         for edge in sorted_edges:
@@ -50,20 +61,31 @@ cpdef list subtours(int batch_size, int padded_size, np.ndarray[np.float32_t, nd
 
                 if one_component: break
 
-                cut_weight = 0
+                cut_weight1 = 0
+                cut_weight2 = 0
                 for i in range(node_count):
                     for j in range(node_count):
-                        if (components[i] == edge_component_id) ^ (components[j] == edge_component_id):
-                            cut_weight += predictions[g,i,j]
+                        if components[i] == edge_component_id and components[j] != edge_component_id:
+                            cut_weight1 += predictions[g,i,j]
+                        if components[i] != edge_component_id and components[j] == edge_component_id:
+                            cut_weight2 += predictions[g,i,j]
 
-                if cut_weight < 2:
+                if cut_weight1 < 1:
                     subtour_check = []
                     for i in range(node_count):
                         for j in range(node_count):
-                            if (components[i] == edge_component_id) ^ (components[j] == edge_component_id):
+                            if components[i] == edge_component_id and components[j] != edge_component_id:
                                 subtour_check.append([subtours_added, g * padded_size * padded_size + i * padded_size + j])
-
-                    subtours_added += 1
                     subtours.extend(subtour_check)
+                    subtours_added += 1
+
+                if cut_weight2 < 1:
+                    subtour_check = []
+                    for i in range(node_count):
+                        for j in range(node_count):
+                            if components[i] != edge_component_id and components[j] == edge_component_id:
+                                subtour_check.append([subtours_added, g * padded_size * padded_size + i * padded_size + j])
+                    subtours.extend(subtour_check)
+                    subtours_added += 1
 
     return subtours
