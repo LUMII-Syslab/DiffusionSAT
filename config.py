@@ -16,7 +16,8 @@ class Config:
     warmup = 0.0
     learning_rate = 0.0001
     model = 'query_sat'  # query_sat, neuro_sat, tsp_matrix_se
-    task = 'k_color'  # k_sat_variables, k_sat_literals, k_color, 3-sat, clique, euclidean_tsp
+    task = 'sha-gen'  # k_sat_variables, k_sat_literals, k_color, 3-sat, clique, euclidean_tsp
+    input_mode = 'variables'  # "variables" or "literals", applicable to SAT
 
     restore = None
     label = ""
@@ -57,6 +58,9 @@ class Config:
 
         config_parser.add_argument('--task', type=str, default=cls.task, const=cls.task, nargs='?',
                                    choices=DatasetRegistry().registered_names)
+
+        config_parser.add_argument('--input_mode', type=str, default=cls.input_mode, const=cls.input_mode, nargs='?',
+                                   choices=['variables', 'literals'])
 
         config_parser.add_argument('--force_data_gen', action='store_true', default=cls.force_data_gen)
 

@@ -1,14 +1,14 @@
 from abc import abstractmethod
 
 from data.CNFGen import KColor
-from data.CNFGen import SAT_3, Clique, DomSet, CliqueLiterals
-from data.k_sat import KSATVariables, KSATLiterals
+from data.CNFGen import SAT_3, Clique, DomSet
+from data.SHAGen import SHAGen
+from data.k_sat import KSAT
 from data.tsp import EuclideanTSP
 from model.attention_sat import AttentionSAT
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
 from model.tsp_matrix_se import TSPMatrixSE
-from data.SHAGen import SHAGen
 
 
 class Registry:
@@ -46,12 +46,10 @@ class DatasetRegistry(Registry):
     @property
     def registry(self) -> dict:
         return {
-            "k_sat_variables": KSATVariables,
-            "k_sat_literals": KSATLiterals,
+            "k_sat_variables": KSAT,
             "k_color": KColor,
             "3-sat": SAT_3,
             "clique": Clique,
-            "clique-literals": CliqueLiterals,
             "dominating_set": DomSet,
             "sha-gen": SHAGen,
             "euclidean_tsp": EuclideanTSP
