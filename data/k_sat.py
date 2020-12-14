@@ -96,6 +96,7 @@ class KSAT(DIMACDataset):
 
             "clauses": tf.cast(data["batched_clauses"], tf.int32),
             "variable_count": data["variable_count"],
+            "clauses_count": data["clauses_in_formula"],
             "normal_clauses": data["clauses"]
         }
 
@@ -124,6 +125,8 @@ class KSAT(DIMACDataset):
             return lambda step_data: {
                 "adj_matrix_pos": step_data["adjacency_matrix_pos"],
                 "adj_matrix_neg": step_data["adjacency_matrix_neg"],
+                "variable_count": step_data["variable_count"],
+                "clauses_count": step_data["clauses_count"],
                 "clauses": step_data["clauses"]
             }
         elif input_mode == "literals":

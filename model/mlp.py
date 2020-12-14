@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.python.keras.layers import Dense, Lambda
 
-from layers.layer_normalization import LayerNormalization
+from layers.normalization import LayerNormalization
 
 def leaky_gelu(x):
     sg = tf.sigmoid(1.702*x)

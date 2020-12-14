@@ -3,7 +3,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 
 from layers.attention import AdditiveAttention
-from layers.layer_normalization import LayerNormalization
+from layers.normalization import LayerNormalization
 from loss.sat import unsat_clause_count, softplus_loss, softplus_log_loss
 from model.mlp import MLP
 

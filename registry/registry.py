@@ -46,7 +46,7 @@ class DatasetRegistry(Registry):
     @property
     def registry(self) -> dict:
         return {
-            "k_sat_variables": KSAT,
+            "k_sat": KSAT,
             "k_color": KColor,
             "3-sat": SAT_3,
             "clique": Clique,

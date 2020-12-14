@@ -23,10 +23,11 @@ class LayerNormalization(tf.keras.layers.Layer):
         variance = tf.reduce_mean(tf.square(inputs), self.axis, keepdims=True)
         return inputs * tf.math.rsqrt(variance + self.epsilon)
 
+
 class PairNorm(tf.keras.layers.Layer):
     """ PairNorm: Tackling Oversmoothing in GNNs https://arxiv.org/abs/1909.12223
-    todo: per graph normalization, currently per batch
     """
+
     def __init__(self, epsilon=1e-6, subtract_mean=False, **kwargs):
         self.epsilon = epsilon
         self.bias = None
@@ -38,10 +39,17 @@ class PairNorm(tf.keras.layers.Layer):
         if self.subtract_mean:
             self.bias = self.add_weight("bias", [num_units], initializer=tf.zeros_initializer)
 
-    def call(self, inputs, **kwargs):
+    def call(self, inputs, graph_mask, **kwargs):
+        """
+        :param inputs: input tensor variables or clauses state
+        :param graph_mask: 1-D mask for separate graphs. Take note that for clauses and variables this values differs.
+        """
+        # input size: cells x feature_maps
         if self.subtract_mean:  # subtracting mean may not be necessary: https://arxiv.org/abs/1910.07467
-            inputs -= tf.reduce_mean(inputs, axis=0, keepdims=True)
+            mean = tf.math.unsorted_segment_mean(inputs, graph_mask, tf.reduce_max(graph_mask) + 1)
+            inputs -= tf.gather(mean, graph_mask)
             inputs += self.bias
 
+        # input size: cells x feature_maps
         variance = tf.reduce_mean(tf.square(inputs), axis=1, keepdims=True)
         return inputs * tf.math.rsqrt(variance + self.epsilon)

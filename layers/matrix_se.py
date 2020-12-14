@@ -1,4 +1,3 @@
-from abc import abstractmethod
 from enum import Enum
 
 import numpy as np
@@ -7,7 +6,7 @@ import tensorflow_addons as tfa
 from tensorflow.keras.layers import Dense
 
 import utils.shuffle as shuffle_utils
-from layers.layer_normalization import LayerNormalization
+from layers.normalization import LayerNormalization
 
 
 class MatrixSE(tf.keras.layers.Layer):
@@ -77,7 +76,7 @@ class QuaternarySwitchUnit(tf.keras.layers.Layer):
 
         first_linear = self.linear_one(dropout)
         norm = self.layer_norm(first_linear)
-        gelu = tfa.activations.gelu(norm)  # TODO: In next tensorflow version replace with verison from core
+        gelu = tfa.activations.gelu(norm)  # TODO: In next tensorflow version replace with version from core
         second_linear = self.linear_two(gelu)
 
         residual_scale = tf.nn.sigmoid(self.residual_scale)
