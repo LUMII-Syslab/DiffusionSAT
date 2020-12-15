@@ -10,10 +10,11 @@ class QuerySAT(Model):
 
     def __init__(self, optimizer: Optimizer,
                  feature_maps=256, msg_layers=3,
-                 vote_layers=3, rounds=32,
+                 vote_layers=3, train_rounds=32, test_rounds=64,
                  query_maps=64, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
-        self.rounds = rounds
+        self.train_rounds = train_rounds
+        self.test_rounds = test_rounds
         self.optimizer = optimizer
 
         # self.variables_norm = PairNorm(subtract_mean=True)
@@ -66,7 +67,9 @@ class QuerySAT(Model):
         last_logits = tf.zeros([n_vars, 1])
         supervised_loss = 0.
 
-        for step in tf.range(self.rounds):
+        rounds = self.train_rounds if training else self.test_rounds
+
+        for step in tf.range(rounds):
             with tf.GradientTape() as grad_tape:
                 grad_tape.watch(variables)
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
@@ -119,8 +122,7 @@ class QuerySAT(Model):
             # tf.summary.scalar("unsat_clauses" + str(step), n_unsat_clauses)
             if logit_loss < 0.5 and n_unsat_clauses == 0:
                 labels = tf.round(tf.sigmoid(logits))  # now we know the answer, we can use it for supervised training
-                supervised_loss = tf.reduce_mean(
-                    tf.nn.sigmoid_cross_entropy_with_logits(logits=last_logits, labels=labels))
+                supervised_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=last_logits, labels=labels))
                 last_logits = logits
                 break
             last_logits = logits
@@ -136,7 +138,7 @@ class QuerySAT(Model):
         tf.summary.scalar("steps_taken", step)
         tf.summary.scalar("supervised_loss", supervised_loss)
 
-        return last_logits, tf.reduce_sum(step_losses.stack()) / self.rounds + supervised_loss
+        return last_logits, tf.reduce_sum(step_losses.stack()) / self.train_rounds + supervised_loss
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
@@ -163,8 +165,7 @@ class QuerySAT(Model):
                                   tf.TensorSpec(shape=[None], dtype=tf.int32)
                                   ])
     def predict_step(self, adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count):
-        predictions, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count,
-                                      training=False)
+        predictions, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count, training=False)
 
         return {
             "loss": loss,
