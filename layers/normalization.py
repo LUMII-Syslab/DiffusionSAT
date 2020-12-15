@@ -39,13 +39,13 @@ class PairNorm(tf.keras.layers.Layer):
         if self.subtract_mean:
             self.bias = self.add_weight("bias", [num_units], initializer=tf.zeros_initializer)
 
-    def call(self, inputs, graph_mask, **kwargs):
+    def call(self, inputs, graph_mask=None, **kwargs):
         """
         :param inputs: input tensor variables or clauses state
         :param graph_mask: 1-D mask for separate graphs. Take note that for clauses and variables this values differs.
         """
         # input size: cells x feature_maps
-        if self.subtract_mean:  # subtracting mean may not be necessary: https://arxiv.org/abs/1910.07467
+        if self.subtract_mean and graph_mask is not None:  # subtracting mean may not be necessary: https://arxiv.org/abs/1910.07467
             mean = tf.math.unsorted_segment_mean(inputs, graph_mask, tf.reduce_max(graph_mask) + 1)
             inputs -= tf.gather(mean, graph_mask)
             inputs += self.bias
