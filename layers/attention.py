@@ -115,3 +115,17 @@ class AdditiveAttention(tf.keras.layers.Layer):
         #     tf.summary.image("after_softmax", image / tf.reduce_max(image))
 
         return tf.concat(results, axis=-1)
+
+class SigmoidAttention(tf.keras.layers.Layer):
+    def __init__(self, hidden_maps, **kwargs):
+        super(SigmoidAttention, self).__init__(**kwargs)
+        self.unit_mlp = MLP(3, hidden_maps, hidden_maps, do_layer_norm = True)
+
+    def call(self, query: tf.Tensor, memory: tf.Tensor, adj_matrix: tf.sparse.SparseTensor, **kwargs):
+        q = tf.gather(query, adj_matrix.indices[:, 0])
+        k = tf.gather(memory, adj_matrix.indices[:, 1])
+        units = tf.concat([q, k], axis=-1)
+        weights = tf.sigmoid(self.unit_mlp(units))
+        #lit_val = tf.math.segment_sum(units, adj_matrix.indices[:,1]) # are indices sorted?
+        lit_val = tf.math.unsorted_segment_sum(k * weights, adj_matrix.indices[:, 0], adj_matrix.dense_shape[0])
+        return lit_val

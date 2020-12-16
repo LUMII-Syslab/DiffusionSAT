@@ -2,42 +2,42 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 from layers.normalization import LayerNormalization, PairNorm
-from loss.sat import softplus_loss, softplus_log_square_loss, unsat_clause_count
+from loss.sat import softplus_loss, softplus_log_square_loss, unsat_clause_count, softplus_log_loss, softplus_square_loss
 from model.mlp import MLP
 
 
 class QuerySAT(Model):
 
     def __init__(self, optimizer: Optimizer,
-                 feature_maps=256, msg_layers=3,
+                 feature_maps=128, msg_layers=3,
                  vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=64, **kwargs):
+                 query_maps=32, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
 
-        # self.variables_norm = PairNorm(subtract_mean=True)
-        # self.clauses_norm = PairNorm(subtract_mean=True)
+        self.variables_norm = PairNorm(subtract_mean=True)
+        self.clauses_norm = PairNorm(subtract_mean=True)
 
-        self.variables_norm = LayerNormalization(axis=0, subtract_mean=True)
-        self.clauses_norm = LayerNormalization(axis=0, subtract_mean=True)
+        #self.variables_norm = LayerNormalization(axis=0, subtract_mean=True)
+        #self.clauses_norm = LayerNormalization(axis=0, subtract_mean=True)
 
-        self.update_gate = MLP(vote_layers, feature_maps * 2, feature_maps, name="update_gate", do_layer_norm=True)
+        self.update_gate = MLP(vote_layers, feature_maps * 2, feature_maps, name="update_gate", do_layer_norm=False)
 
         # self.forget_gate = MLP(msg_layers, feature_maps, feature_maps,
         #                        out_activation=tf.sigmoid,
         #                        out_bias = -1,
         #                        name="forget_gate")
 
-        self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output", do_layer_norm=True)
-        self.variables_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query", do_layer_norm=True)
+        self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output", do_layer_norm=False)
+        self.variables_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query", do_layer_norm=False)
         # self.clause_update = MLP(vote_layers, feature_maps * 2, feature_maps, name="clause_update")
         # self.clause_update_gate = MLP(vote_layers, feature_maps, feature_maps, out_activation = tf.sigmoid, out_bias = -1, name="clause_update_gate")
         # self.query_pos_inter = MLP(msg_layers, query_maps * 2, query_maps, name="query_pos_inter")
         # self.query_neg_inter = MLP(msg_layers, query_maps * 2, query_maps, name="query_neg_inter")
         self.clause_mlp = MLP(vote_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update",
-                              do_layer_norm=True)
+                               do_layer_norm=False)
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -53,10 +53,10 @@ class QuerySAT(Model):
         n_vars = shape[0]
         n_clauses = shape[1]
 
-        # graph_count = tf.shape(variable_count)
-        # graph_id = tf.range(0, graph_count[0])
-        # variables_mask = tf.repeat(graph_id, variable_count)
-        # clauses_mask = tf.repeat(graph_id, clauses_count)
+        graph_count = tf.shape(variable_count)
+        graph_id = tf.range(0, graph_count[0])
+        variables_mask = tf.repeat(graph_id, variable_count)
+        clauses_mask = tf.repeat(graph_id, clauses_count)
 
         # variables = tf.random.truncated_normal([n_vars, self.feature_maps], stddev=0.025)
         # clause_state = tf.random.truncated_normal([n_clauses, self.feature_maps], stddev=0.025)
@@ -73,7 +73,7 @@ class QuerySAT(Model):
             with tf.GradientTape() as grad_tape:
                 grad_tape.watch(variables)
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
-                query = self.variables_query(v1)
+                query = self.variables_query(v1, graph_mask = variables_mask)
                 clauses_loss = softplus_loss(query, clauses)
                 step_loss = tf.reduce_sum(clauses_loss)
             variables_grad = grad_tape.gradient(step_loss, query)
@@ -85,7 +85,7 @@ class QuerySAT(Model):
 
             # Aggregate loss over positive edges (x)
             clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
-            clause_data = self.clause_mlp(clause_unit)
+            clause_data = self.clause_mlp(clause_unit, graph_mask = clauses_mask)
             variables_loss_all = clause_data[:, 0:self.query_maps]
             # variables_loss_neg = clause_data[:, self.query_maps:2 * self.query_maps]
             new_clause_value = clause_data[:, self.query_maps:]
@@ -96,8 +96,8 @@ class QuerySAT(Model):
             # variables_loss_neg = self.query_neg_inter(clause_unit)
             variables_loss_neg = tf.sparse.sparse_dense_matmul(adj_matrix_neg, variables_loss_all)
             # new_clause_value = self.clause_update(clause_unit)
-            # new_clause_value = self.clauses_norm(new_clause_value, clauses_mask, training=training) * 0.25
-            new_clause_value = self.clauses_norm(new_clause_value, training=training) * 0.25
+            new_clause_value = self.clauses_norm(new_clause_value, clauses_mask, training=training) * 0.25
+            #new_clause_value = self.clauses_norm(new_clause_value, training=training) * 0.25
             # new_clause_gate = self.clause_update_gate(clause_unit)
             # tf.summary.histogram("clause_gate" + str(step), new_clause_gate)
             # clause_state = (1 - new_clause_gate) * clause_state + new_clause_gate * new_clause_value
@@ -106,17 +106,20 @@ class QuerySAT(Model):
             unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
 
             # forget_gate = self.forget_gate(unit)
-            new_variables = self.update_gate(unit)
-            # new_variables = self.variables_norm(new_variables, variables_mask, training=training) * 0.25  # TODO: Rethink normalization
-            new_variables = self.variables_norm(new_variables, training=training) * 0.25  # TODO: Rethink normalization
+            new_variables = self.update_gate(unit, graph_mask = variables_mask)
+            new_variables = self.variables_norm(new_variables, variables_mask, training=training) * 0.25  # TODO: Rethink normalization
+            #new_variables = self.variables_norm(new_variables, training=training) * 0.25  # TODO: Rethink normalization
             # tf.summary.histogram("gate" + str(step), forget_gate)
 
             # variables = (1 - forget_gate) * variables + forget_gate * new_variables
             variables = new_variables  # + 0.1*variables
 
-            logits = self.variables_output(variables)
+            logits = self.variables_output(variables, graph_mask = variables_mask)
             # step_logits = step_logits.write(step, logits)
-            logit_loss = tf.reduce_sum(softplus_log_square_loss(logits, clauses))
+            per_clause_loss = softplus_square_loss(logits, clauses)
+            per_graph_loss = tf.math.segment_sum(per_clause_loss, clauses_mask)
+            logit_loss = tf.reduce_sum(tf.sqrt(per_graph_loss+1e-6))
+
             step_losses = step_losses.write(step, logit_loss)
             n_unsat_clauses = unsat_clause_count(logits, clauses)
             # tf.summary.scalar("unsat_clauses" + str(step), n_unsat_clauses)
@@ -131,12 +134,17 @@ class QuerySAT(Model):
             variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
             clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
 
-        # step_logits_tensor = step_logits.stack()  # step_count x literal_count
-        last_layer_loss = tf.reduce_sum(softplus_log_square_loss(last_logits, clauses))
-        tf.summary.scalar("last_layer_loss", last_layer_loss)
-        # log_as_histogram("step_losses", step_losses.stack())
-        tf.summary.scalar("steps_taken", step)
-        tf.summary.scalar("supervised_loss", supervised_loss)
+        if training:
+            last_clauses = softplus_loss(last_logits, clauses)
+            tf.summary.histogram("clauses", last_clauses)
+            last_layer_loss = tf.reduce_sum(softplus_log_loss(last_logits, clauses))
+            tf.summary.histogram("logits", last_logits)
+            tf.summary.scalar("last_layer_loss", last_layer_loss)
+            # log_as_histogram("step_losses", step_losses.stack())
+            tf.summary.scalar("steps_taken", step)
+            tf.summary.scalar("supervised_loss", supervised_loss)
+            # tf.summary.scalar("query_scale", query_scale)
+            # tf.summary.scalar("grad_scale", grad_scale)
 
         return last_logits, tf.reduce_sum(step_losses.stack()) / self.train_rounds + supervised_loss
 
