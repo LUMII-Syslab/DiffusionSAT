@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 from layers.normalization import LayerNormalization, PairNorm
-from loss.sat import softplus_loss, softplus_log_square_loss, unsat_clause_count, softplus_log_loss, softplus_square_loss
+from loss.sat import softplus_loss, softplus_log_square_loss, unsat_clause_count, softplus_log_loss, softplus_square_loss, softplus_mixed_loss
 from model.mlp import MLP
 
 
@@ -116,7 +116,7 @@ class QuerySAT(Model):
 
             logits = self.variables_output(variables, graph_mask = variables_mask)
             # step_logits = step_logits.write(step, logits)
-            per_clause_loss = softplus_square_loss(logits, clauses)
+            per_clause_loss = softplus_mixed_loss(logits, clauses)
             per_graph_loss = tf.math.segment_sum(per_clause_loss, clauses_mask)
             logit_loss = tf.reduce_sum(tf.sqrt(per_graph_loss+1e-6))
 
