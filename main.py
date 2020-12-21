@@ -130,15 +130,16 @@ def test_invariance(dataset: Dataset, data: tf.data.Dataset, model: Model, steps
 
     for step_data in iterator:
         print("Positive literals: ", tf.math.count_nonzero(tf.clip_by_value(step_data['clauses'], 0, 1).values).numpy())
-        print("Negative literals: ", tf.math.count_nonzero(tf.clip_by_value(step_data['clauses'], -1, 0).values).numpy())
+        print("Negative literals: ",
+              tf.math.count_nonzero(tf.clip_by_value(step_data['clauses'], -1, 0).values).numpy())
 
         print("\n")
         invariance_original(dataset, metrics, model, step_data.copy())
         print("\n")
         invariance_shuffle_literals(dataset, metrics, model, step_data.copy())
         print("\n")
-        # invariance_shuffle_clauses(dataset, metrics, model, step_data.copy())
-        # print("\n")
+        invariance_shuffle_clauses(dataset, metrics, model, step_data.copy())
+        print("\n")
         invariance_inverse(dataset, metrics, model, step_data.copy())
         print("---------------------------\n")
 
@@ -157,7 +158,9 @@ def invariance_shuffle_literals(dataset, metrics, model, step_data):
 
 def invariance_shuffle_clauses(dataset, metrics, model, step_data):
     clauses = step_data['clauses'].to_tensor()
-    clauses = tf.random.shuffle(clauses)
+    clauses = tf.split(clauses, step_data["normal_clauses"].row_lengths())
+    clauses = [tf.random.shuffle(x) for x in clauses]
+    clauses = tf.concat(clauses, axis=0)
     step_data['clauses'] = tf.RaggedTensor.from_tensor(clauses, padding=0, row_splits_dtype=tf.int32)
     model_input = dataset.filter_model_inputs(step_data)
     output = model.predict_step(**model_input)
@@ -168,7 +171,8 @@ def invariance_shuffle_clauses(dataset, metrics, model, step_data):
 
 
 def invariance_inverse(dataset, metrics, model, step_data):
-    step_data["adjacency_matrix_pos"], step_data["adjacency_matrix_neg"] = step_data["adjacency_matrix_neg"], step_data["adjacency_matrix_pos"]
+    step_data["adjacency_matrix_pos"], step_data["adjacency_matrix_neg"] = step_data["adjacency_matrix_neg"], step_data[
+        "adjacency_matrix_pos"]
     step_data["clauses"] = step_data["clauses"] * -1
     step_data["normal_clauses"] = step_data["normal_clauses"] * -1
     model_input = dataset.filter_model_inputs(step_data)
