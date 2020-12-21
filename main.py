@@ -133,13 +133,13 @@ def test_invariance(dataset: Dataset, data: tf.data.Dataset, model: Model, steps
         print("Negative literals: ", tf.math.count_nonzero(tf.clip_by_value(step_data['clauses'], -1, 0).values).numpy())
 
         print("\n")
-        invariance_original(dataset, metrics, model, step_data)
+        invariance_original(dataset, metrics, model, step_data.copy())
         print("\n")
-        invariance_shuffle_literals(dataset, metrics, model, step_data)
+        invariance_shuffle_literals(dataset, metrics, model, step_data.copy())
         print("\n")
-        invariance_shuffle_clauses(dataset, metrics, model, step_data)
-        print("\n")
-        invariance_inverse(dataset, metrics, model, step_data)
+        # invariance_shuffle_clauses(dataset, metrics, model, step_data.copy())
+        # print("\n")
+        invariance_inverse(dataset, metrics, model, step_data.copy())
         print("---------------------------\n")
 
     return metrics

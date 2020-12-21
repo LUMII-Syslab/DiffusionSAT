@@ -22,9 +22,9 @@ class Config:
     restore = None
     label = ""
 
-    train = True
-    evaluate = True
-    test_invariance = False
+    train = False
+    evaluate = False
+    test_invariance = True
 
     __arguments_parsed = False
 
