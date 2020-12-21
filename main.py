@@ -26,11 +26,17 @@ def main():
                                                      input_mode=Config.input_mode)
 
     ckpt, manager = prepare_checkpoints(model, optimizer)
-    train(dataset, model, ckpt, manager)
 
-    test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
-    for metric in test_metrics:
-        metric.log_in_stdout()
+    if Config.train:
+        train(dataset, model, ckpt, manager)
+
+    if Config.evaluate:
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
+        for metric in test_metrics:
+            metric.log_in_stdout()
+
+    if Config.test_invariance:
+        test_invariance(dataset, dataset.test_data(), model, 20)
 
 
 def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
@@ -96,7 +102,7 @@ def prepare_checkpoints(model, optimizer):
     ckpt = tf.train.Checkpoint(step=tf.Variable(0, dtype=tf.int64), optimizer=optimizer, model=model)
     manager = tf.train.CheckpointManager(ckpt, Config.train_dir, max_to_keep=Config.ckpt_count)
 
-    ckpt.restore(manager.latest_checkpoint)
+    ckpt.restore(manager.latest_checkpoint).expect_partial()
     if manager.latest_checkpoint:
         print(f"Model restored from {manager.latest_checkpoint}!")
     else:
@@ -116,6 +122,70 @@ def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, step
             metric.update_state(output, step_data)
 
     return metrics
+
+
+def test_invariance(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None):
+    metrics = dataset.metrics()
+    iterator = itertools.islice(data, steps) if steps else data
+
+    for step_data in iterator:
+        print("Positive literals: ", tf.math.count_nonzero(tf.clip_by_value(step_data['clauses'], 0, 1).values).numpy())
+        print("Negative literals: ", tf.math.count_nonzero(tf.clip_by_value(step_data['clauses'], -1, 0).values).numpy())
+
+        print("\n")
+        invariance_original(dataset, metrics, model, step_data)
+        print("\n")
+        invariance_shuffle_literals(dataset, metrics, model, step_data)
+        print("\n")
+        invariance_shuffle_clauses(dataset, metrics, model, step_data)
+        print("\n")
+        invariance_inverse(dataset, metrics, model, step_data)
+        print("---------------------------\n")
+
+    return metrics
+
+
+def invariance_shuffle_literals(dataset, metrics, model, step_data):
+    step_data['clauses'] = tf.map_fn(lambda x: tf.random.shuffle(x), step_data["clauses"])
+    model_input = dataset.filter_model_inputs(step_data)
+    output = model.predict_step(**model_input)
+    print("Shuffle literals inside clauses:")
+    for metric in metrics:
+        metric.update_state(output, step_data)
+        metric.log_in_stdout()
+
+
+def invariance_shuffle_clauses(dataset, metrics, model, step_data):
+    clauses = step_data['clauses'].to_tensor()
+    clauses = tf.random.shuffle(clauses)
+    step_data['clauses'] = tf.RaggedTensor.from_tensor(clauses, padding=0, row_splits_dtype=tf.int32)
+    model_input = dataset.filter_model_inputs(step_data)
+    output = model.predict_step(**model_input)
+    print("Shuffle clauses:")
+    for metric in metrics:
+        metric.update_state(output, step_data)
+        metric.log_in_stdout()
+
+
+def invariance_inverse(dataset, metrics, model, step_data):
+    step_data["adjacency_matrix_pos"], step_data["adjacency_matrix_neg"] = step_data["adjacency_matrix_neg"], step_data["adjacency_matrix_pos"]
+    step_data["clauses"] = step_data["clauses"] * -1
+    step_data["normal_clauses"] = step_data["normal_clauses"] * -1
+    model_input = dataset.filter_model_inputs(step_data)
+    output = model.predict_step(**model_input)
+    print("Inverse literals:")
+    for metric in metrics:
+        metric.update_state(output, step_data)
+        metric.log_in_stdout()
+
+
+def invariance_original(dataset, metrics, model, step_data):
+    model_input = dataset.filter_model_inputs(step_data)
+    output = model.predict_step(**model_input)
+    for metric in metrics:
+        print("Original values:")
+        metric.update_state(output, step_data)
+        metric.log_in_stdout()
 
 
 if __name__ == '__main__':

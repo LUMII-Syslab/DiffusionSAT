@@ -22,6 +22,10 @@ class Config:
     restore = None
     label = ""
 
+    train = True
+    evaluate = True
+    test_invariance = False
+
     __arguments_parsed = False
 
     @classmethod
@@ -63,5 +67,9 @@ class Config:
                                    choices=['variables', 'literals'])
 
         config_parser.add_argument('--force_data_gen', action='store_true', default=cls.force_data_gen)
+
+        config_parser.add_argument('--train', action='store_true', default=cls.train)
+        config_parser.add_argument('--evaluate', action='store_true', default=cls.evaluate)
+        config_parser.add_argument('--test_invariance', action='store_true', default=cls.test_invariance)
 
         return config_parser
