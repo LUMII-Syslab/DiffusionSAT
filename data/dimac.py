@@ -28,6 +28,7 @@ class DIMACDataset(Dataset):
 
         self.dimacs_dir_name = "dimacs"
         self.data_dir_name = "data"
+        self.should_shuffle_batches = False
 
     @abstractmethod
     def train_generator(self) -> tuple:
@@ -87,7 +88,10 @@ class DIMACDataset(Dataset):
 
         data = tf.data.TFRecordDataset(data_files, "GZIP")
         data = data.map(self.feature_from_file, tf.data.experimental.AUTOTUNE)
-        return data.map(self.shuffle_batch, tf.data.experimental.AUTOTUNE)
+        if self.should_shuffle_batches:
+            data = data.map(self.shuffle_batch, tf.data.experimental.AUTOTUNE)
+
+        return data
 
     def write_dimacs_to_file(self, data_folder: Path, data_generator: callable):
         output_folder = data_folder / self.dimacs_dir_name
