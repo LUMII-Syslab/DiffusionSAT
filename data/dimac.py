@@ -86,7 +86,8 @@ class DIMACDataset(Dataset):
         data_files = [str(d) for d in data_folder.glob("*.tfrecord")]
 
         data = tf.data.TFRecordDataset(data_files, "GZIP")
-        return data.map(lambda rec: self.feature_from_file(rec), tf.data.experimental.AUTOTUNE)
+        data = data.map(self.feature_from_file, tf.data.experimental.AUTOTUNE)
+        return data.map(self.shuffle_batch, tf.data.experimental.AUTOTUNE)
 
     def write_dimacs_to_file(self, data_folder: Path, data_generator: callable):
         output_folder = data_folder / self.dimacs_dir_name
@@ -263,6 +264,21 @@ class DIMACDataset(Dataset):
             "clauses_in_formula": sparse_to_dense(parsed['clauses_in_formula']),
             "cells_in_formula": sparse_to_dense(parsed['cells_in_formula'])
         }
+
+    @staticmethod
+    def shuffle_batch(rec):
+        graph_size = rec['clauses'].row_lengths()
+        clauses = tf.RaggedTensor.from_row_lengths(rec['batched_clauses'], graph_size)
+        rank = clauses.ragged_rank
+        clauses = clauses.to_tensor()
+        clauses = tf.random.shuffle(clauses)  # shuffle batch elements
+        clauses = tf.transpose(tf.random.shuffle(tf.transpose(clauses, [1, 0, 2])), [1, 0, 2])  # shuffle clauses inside
+        clauses = tf.RaggedTensor.from_tensor(clauses, padding=0, ragged_rank=rank, row_splits_dtype=tf.int32)
+        clauses = clauses.merge_dims(0, 1)
+        split, _ = tf.unique(clauses.nested_row_splits[0])
+        clauses = tf.RaggedTensor.from_nested_row_splits(clauses.flat_values, [split])
+        rec['batched_clauses'] = clauses
+        return rec
 
 
 def sparse_to_dense(sparse_tensor, dtype=tf.int32, shape=None):
