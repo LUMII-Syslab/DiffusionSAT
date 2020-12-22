@@ -2,6 +2,7 @@ from abc import abstractmethod
 
 from data.CNFGen import KColor
 from data.CNFGen import SAT_3, Clique, DomSet
+from data.PrimesGen import PrimesGen
 from data.SHAGen import SHAGen
 from data.k_sat import KSAT
 from data.tsp import EuclideanTSP
@@ -52,5 +53,6 @@ class DatasetRegistry(Registry):
             "clique": Clique,
             "dominating_set": DomSet,
             "sha-gen": SHAGen,
-            "euclidean_tsp": EuclideanTSP
+            "euclidean_tsp": EuclideanTSP,
+            "primes": PrimesGen
         }
