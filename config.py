@@ -16,7 +16,7 @@ class Config:
     warmup = 0.0
     learning_rate = 0.0001
     model = 'query_sat'  # query_sat, neuro_sat, tsp_matrix_se
-    task = 'sha-gen'  # k_sat_variables, k_sat_literals, k_color, 3-sat, clique, euclidean_tsp
+    task = 'primes'  # k_sat_variables, k_sat_literals, k_color, 3-sat, clique, euclidean_tsp
     input_mode = 'variables'  # "variables" or "literals", applicable to SAT
 
     restore = None

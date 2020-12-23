@@ -56,6 +56,8 @@ class DIMACDataset(Dataset):
 
     def train_data(self) -> tf.data.Dataset:
         data = self.fetch_dataset(self.train_generator, mode="train")
+        if self.should_shuffle_batches:
+            data = data.map(self.shuffle_batch, tf.data.experimental.AUTOTUNE)
         data = data.shuffle(self.shuffle_size)
         data = data.repeat()
         return data.prefetch(tf.data.experimental.AUTOTUNE)
@@ -88,9 +90,6 @@ class DIMACDataset(Dataset):
 
         data = tf.data.TFRecordDataset(data_files, "GZIP")
         data = data.map(self.feature_from_file, tf.data.experimental.AUTOTUNE)
-        if self.should_shuffle_batches:
-            data = data.map(self.shuffle_batch, tf.data.experimental.AUTOTUNE)
-
         return data
 
     def write_dimacs_to_file(self, data_folder: Path, data_generator: callable):

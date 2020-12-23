@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import tensorflow as tf
 
+from data.PrimesGen import PrimesGen
 from data.SHAGen import SHAGen
 
 
@@ -121,10 +122,13 @@ def draw_resolution_graph(clauses: list):
 def main():
     # dataset = SAT_3("/tmp")
     # dataset = KSATVariables("/tmp")
-    dataset = SHAGen("/tmp")
-    var_count, clauses = [x for x in itertools.islice(dataset.train_generator(), 1)][0]
+    # dataset = SHAGen("/tmp")
+    dataset = PrimesGen("/tmp")
+    var_count, clauses = [x for x in itertools.islice(dataset.train_generator(), 2)][1]
+    print(clauses)
 
     print("Min lits in single clause: ", min([len(c) for c in clauses]))
+    print("Max lits in single clause: ", max([len(c) for c in clauses]))
     draw_interaction_graph(var_count, clauses)
     draw_factor_graph(var_count, clauses)
     draw_resolution_graph(clauses)

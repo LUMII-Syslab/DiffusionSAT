@@ -2,15 +2,10 @@
 
 # Script by SK.
 
-import os
-import platform
-import random
-import subprocess
-
 import glob
+import os
 
 from data.k_sat import KSAT
-
 
 
 class PrimesGen(KSAT):
@@ -19,7 +14,7 @@ class PrimesGen(KSAT):
 
     FETCHED_DATA_DIR = "primes"
     if not os.path.exists(FETCHED_DATA_DIR):
-        FETCHED_DATA_DIR = "data/"+FETCHED_DATA_DIR
+        FETCHED_DATA_DIR = "data/" + FETCHED_DATA_DIR
 
     def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
         super(PrimesGen, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
@@ -41,26 +36,26 @@ class PrimesGen(KSAT):
 
     def __generator(self, size) -> tuple:
 
-        fileList = glob.glob(PrimesGen.FETCHED_DATA_DIR+"/*.dimacs")
-        print("LIST",PrimesGen.FETCHED_DATA_DIR+"/*.dimacs",fileList)
-        fileIndex = 0
+        file_list = glob.glob(PrimesGen.FETCHED_DATA_DIR + "/*.dimacs")
+        # print("LIST", PrimesGen.FETCHED_DATA_DIR + "/*.dimacs", fileList)
+        file_index = 0
 
-        samplesSoFar = 0
+        samples_so_far = 0
 
-        while samplesSoFar < size:
+        while samples_so_far < size:
             attempts = 0
             while attempts < self.max_attempts:
 
-                if fileIndex>len(fileList):
+                if file_index >= len(file_list):
                     attempts = self.max_attempts
                     break
 
-                fileName = fileList[fileIndex]
-                fileIndex+=1
+                file_name = file_list[file_index]
+                file_index += 1
 
                 ok = True
-                
-                f = open(fileName, 'r')
+
+                f = open(file_name, 'r')
                 lines = f.readlines()
                 f.close()
                 clauses = []
@@ -69,15 +64,14 @@ class PrimesGen(KSAT):
                     if len(line) == 0:
                         continue
                     if line[0].isalpha():
-                        if line[0]=='p':
+                        if line[0] == 'p':
                             # parse: "p cnf <nvars>""
-                            j1 = line.find("p cnf ")
-                            j2 = line.find(" ", j1+6)
-                            nvars = int(line[j1+6:j2].strip())
-                            ok = nvars >= self.min_vars and nvars <= self.max_vars
+                            *_, nvars, clauses_n = line.strip().split(" ")
+                            nvars = int(nvars)
+                            ok = self.min_vars <= nvars <= self.max_vars
                             if not ok:
-                                break # do not consider other clauses
-                        continue # continue with the next line
+                                break  # do not consider other clauses
+                        continue  # continue with the next line
                     clause = []
                     for s in line.split():
                         i = int(s)
@@ -87,8 +81,15 @@ class PrimesGen(KSAT):
                     clauses.append(clause)
 
                 if ok:
+                    # nvars count doesn't match highest variable in the clauses
+                    real_vars = sorted(set([abs(x) for c in clauses for x in c]))
+                    map_pos = {v2: v + 1 for v, v2 in enumerate(real_vars)}
+                    map_neg = {-v2: -(v + 1) for v, v2 in enumerate(real_vars)}
+                    map_vars = {**map_pos, **map_neg}
+                    clauses = [[map_vars[x] for x in c] for c in clauses]
+
                     yield nvars, clauses
-                    samplesSoFar += 1
+                    samples_so_far += 1
                     break  # while attempts
 
                 # if break haven't occurred, try the next attempt:
