@@ -25,5 +25,5 @@ class Dataset(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def metrics(self) -> list:
+    def metrics(self, initial=False) -> list:
         pass

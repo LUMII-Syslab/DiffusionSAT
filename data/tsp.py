@@ -6,7 +6,7 @@ import tensorflow as tf
 from concorde.tsp import TSPSolver  # https://github.com/jvkersch/pyconcorde
 
 from data.dataset import Dataset
-from metrics.tsp_metrics import TSPAccuracy, TSPMetrics
+from metrics.tsp_metrics import TSPMetrics, TSPInitialMetrics
 
 PADDING_VALUE = -1
 
@@ -18,6 +18,7 @@ class EuclideanTSP(Dataset):
         self.max_node_count = 16
         self.train_data_size = 10000
         self.train_batch_size = 16
+        self.beam_width = 128
 
     def train_data(self) -> tf.data.Dataset:
         data = self.__generate_data(self.min_node_count, self.max_node_count, self.train_data_size,
@@ -69,8 +70,11 @@ class EuclideanTSP(Dataset):
         return {"adj_matrix": step_data["adjacency_matrix"], "coords": step_data["coordinates"],
                 "labels": step_data["labels"]}
 
-    def metrics(self) -> list:
-        return [TSPAccuracy(), TSPMetrics()]
+    def metrics(self, initial=False) -> list:
+        if initial:
+            return [TSPInitialMetrics(beam_width=self.beam_width)]
+        else:
+            return [TSPMetrics(beam_width=self.beam_width)]
 
 
 def generate_graph_and_coord(node_count):

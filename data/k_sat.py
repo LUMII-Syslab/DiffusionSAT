@@ -119,7 +119,7 @@ class KSAT(DIMACDataset):
     def filter_model_inputs(self, step_data) -> dict:
         return self.filter(step_data)
 
-    def metrics(self) -> list:
+    def metrics(self, initial=False) -> list:
         return [SATAccuracy()]
 
     def __prepare_filter(self, input_mode):

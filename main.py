@@ -147,8 +147,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                         tf.summary.histogram(var.name, var, step=int(ckpt.step))
 
         if int(ckpt.step) % 1000 == 0:
-
-            metrics = evaluate_metrics(dataset, validation_data, model, steps=100)
+            metrics = evaluate_metrics(dataset, validation_data, model, steps=100, initial=(int(ckpt.step)==0))
             for metric in metrics:
                 metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
                 metric.log_in_stdout(step=int(ckpt.step))
@@ -182,8 +181,8 @@ def prepare_checkpoints(model, optimizer):
     return ckpt, manager
 
 
-def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None) -> list:
-    metrics = dataset.metrics()
+def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False) -> list:
+    metrics = dataset.metrics(initial)
     iterator = itertools.islice(data, steps) if steps else data
 
     empty = True
