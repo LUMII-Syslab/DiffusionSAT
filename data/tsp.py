@@ -4,40 +4,57 @@ import os
 import numpy as np
 import tensorflow as tf
 from concorde.tsp import TSPSolver  # https://github.com/jvkersch/pyconcorde
+from pathlib import Path
+import shutil
 
 from data.dataset import Dataset
-from metrics.tsp_metrics import TSPMetrics, TSPInitialMetrics
-
-PADDING_VALUE = -1
+from metrics.tsp_metrics import TSPMetrics, TSPInitialMetrics, PADDING_VALUE
 
 
 class EuclideanTSP(Dataset):
     # TODO(@Emīls): Move batch_size to config and add kwargs to datasets
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, data_dir, force_data_gen, **kwargs) -> None:
         self.min_node_count = 16
         self.max_node_count = 16
         self.train_data_size = 10000
         self.train_batch_size = 16
         self.beam_width = 128
 
+        self.force_data_gen = force_data_gen
+        self.data_dir = Path(data_dir) / self.__class__.__name__
+
     def train_data(self) -> tf.data.Dataset:
-        data = self.__generate_data(self.min_node_count, self.max_node_count, self.train_data_size,
-                                    self.train_batch_size)
-        data = data.shuffle(10000)
-        data = data.repeat()
-        return data
+        return self.fetch_dataset("train", self.min_node_count, self.max_node_count, self.train_data_size, self.train_batch_size)
 
     def validation_data(self) -> tf.data.Dataset:
-        data = self.__generate_data(self.min_node_count, self.max_node_count, dataset_size=100, batch_size=1)
-        data = data.shuffle(10000)
-        data = data.repeat()
-        return data
+        return self.fetch_dataset("validation", self.min_node_count, self.max_node_count, dataset_size=1000, batch_size=1)
 
     def test_data(self) -> tf.data.Dataset:
-        data = self.__generate_data(self.min_node_count, self.max_node_count, dataset_size=2000, batch_size=32)
-        data = data.shuffle(10000)
-        data = data.repeat()
-        return data
+        return self.fetch_dataset("test", self.min_node_count, self.max_node_count, dataset_size=10000, batch_size=32)
+
+    def fetch_dataset(self, mode, min_node_count, max_node_count, dataset_size, batch_size):
+        """" Reads dataset from file; creates the file if it does not exist."""
+        data_folder = self.data_dir / f"{mode}_{min_node_count}_{max_node_count}_{dataset_size//1000}K_{batch_size}"
+        data_folder_str = str(data_folder.resolve())  # converts path to a string
+        print(f"Fetching TSP {mode} dataset")
+
+        if self.force_data_gen and data_folder.exists():
+            shutil.rmtree(data_folder)
+
+        if not data_folder.exists():
+            dataset = self.__generate_data(min_node_count, max_node_count, dataset_size, batch_size)
+            tf.data.experimental.save(dataset, data_folder_str)
+
+        # load, prepare and return the dataset:
+        padded_size = get_nearest_power_of_two(max_node_count)
+        element_spec = {'adjacency_matrix': tf.TensorSpec(shape=(None, padded_size, padded_size), dtype=tf.float32),
+                     'coordinates': tf.TensorSpec(shape=(None, padded_size, 2), dtype=tf.float32),
+                     'labels': tf.TensorSpec(shape=(None, padded_size, padded_size), dtype=tf.float32)}
+        dataset = tf.data.experimental.load(data_folder_str, element_spec)
+        dataset = dataset.shuffle(dataset_size)
+        dataset = dataset.repeat()
+        return dataset
+
 
     def __generate_data(self, min_node_count, max_node_count, dataset_size, batch_size) -> tf.data.Dataset:
         """
@@ -142,7 +159,8 @@ def get_path_with_Concorde(coordinates):
 
 
 def get_score_with_Concorde(coordinates):
-    # returns a matrix with edges in the optimal path marked by ones
+    # returns a matrix with edges in the optimal path marked by marked_value
+    marked_value = 0.5  # 0.5 for compatibility with unsupervised loss
     node_count = len(coordinates)
     assert node_count >= 4  # Concorde takes 4+ vertices
     path = get_path_with_Concorde(coordinates)
@@ -151,7 +169,6 @@ def get_score_with_Concorde(coordinates):
     for i in range(node_count):
         previous_index = index
         index = path[i + 1]
-        # 0.5 for compatibility with unsupervised loss:
-        output[previous_index, index] = 0.5
-        output[index, previous_index] = 0.5
+        output[previous_index, index] = marked_value
+        output[index, previous_index] = marked_value
     return output

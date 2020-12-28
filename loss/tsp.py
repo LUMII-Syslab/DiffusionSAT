@@ -1,6 +1,7 @@
 import tensorflow as tf
+
 from loss.unsupervised_tsp import tsp_unsupervised_loss, inverse_identity
-from data.tsp import PADDING_VALUE
+from metrics.tsp_metrics import PADDING_VALUE
 
 
 def tsp_loss(predictions, adjacency_matrix, labels=None, noise=0, log_in_tb=False, fast_inaccurate=False,
