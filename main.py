@@ -7,6 +7,7 @@ from tensorflow.keras import Model
 
 from config import Config
 from data.dataset import Dataset
+from metrics.base import EmptyMetric
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
@@ -185,13 +186,15 @@ def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, step
     metrics = dataset.metrics()
     iterator = itertools.islice(data, steps) if steps else data
 
+    empty = True
     for step_data in iterator:
         model_input = dataset.filter_model_inputs(step_data)
         output = model.predict_step(**model_input)
         for metric in metrics:
             metric.update_state(output, step_data)
+        empty = False
 
-    return metrics
+    return metrics if not empty else [EmptyMetric()]
 
 
 def test_invariance(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None):
