@@ -72,7 +72,7 @@ class DIMACDataset(Dataset):
         return self.fetch_dataset(self.test_generator, mode="test")
 
     def fetch_dataset(self, generator: callable, mode: str):
-        data_folder = self.data_dir / mode
+        data_folder = self.data_dir / mode + f"_{self.max_nodes_per_batch}_nodes"
 
         if self.force_data_gen and data_folder.exists():
             shutil.rmtree(data_folder)
@@ -219,8 +219,12 @@ class DIMACDataset(Dataset):
         return tf.train.Feature(int64_list=int_list)
 
     def __batch_files(self, files):  # TODO: This is no good as formulas in batches never changes
+        files_size = len(files)
         # filter formulas that will not fit in any batch
         files = [(node_count, filename) for node_count, filename in files if node_count <= self.max_nodes_per_batch]
+
+        dif = files_size - len(files)
+        print(f"\n\n WARNING: {dif} formulas was not included in dataset as they exceeded max node count! \n\n")
 
         batches = []
         current_batch = []

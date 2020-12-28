@@ -16,5 +16,9 @@ class Metric(metaclass=ABCMeta):
         pass
 
     @abstractmethod
+    def log_in_file(self, file: str, prepend_str: str = None, step: int = None, reset_state=True):
+        pass
+
+    @abstractmethod
     def reset_state(self):
         pass

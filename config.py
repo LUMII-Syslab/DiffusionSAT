@@ -4,6 +4,8 @@ from registry.registry import ModelRegistry, DatasetRegistry
 
 
 class Config:
+
+    """Data and placement config: """
     train_dir = '/host-dir/np-solver'
     data_dir = '/host-dir/data'
     force_data_gen = False
@@ -11,21 +13,27 @@ class Config:
     ckpt_count = 3
     eager = False
 
+    restore = None
+    label = ""
+
+    """Training and task selection config: """
     optimizer = 'radam'
     train_steps = 100000
     warmup = 0.0
     learning_rate = 0.0001
     model = 'query_sat'  # query_sat, neuro_sat, tsp_matrix_se
-    task = 'primes'  # k_sat_variables, k_sat_literals, k_color, 3-sat, clique, euclidean_tsp
+    task = 'sha-gen'  # k_sat_variables, k_sat_literals, k_color, 3-sat, clique, euclidean_tsp
     input_mode = 'variables'  # "variables" or "literals", applicable to SAT
 
-    restore = None
-    label = ""
-
+    """Supported training and evaluation modes: """
     train = True
     evaluate = True
     test_invariance = False
+    evaluate_round_gen = False
+    evaluate_batch_gen = False
+    evaluate_formula_gen = False
 
+    """Internal config variables: """
     __arguments_parsed = False
 
     @classmethod
@@ -71,5 +79,8 @@ class Config:
         config_parser.add_argument('--train', action='store_true', default=cls.train)
         config_parser.add_argument('--evaluate', action='store_true', default=cls.evaluate)
         config_parser.add_argument('--test_invariance', action='store_true', default=cls.test_invariance)
+        config_parser.add_argument('--evaluate_round_gen', action='store_true', default=cls.evaluate_round_gen)
+        config_parser.add_argument('--evaluate_batch_gen', action='store_true', default=cls.evaluate_batch_gen)
+        config_parser.add_argument('--evaluate_formula_gen', action='store_true', default=cls.evaluate_formula_gen)
 
         return config_parser

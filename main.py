@@ -1,5 +1,6 @@
 import itertools
 import time
+from pathlib import Path
 
 import tensorflow as tf
 from tensorflow.keras import Model
@@ -35,8 +36,46 @@ def main():
         for metric in test_metrics:
             metric.log_in_stdout()
 
+    if Config.evaluate_round_gen:
+        evaluate_round_generalization(dataset, optimizer)
+
+    if Config.evaluate_batch_gen:
+        evaluate_batch_generalization(model)
+
+    if Config.evaluate_formula_gen:
+        pass
+
     if Config.test_invariance:
         test_invariance(dataset, dataset.test_data(), model, 20)
+
+
+def evaluate_batch_generalization(model):
+    results_file = Path(Config.train_dir) / "gen_batch_size_result.txt"
+
+    # for SAT by default we train on max_batch_size=5000
+    for batch_size in range(3000, 10500, 500):
+        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                         force_data_gen=Config.force_data_gen,
+                                                         input_mode=Config.input_mode,
+                                                         max_batch_size=batch_size)
+
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
+        prepend_line = f"Results for dataset with max_batch_size={batch_size}:"
+        for metric in test_metrics:
+            metric.log_in_file(str(results_file), prepend_str=prepend_line)
+
+
+def evaluate_round_generalization(dataset, optimizer):
+    results_file = Path(Config.train_dir) / "gen_steps_result.txt"
+
+    for test_rounds in [2 ** r for r in range(4, 10, 1)]:
+        print(f"Evaluating model with {test_rounds} test rounds!")
+        model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, test_rounds=test_rounds)
+        _ = prepare_checkpoints(model, optimizer)
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
+
+        for metric in test_metrics:
+            metric.log_in_file(str(results_file), prepend_str=f"Results for model with test_rounds={test_rounds}:")
 
 
 def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
