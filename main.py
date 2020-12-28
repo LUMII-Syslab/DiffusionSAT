@@ -76,7 +76,7 @@ def evaluate_round_generalization(dataset, optimizer):
     if not train_dir.exists():
         train_dir.mkdir(parents=True)
 
-    test_data = dataset.test_dataset()
+    test_data = dataset.test_data()
     for test_rounds in [2 ** r for r in range(4, 11, 1)]:
         model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, test_rounds=test_rounds)
         print(f"Evaluating model with test_rounds={test_rounds}")
