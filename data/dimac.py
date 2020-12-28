@@ -72,7 +72,7 @@ class DIMACDataset(Dataset):
         return self.fetch_dataset(self.test_generator, mode="test")
 
     def fetch_dataset(self, generator: callable, mode: str):
-        data_folder = self.data_dir / mode + f"_{self.max_nodes_per_batch}_nodes"
+        data_folder = self.data_dir / (mode + f"_{self.max_nodes_per_batch}_nodes")
 
         if self.force_data_gen and data_folder.exists():
             shutil.rmtree(data_folder)

@@ -50,7 +50,11 @@ def main():
 
 
 def evaluate_batch_generalization(model):
-    results_file = Path(Config.train_dir) / "gen_batch_size_result.txt"
+    train_dir = Path(Config.train_dir)
+    results_file = train_dir / "gen_batch_size_result.txt"
+
+    if not train_dir.exists():
+        train_dir.mkdir(parents=True)
 
     # for SAT by default we train on max_batch_size=5000
     for batch_size in range(3000, 10500, 500):
@@ -66,13 +70,18 @@ def evaluate_batch_generalization(model):
 
 
 def evaluate_round_generalization(dataset, optimizer):
-    results_file = Path(Config.train_dir) / "gen_steps_result.txt"
+    train_dir = Path(Config.train_dir)
+    results_file = train_dir / "gen_steps_result.txt"
 
-    for test_rounds in [2 ** r for r in range(4, 10, 1)]:
-        print(f"Evaluating model with {test_rounds} test rounds!")
+    if not train_dir.exists():
+        train_dir.mkdir(parents=True)
+
+    test_data = dataset.test_dataset()
+    for test_rounds in [2 ** r for r in range(4, 11, 1)]:
         model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, test_rounds=test_rounds)
+        print(f"Evaluating model with test_rounds={test_rounds}")
         _ = prepare_checkpoints(model, optimizer)
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
+        test_metrics = evaluate_metrics(dataset, test_data, model)
 
         for metric in test_metrics:
             metric.log_in_file(str(results_file), prepend_str=f"Results for model with test_rounds={test_rounds}:")

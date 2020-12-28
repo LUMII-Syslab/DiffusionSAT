@@ -33,8 +33,8 @@ class SATAccuracy(Metric):
 
     def log_in_file(self, file: str, prepend_str: str = None, step: int = None, reset_state=True):
         mean_acc, mean_total_acc = self.__calc_accuracy(reset_state)
-        lines = [prepend_str] if prepend_str else []
-        lines.append(f"Total fully correct: {mean_total_acc.numpy():.4f}")
+        lines = [prepend_str + '\n'] if prepend_str else []
+        lines.append(f"Total fully correct: {mean_total_acc.numpy():.4f}\n")
 
         file_path = Path(file)
         with file_path.open("a") as file:
