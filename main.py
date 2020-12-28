@@ -42,22 +42,48 @@ def main():
     if Config.evaluate_batch_gen:
         evaluate_batch_generalization(model)
 
-    if Config.evaluate_formula_gen:
-        pass
+    if Config.evaluate_variable_gen:
+        evaluate_variable_generalization(model)
 
     if Config.test_invariance:
         test_invariance(dataset, dataset.test_data(), model, 20)
 
 
-def evaluate_batch_generalization(model):
-    train_dir = Path(Config.train_dir)
-    results_file = train_dir / "gen_batch_size_result.txt"
+def evaluate_variable_generalization(model):
+    results_file = get_valid_file("gen_variables_size_result.txt")
 
+    lower_limit = 1
+    upper_limit = 200
+    step = 10
+
+    for var_count in range(lower_limit, upper_limit, step):
+        print(f"Generating dataset with min_vars={var_count} and max_vars={var_count + 10}")
+        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                         force_data_gen=Config.force_data_gen,
+                                                         input_mode=Config.input_mode,
+                                                         min_vars=var_count,
+                                                         max_vars=var_count + 10)
+
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
+        prepend_line = f"Results for dataset with min_vars={var_count} and max_vars={var_count + 10}:"
+        for metric in test_metrics:
+            metric.log_in_file(str(results_file), prepend_str=prepend_line)
+
+
+def get_valid_file(file: str):
+    train_dir = Path(Config.train_dir)
+    results_file = train_dir / file
     if not train_dir.exists():
         train_dir.mkdir(parents=True)
+    return results_file
+
+
+def evaluate_batch_generalization(model):
+    results_file = get_valid_file("gen_batch_size_results.txt")
 
     # for SAT by default we train on max_batch_size=5000
     for batch_size in range(3000, 10500, 500):
+        print(f"Generating dataset with max_batch_size={batch_size}")
         dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                          force_data_gen=Config.force_data_gen,
                                                          input_mode=Config.input_mode,
@@ -70,11 +96,7 @@ def evaluate_batch_generalization(model):
 
 
 def evaluate_round_generalization(dataset, optimizer):
-    train_dir = Path(Config.train_dir)
-    results_file = train_dir / "gen_steps_result.txt"
-
-    if not train_dir.exists():
-        train_dir.mkdir(parents=True)
+    results_file = get_valid_file("gen_steps_result.txt")
 
     test_data = dataset.test_data()
     for test_rounds in [2 ** r for r in range(4, 11, 1)]:

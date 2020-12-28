@@ -15,12 +15,12 @@ class SAT_3(KSAT):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
 
-    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
-        super(SAT_3, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+    def __init__(self, data_dir, min_vars=5, max_vars=40, force_data_gen=False, **kwargs) -> None:
+        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 100000
         self.test_size = 5000
-        self.min_vars = 5
-        self.max_vars = 40
+        self.min_vars = min_vars
+        self.max_vars = max_vars
 
     def train_generator(self) -> tuple:
         return self.__generator(self.train_size)
@@ -50,12 +50,13 @@ class Clique(KSAT):
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
     """
 
-    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
-        super(Clique, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+    def __init__(self, data_dir, min_vertices=4, max_vertices=20, force_data_gen=False, **kwargs) -> None:
+        super(Clique, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
+                                     force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000
         self.test_size = 1000
-        self.min_vertices = 4
-        self.max_vertices = 20
+        self.min_vertices = min_vertices
+        self.max_vertices = max_vertices
         self.clique_size = 3
 
     def train_generator(self) -> tuple:
@@ -93,12 +94,13 @@ class DomSet(KSAT):
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
     """
 
-    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
-        super(DomSet, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+    def __init__(self, data_dir, min_vertices=4, max_vertices=12, force_data_gen=False, **kwargs) -> None:
+        super(DomSet, self).__init__(data_dir, min_vars=min_vertices, max_vertices=max_vertices,
+                                     force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000
         self.test_size = 1000
-        self.min_vertices = 4
-        self.max_vertices = 12
+        self.min_vertices = min_vertices
+        self.max_vertices = max_vertices
 
     def train_generator(self) -> tuple:
         return self.__generator(self.train_size)
@@ -139,12 +141,12 @@ class KColor(KSAT):
     the graph such that no two adjacent vertices get the same color.
     """
 
-    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
-        super(KColor, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+    def __init__(self, data_dir, min_vertices=5, max_vertices=20, force_data_gen=False, **kwargs) -> None:
+        super(KColor, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000
         self.test_size = 1000
-        self.min_vertices = 5
-        self.max_vertices = 20
+        self.min_vertices = min_vertices
+        self.max_vertices = max_vertices
 
     def train_generator(self) -> tuple:
         return self.__generator(self.train_size)

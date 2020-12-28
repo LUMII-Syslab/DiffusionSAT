@@ -29,8 +29,10 @@ class SHAGen(KSAT):
 
     TMP_FILE_NAME = "data.tmp"
 
-    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
-        super(SHAGen, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+    def __init__(self, data_dir,
+                 min_vars=4, max_vars=1000,
+                 force_data_gen=False, **kwargs) -> None:
+        super(SHAGen, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000  # maximum number of samples; if there are less, we will stop earlier
         self.test_size = 1000
 
@@ -47,8 +49,8 @@ class SHAGen(KSAT):
         # must be between 0..511; in case of position overflow (bits position + number of generated bits>512), generated bits will be truncated
 
         #### the desired number of variables ####
-        self.min_vars = 4
-        self.max_vars = 1000
+        self.min_vars = min_vars
+        self.max_vars = max_vars
         self.max_attempts = 100  # how many times we need to check the number of variables to be within the given range before we stop the generator
 
     def train_generator(self) -> tuple:

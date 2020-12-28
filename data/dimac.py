@@ -20,11 +20,13 @@ class DIMACDataset(Dataset):
     """ Base class for datasets that are based on DIMACS files.
     """
 
-    def __init__(self, data_dir, force_data_gen=False, max_nodes_per_batch=5000, shuffle_size=200, **kwargs) -> None:
+    def __init__(self, data_dir, min_vars, max_vars, force_data_gen=False, max_nodes_per_batch=5000, shuffle_size=200, **kwargs) -> None:
         self.force_data_gen = force_data_gen
         self.data_dir = Path(data_dir) / self.__class__.__name__
         self.max_nodes_per_batch = max_nodes_per_batch
         self.shuffle_size = shuffle_size
+        self.min_vars = min_vars
+        self.max_vars = max_vars
 
         self.dimacs_dir_name = "dimacs"
         self.data_dir_name = "data"
@@ -72,7 +74,7 @@ class DIMACDataset(Dataset):
         return self.fetch_dataset(self.test_generator, mode="test")
 
     def fetch_dataset(self, generator: callable, mode: str):
-        data_folder = self.data_dir / (mode + f"_{self.max_nodes_per_batch}_nodes")
+        data_folder = self.data_dir / (mode + f"_{self.max_nodes_per_batch}_{self.min_vars}_{self.max_vars}")
 
         if self.force_data_gen and data_folder.exists():
             shutil.rmtree(data_folder)
@@ -218,7 +220,7 @@ class DIMACDataset(Dataset):
         int_list = tf.train.Int64List(value=flatten(array))
         return tf.train.Feature(int64_list=int_list)
 
-    def __batch_files(self, files):  # TODO: This is no good as formulas in batches never changes
+    def __batch_files(self, files):
         files_size = len(files)
         # filter formulas that will not fit in any batch
         files = [(node_count, filename) for node_count, filename in files if node_count <= self.max_nodes_per_batch]
