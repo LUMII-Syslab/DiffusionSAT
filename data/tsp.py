@@ -16,7 +16,7 @@ class EuclideanTSP(Dataset):
     def __init__(self, data_dir, force_data_gen, **kwargs) -> None:
         self.min_node_count = 16
         self.max_node_count = 16
-        self.train_data_size = 100000
+        self.train_data_size = 10000
         self.train_batch_size = 16
         self.beam_width = 128
 
@@ -149,10 +149,13 @@ class suppress_stdout_stderr(object):
 def get_path_with_Concorde(coordinates):
     # returns the path corresponding to the optimal Euclidean TSP solution found by the Concorde solver
     with suppress_stdout_stderr():  # suppress_stdout_stderr prevents Concorde from printing
-        # passing the x and y coordinates to the Concorde solver to find optimal Euclidean 2D TSP:
-        solver = TSPSolver.from_data(coordinates[:, 0], coordinates[:, 1], norm="GEO")
+        # passing the x and y coordinates to the Concorde solver to find optimal Euclidean 2D TSP
+        # multiplied by 10**8 because EUC_2D norm rounds coordinates to integers
+        solver = TSPSolver.from_data(10 ** 8 * coordinates[:, 0], 10 ** 8 * coordinates[:, 1], norm="EUC_2D")
+        # solver = TSPSolver.from_data(coordinates[:, 0], coordinates[:, 1], norm="GEO")  # used in literature
         solution = solver.solve()
     # Only write instances with valid solutions
+    assert (solution.success and solution.found_tour and not solution.hit_timebound)
     assert (np.sort(solution.tour) == np.arange(len(coordinates))).all()  # all nodes are in the solution
     path = np.append(solution.tour, [solution.tour[0]])  # return to the first node
     return path
