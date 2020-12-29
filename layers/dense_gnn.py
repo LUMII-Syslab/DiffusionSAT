@@ -25,7 +25,7 @@ class DenseGNN(tf.keras.layers.Layer):
 
         self.prev_weight = self.add_weight("prev_weight", shape = [feature_maps],
                                            initializer=tf.constant_initializer(inv_sigmoid(self.residual_weight_initial_value)))
-        self.candidate_weight = self.add_variable("cand_weight", shape=[feature_maps], initializer = tf.zeros_initializer())
+        self.candidate_weight = self.add_weight("cand_weight", shape=[feature_maps], initializer = tf.zeros_initializer())
 
         return super().build(input_shape)
 

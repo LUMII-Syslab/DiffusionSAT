@@ -16,7 +16,7 @@ class EuclideanTSP(Dataset):
     def __init__(self, data_dir, force_data_gen, **kwargs) -> None:
         self.min_node_count = 16
         self.max_node_count = 16
-        self.train_data_size = 10000
+        self.train_data_size = 100000
         self.train_batch_size = 16
         self.beam_width = 128
 
@@ -160,15 +160,19 @@ def get_path_with_Concorde(coordinates):
 
 def get_label_with_Concorde(coordinates):
     # returns a matrix with edges in the optimal path marked by marked_value
-    marked_value = 0.5  # 0.5 for compatibility with unsupervised loss
+    marked_value = 1.0  # 0.5 for compatibility with unsupervised loss
     node_count = len(coordinates)
     assert node_count >= 4  # Concorde takes 4+ vertices
     path = get_path_with_Concorde(coordinates)
     output = np.zeros((node_count, node_count))
     index = path[0]
+    import random
+    dir = random.random() > 0.5
     for i in range(node_count):
         previous_index = index
         index = path[i + 1]
-        output[previous_index, index] = marked_value
-        output[index, previous_index] = marked_value
+        if dir:
+            output[previous_index, index] = marked_value
+        else:
+            output[index, previous_index] = marked_value
     return output
