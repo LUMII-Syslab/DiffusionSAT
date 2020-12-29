@@ -71,7 +71,7 @@ class EuclideanTSP(Dataset):
         for i in range(dataset_size):
             node_count = np.random.randint(low=min_node_count, high=max_node_count + 1, size=1)[0]
             graph, coord = generate_graph_and_coord(node_count)
-            label = get_score_with_Concorde(coord)
+            label = get_label_with_Concorde(coord)
             graph, coord, label = add_padding(graph, coord, label, node_count, padded_size)
             graphs.append(graph.tolist())
             coords.append(coord.tolist())
@@ -158,7 +158,7 @@ def get_path_with_Concorde(coordinates):
     return path
 
 
-def get_score_with_Concorde(coordinates):
+def get_label_with_Concorde(coordinates):
     # returns a matrix with edges in the optimal path marked by marked_value
     marked_value = 0.5  # 0.5 for compatibility with unsupervised loss
     node_count = len(coordinates)

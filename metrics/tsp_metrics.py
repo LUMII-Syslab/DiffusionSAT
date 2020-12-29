@@ -1,4 +1,3 @@
-import copy
 import math
 import random
 
@@ -81,19 +80,19 @@ class TSPInitialMetrics(Metric):
             label = remove_padding(labels[i], unpadded_size=node_count)
             adjacency_matrix = remove_padding(adjacency_matrices[i], unpadded_size=node_count)
 
-            input_optimal_path = get_path_from_score_greedy(label)
+            input_optimal_path = get_path_greedy_search(label)
             input_optimal_path_len = get_path_len_from_adj_matrix(adjacency_matrix, input_optimal_path)
             input_optimal_path_len_sum += input_optimal_path_len
 
-            input_greedy_path = get_path_from_score_greedy(adjacency_matrix, shortest=True)
+            input_greedy_path = get_path_greedy_search(adjacency_matrix, shortest=True)
             input_greedy_path_len = get_path_len_from_adj_matrix(adjacency_matrix, input_greedy_path)
             input_greedy_path_len_sum += input_greedy_path_len
 
-            input_beam_path = get_path_from_score_beam(adjacency_matrix, shortest=True, beam_width=beam_width)
+            input_beam_path = get_path_beam_search(adjacency_matrix, shortest=True, beam_width=beam_width)
             input_beam_path_len = get_path_len_from_adj_matrix(adjacency_matrix, input_beam_path)
             input_beam_path_len_sum += input_beam_path_len
 
-            input_random_path = get_path_from_score_random(adjacency_matrix)
+            input_random_path = get_path_random_search(adjacency_matrix)
             input_random_path_len = get_path_len_from_adj_matrix(adjacency_matrix, input_random_path)
             input_random_path_len_sum += input_random_path_len
 
@@ -168,16 +167,15 @@ class TSPMetrics(Metric):
             label = remove_padding(labels[i], unpadded_size=node_count)
             adjacency_matrix = remove_padding(adjacency_matrices[i], unpadded_size=node_count)
 
-            input_optimal_path = get_path_from_score_greedy(label)
+            input_optimal_path = get_path_greedy_search(label)
             input_optimal_path_len = get_path_len_from_adj_matrix(adjacency_matrix, input_optimal_path)
             input_optimal_path_len_sum += input_optimal_path_len
 
-            model_greedy_path = get_path_from_score_greedy(prediction)
+            model_greedy_path = get_path_greedy_search(prediction)
             model_greedy_path_len = get_path_len_from_adj_matrix(adjacency_matrix, model_greedy_path)
             model_greedy_path_len_sum += model_greedy_path_len
 
-            # model_beam_path = get_path_from_score_beam(prediction, beam_width=beam_width)
-            model_beam_path = get_path_from_score_beam_sph(prediction, adjacency_matrix, beam_width=beam_width)
+            model_beam_path = get_path_beam_search(prediction, adjacency_matrix, beam_width=beam_width, use_sph=True)
             model_beam_path_len = get_path_len_from_adj_matrix(adjacency_matrix, model_beam_path)
             model_beam_path_len_sum += model_beam_path_len
 
@@ -239,19 +237,19 @@ def argrandom(array, excluded):
     return random.choice(candidate_indices)
 
 
-def get_path_from_score_random(score):
+def get_path_random_search(matrix):
     # Randomly picking the next edges to unvisited vertices
     path = []
     current_vertex = 0
     path.append(current_vertex)
-    for i in range(1, len(score)):
-        current_vertex = argrandom(score[current_vertex], path)
+    for i in range(1, len(matrix)):
+        current_vertex = argrandom(matrix[current_vertex], path)
         path.append(current_vertex)
     path.append(0)
     return path
 
 
-def get_path_from_score_greedy(score, shortest=False):
+def get_path_greedy_search(matrix, shortest=False):
     # Picking the next edges with greedy search to unvisited vertices
     if (shortest == True):  # greedily picks the shortest edges
         argopt = argmin
@@ -260,150 +258,73 @@ def get_path_from_score_greedy(score, shortest=False):
     path = []
     current_vertex = 0
     path.append(current_vertex)
-    for i in range(1, len(score)):
-        current_vertex = argopt(score[current_vertex], path)
+    for i in range(1, len(matrix)):
+        current_vertex = argopt(matrix[current_vertex], path)
         path.append(current_vertex)
     path.append(0)
     return path
 
 
-def get_path_from_score_beam(score, beam_width=128, branch_factor=None, shortest=False):
+def get_path_beam_search(matrix, adjacency_matrix=None, beam_width=128, shortest=False, use_sph=False):
     """
-    Picking the next edges with beam search to unvisited vertices
-    score (2D np array) - input adjacency matrix
+    Picking the next edges with beam search to unvisited vertices. Can use the shortest path heuristic (SPH)
+    that selects the shortest (calculated from adjacency_matrix) path from the last beam_width paths.
+
+    matrix (2D np array) - input adjacency matrix or predictions
     beam_width (int) - the number of simultaneously considered paths (size when pruned)
-    branch_factor (int) - number of continuations considered for each path
     shortest (bool) - True if searching for the shortest path, False if for the longest
+    use_sph (bool) - True if using the shortest path heuristic
     """
 
-    if branch_factor is None:  # by default all continuations are considered
-        branch_factor = len(score)
+    if shortest: sort_pairs = sort_pairs_shortest
+    else: sort_pairs = sort_pairs_longest
 
-    if shortest:
+    pairs = [([[0], 0])]  # pairs is a list consisting of tuples in form (path, score_sum)
+    # score_sum is sum of predictions in the path or sum of lengths in the path
+    for k in range(1, len(matrix)):  # adding vertices one by one
+        current_n_paths = len(pairs)
+        for i in range(current_n_paths):  # iterating over all paths
+            old_path, old_score = pairs[i]
+            for vertex in range(len(matrix)):  # for all possible next vertices
+                if vertex not in old_path:  # that are not already in path
+                    # a new pair is added where the path continues with this vertex:
+                    new_path = old_path + [vertex]
+                    new_score = old_score + matrix[old_path[-1], vertex]  # old sum + edge
+                    new_pair = (new_path, new_score)
+                    pairs.append(new_pair)
+        pairs = pairs[current_n_paths:]  # delete the paths with no continuation
+        pairs = sort_pairs(pairs)  # sort by score_sum
+        pairs = pairs[-beam_width:]  # take the best paths
+
+    # add the last edge (to 0) to all paths
+    current_n_paths = len(pairs)
+    vertex = 0
+    for i in range(len(pairs)):  # iterating over all paths
+        old_path, old_score = pairs[i]
+        new_path = old_path + [vertex]
+        new_score = old_score + matrix[old_path[-1], vertex]  # old sum + edge
+        new_pair = (new_path, new_score)
+        pairs.append(new_pair)
+    pairs = pairs[current_n_paths:]  # delete the paths with no continuation
+    if use_sph:
+        pairs = get_real_lengths(pairs, adjacency_matrix)  # replace sum_score with path lengths
         sort_pairs = sort_pairs_shortest
-    else:
-        sort_pairs = sort_pairs_longest
-
-    # create path starting from 0. pair (path, score_sum)
-    paths = []
-    paths.append([[0], 0])
-
-    current_n_paths = 0
-    for k in range(1, len(score)):  # adding vertices one by one
-        current_n_paths = copy.deepcopy(len(paths))
-        for i in range(current_n_paths):  # iterating over all beam_size paths
-
-            # best next vertices from the last vertex of current path
-            best_next_pairs = []
-            for v in range(len(score)):  # for all possible next vertices
-                if (v not in paths[i][0]):  # that are not already in path
-                    best_next_pairs.append((v, score[paths[i][0][-1], v]))  # add to pair candidates
-            best_next_pairs = sort_pairs(best_next_pairs)
-            best_next_vertices = []
-            for j in range(min(branch_factor, len(best_next_pairs))):  # take the best few vertices
-                best_next_vertices.append(best_next_pairs[-j][0])
-
-            # add the best path continuations to paths
-            for v in best_next_vertices:
-                new_pair = copy.deepcopy(paths[i])
-                new_pair[1] += score[new_pair[0][-1], v]  # old sum + edge
-                new_pair[0].append(v)
-                paths.append(new_pair)
-
-        paths = paths[current_n_paths:]  # delete the paths with no continuation
-        paths = sort_pairs(paths)  # sort by score_sum
-        paths = paths[-beam_width:]  # takes the best paths
-
-    current_n_paths = copy.deepcopy(len(paths))
-    # add the last edge to 0 to all paths
-    for i in range(len(paths)):  # iterating over all beam_size paths
-        v = 0
-        new_pair = copy.deepcopy(paths[i])
-        new_pair[1] += score[new_pair[0][-1], v]  # old sum + edge
-        new_pair[0].append(v)
-        paths.append(new_pair)
-    paths = paths[current_n_paths:]  # delete the paths with no continuation
-    paths = sort_pairs(paths)
-    path = paths[-1][0]  # takes the best path
+    pairs = sort_pairs(pairs)
+    path = pairs[-1][0]  # take the best path
 
     return path
 
 
-def get_path_from_score_beam_sph(score, adj_matrix, beam_width=128, branch_factor=None, shortest=False):
-    """
-    Picking the next edges with beam search to unvisited vertices. Uses shortest path heuristic
-    that selects the shortest (calculated from adj_matrix) path from the last beam_width paths.
-    score (2D np array) - input adjacency matrix
-    beam_width (int) - the number of simultaneously considered paths (size when pruned)
-    branch_factor (int) - number of continuations considered for each path
-    shortest (bool) - True if searching for the shortest path, False if for the longest
-    """
-
-    if branch_factor is None:  # by default all continuations are considered
-        branch_factor = len(score)
-
-    if shortest:
-        sort_pairs = sort_pairs_shortest
-    else:
-        sort_pairs = sort_pairs_longest
-
-    # create path starting from 0. pair (path, score_sum)
-    paths = []
-    paths.append([[0], 0])
-
-    current_n_paths = 0
-    for k in range(1, len(score)):  # adding vertices one by one
-        current_n_paths = copy.deepcopy(len(paths))
-        for i in range(current_n_paths):  # iterating over all beam_size paths
-
-            # best next vertices from the last vertex of current path
-            best_next_pairs = []
-            for v in range(len(score)):  # for all possible next vertices
-                if (v not in paths[i][0]):  # that are not already in path
-                    best_next_pairs.append((v, score[paths[i][0][-1], v]))  # add to pair candidates
-            best_next_pairs = sort_pairs(best_next_pairs)
-            best_next_vertices = []
-            for j in range(min(branch_factor, len(best_next_pairs))):  # take the best few vertices
-                best_next_vertices.append(best_next_pairs[-j][0])
-
-            # add the best path continuations to paths
-            for v in best_next_vertices:
-                new_pair = copy.deepcopy(paths[i])
-                new_pair[1] += score[new_pair[0][-1], v]  # old sum + edge
-                new_pair[0].append(v)
-                paths.append(new_pair)
-
-        paths = paths[current_n_paths:]  # delete the paths with no continuation
-        if k==len(score)-1:
-            break
-        paths = sort_pairs(paths)  # sort by score_sum
-        paths = paths[-beam_width:]  # takes the best paths
-
-    # add the last edge to 0 to all paths
-    current_n_paths = copy.deepcopy(len(paths))
-    for i in range(len(paths)):  # iterating over all paths
-        v = 0
-        new_pair = copy.deepcopy(paths[i])
-        new_pair[1] += score[new_pair[0][-1], v]  # old sum + edge
-        new_pair[0].append(v)
-        paths.append(new_pair)
-    paths = paths[current_n_paths:]  # delete the paths with no continuation
-    paths = get_real_lengths(paths, adj_matrix)
-    paths = sort_pairs_shortest(paths)
-    path = paths[-1][0]  # takes the best path
-
-    return path
-
-
-def get_real_lengths(paths, adj_matrix):
+def get_real_lengths(pairs, adjacency_matrix):
     # calculates the lengths of paths from the adjacency matrix
-    n_paths = copy.deepcopy(len(paths))
-    for i in range(len(paths)):  # iterating over all beam_size paths
-        new_pair = copy.deepcopy(paths[i])
-        new_pair[1] = get_path_len_from_adj_matrix(adj_matrix, new_pair[0])
-        paths.append(new_pair)
-    paths = paths[n_paths:]  # leave only the updated pairs
-    return paths
+    n_paths = len(pairs)
+    for i in range(len(pairs)):  # iterating over all beam_size paths
+        old_path, old_score = pairs[i]
+        new_score = get_path_len_from_adj_matrix(adjacency_matrix, old_path)
+        new_pair = (old_path, new_score)
+        pairs.append(new_pair)
+    pairs = pairs[n_paths:]  # leave only the updated pairs
+    return pairs
 
 
 def sort_pairs_longest(list_of_pairs):
