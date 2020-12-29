@@ -16,16 +16,16 @@ class PrimesGen(KSAT):
     if not os.path.exists(FETCHED_DATA_DIR):
         FETCHED_DATA_DIR = "data/" + FETCHED_DATA_DIR
 
-    def __init__(self, data_dir, force_data_gen=False, **kwargs) -> None:
-        super(PrimesGen, self).__init__(data_dir, force_data_gen=force_data_gen, **kwargs)
+    def __init__(self, data_dir, min_vars=4, max_vars=100, force_data_gen=False, **kwargs) -> None:
+        super(PrimesGen, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000  # maximum number of samples; if there are less, we will stop earlier
         self.test_size = 1000
 
         #### constraints ####
 
         #### the desired number of variables ####
-        self.min_vars = 4
-        self.max_vars = 100
+        self.min_vars = min_vars
+        self.max_vars = max_vars
         self.max_attempts = 100  # how many times we need to check the number of variables to be within the given range before we stop the generator
 
     def train_generator(self) -> tuple:

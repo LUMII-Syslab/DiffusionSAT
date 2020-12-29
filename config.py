@@ -31,7 +31,7 @@ class Config:
     test_invariance = False
     evaluate_round_gen = False
     evaluate_batch_gen = False
-    evaluate_formula_gen = False
+    evaluate_variable_gen = False
 
     """Internal config variables: """
     __arguments_parsed = False
@@ -81,6 +81,6 @@ class Config:
         config_parser.add_argument('--test_invariance', action='store_true', default=cls.test_invariance)
         config_parser.add_argument('--evaluate_round_gen', action='store_true', default=cls.evaluate_round_gen)
         config_parser.add_argument('--evaluate_batch_gen', action='store_true', default=cls.evaluate_batch_gen)
-        config_parser.add_argument('--evaluate_formula_gen', action='store_true', default=cls.evaluate_formula_gen)
+        config_parser.add_argument('--evaluate_variable_gen', action='store_true', default=cls.evaluate_variable_gen)
 
         return config_parser
