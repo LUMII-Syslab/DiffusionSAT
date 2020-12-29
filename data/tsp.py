@@ -16,7 +16,7 @@ class EuclideanTSP(Dataset):
     def __init__(self, data_dir, force_data_gen, **kwargs) -> None:
         self.min_node_count = 16
         self.max_node_count = 16
-        self.train_data_size = 10000
+        self.train_data_size = 100000
         self.train_batch_size = 16
         self.beam_width = 128
 
@@ -43,6 +43,7 @@ class EuclideanTSP(Dataset):
 
         if not data_folder.exists():
             dataset = self.__generate_data(min_node_count, max_node_count, dataset_size, batch_size)
+            print(f"Saving TSP {mode} dataset")
             tf.data.experimental.save(dataset, data_folder_str)
 
         # load, prepare and return the dataset:

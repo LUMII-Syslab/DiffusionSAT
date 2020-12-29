@@ -89,7 +89,7 @@ class TSPInitialMetrics(Metric):
             input_greedy_path_len = get_path_len_from_adj_matrix(adjacency_matrix, input_greedy_path)
             input_greedy_path_len_sum += input_greedy_path_len
 
-            input_beam_path = get_path_beam_search(adjacency_matrix, shortest=True, beam_width=beam_width)
+            input_beam_path, _ = get_path_beam_search(adjacency_matrix, shortest=True, beam_width=beam_width)
             input_beam_path_len = get_path_len_from_adj_matrix(adjacency_matrix, input_beam_path)
             input_beam_path_len_sum += input_beam_path_len
 
@@ -104,35 +104,39 @@ class TSPInitialMetrics(Metric):
 
 
 class TSPMetrics(Metric):
-    # calculates the optimality gap of greedy and sph beam search on the predictions.
+    # calculates the optimality gap of greedy, beam search and sph beam search on the predictions.
     def __init__(self, beam_width) -> None:
         self.mean_model_greedy = tf.metrics.Mean()
         self.mean_model_beam = tf.metrics.Mean()
+        self.mean_model_beam_sph = tf.metrics.Mean()
         self.beam_width = beam_width
 
     def update_state(self, model_output, step_data):
         results = self.__calculate_metrics(model_output["prediction"], step_data, self.beam_width)
         self.mean_model_greedy.update_state(results[0])
         self.mean_model_beam.update_state(results[1])
+        self.mean_model_beam_sph.update_state(results[2])
 
     def log_in_tensorboard(self, step: int = None, reset_state=True):
-        model_greedy, model_beam = self.__get_scores()
+        model_greedy, model_beam, model_beam_sph = self.__get_scores()
 
         if reset_state:
             self.reset_state()
 
         with tf.name_scope("TSP_metrics"):
             tf.summary.scalar("model/greedy", model_greedy, step=step)
-            tf.summary.scalar("model/beam_sph", model_beam, step=step)
+            tf.summary.scalar("model/beam", model_beam, step=step)
+            tf.summary.scalar("model/beam_sph", model_beam_sph, step=step)
 
     def log_in_stdout(self, step: int = None, reset_state=True):
-        model_greedy, model_beam = self.__get_scores()
+        model_greedy, model_beam, model_beam_sph = self.__get_scores()
 
         if reset_state:
             self.reset_state()
 
         print(f"model_greedy: {model_greedy.numpy():.4f}%; "
-              f"model_beam_sph: {model_beam.numpy():.4f}%")
+              f"model_beam: {model_beam.numpy():.4f}%; "
+              f"model_beam_sph: {model_beam_sph.numpy():.4f}%")
 
     def log_in_file(self, file: str, prepend_str: str = None, step: int = None, reset_state=True):
         pass
@@ -140,16 +144,19 @@ class TSPMetrics(Metric):
     def reset_state(self):
         self.mean_model_greedy.reset_states()
         self.mean_model_beam.reset_states()
+        self.mean_model_beam_sph.reset_states()
 
     def __get_scores(self):
         return (self.mean_model_greedy.result(),
-                self.mean_model_beam.result())
+                self.mean_model_beam.result(),
+                self.mean_model_beam_sph.result())
 
     @staticmethod
     def __calculate_metrics(predictions, step_data, beam_width):
         # calculates several TSP accuracy metrics:
         # 1) average optimality gap of the greedy_search(model(graph))
         # 2) average optimality gap of the beam_search(model(graph))
+        # 3) average optimality gap of the beam_search_sph(model(graph))
         # average optimality gap is defined as: AVERAGE (found_path_length / optimal_path_length - 1)
         # It is reported in percents. Smaller optimality gap is better.
 
@@ -161,6 +168,7 @@ class TSPMetrics(Metric):
         input_optimal_path_len_sum = 0
         model_greedy_path_len_sum = 0
         model_beam_path_len_sum = 0
+        model_beam_sph_path_len_sum = 0
 
         for i in range(batch_size):
             node_count = get_unpadded_size(labels[i])
@@ -176,13 +184,16 @@ class TSPMetrics(Metric):
             model_greedy_path_len = get_path_len_from_adj_matrix(adjacency_matrix, model_greedy_path)
             model_greedy_path_len_sum += model_greedy_path_len
 
-            model_beam_path = get_path_beam_search(prediction, adjacency_matrix, beam_width=beam_width, use_sph=True)
+            model_beam_path, model_beam_sph_path = get_path_beam_search(prediction, adjacency_matrix, beam_width=beam_width, use_sph=True)
             model_beam_path_len = get_path_len_from_adj_matrix(adjacency_matrix, model_beam_path)
             model_beam_path_len_sum += model_beam_path_len
+            model_beam_sph_path_len = get_path_len_from_adj_matrix(adjacency_matrix, model_beam_sph_path)
+            model_beam_sph_path_len_sum += model_beam_sph_path_len
 
         model_greedy_optimality_gap = 100 * (model_greedy_path_len_sum / input_optimal_path_len_sum - 1)
         model_beam_optimality_gap = 100 * (model_beam_path_len_sum / input_optimal_path_len_sum - 1)
-        return model_greedy_optimality_gap, model_beam_optimality_gap
+        model_beam_sph_optimality_gap = 100 * (model_beam_sph_path_len_sum / input_optimal_path_len_sum - 1)
+        return model_greedy_optimality_gap, model_beam_optimality_gap, model_beam_sph_optimality_gap
 
 
 def remove_padding(padded_array, unpadded_size=None):
@@ -307,25 +318,26 @@ def get_path_beam_search(matrix, adjacency_matrix=None, beam_width=128, shortest
         new_pair = (new_path, new_score)
         pairs.append(new_pair)
     pairs = pairs[current_n_paths:]  # delete the paths with no continuation
+
+    path_sph = None
     if use_sph:
-        pairs = get_real_lengths(pairs, adjacency_matrix)  # replace sum_score with path lengths
-        sort_pairs = sort_pairs_shortest
+        pairs_sph = get_real_lengths(pairs, adjacency_matrix)  # replace sum_score with path lengths
+        pairs_sph = sort_pairs_shortest(pairs_sph)
+        path_sph = pairs_sph[-1][0]  # take the shortest path
     pairs = sort_pairs(pairs)
     path = pairs[-1][0]  # take the best path
-
-    return path
+    return path, path_sph
 
 
 def get_real_lengths(pairs, adjacency_matrix):
     # calculates the lengths of paths from the adjacency matrix
-    n_paths = len(pairs)
+    new_pairs = []
     for i in range(len(pairs)):  # iterating over all beam_size paths
         old_path, old_score = pairs[i]
         new_score = get_path_len_from_adj_matrix(adjacency_matrix, old_path)
         new_pair = (old_path, new_score)
-        pairs.append(new_pair)
-    pairs = pairs[n_paths:]  # leave only the updated pairs
-    return pairs
+        new_pairs.append(new_pair)
+    return new_pairs
 
 
 def sort_pairs_longest(list_of_pairs):
