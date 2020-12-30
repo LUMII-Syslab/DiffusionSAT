@@ -226,7 +226,8 @@ class DIMACDataset(Dataset):
         files = [(node_count, filename) for node_count, filename in files if node_count <= self.max_nodes_per_batch]
 
         dif = files_size - len(files)
-        print(f"\n\n WARNING: {dif} formulas was not included in dataset as they exceeded max node count! \n\n")
+        if dif > 0:
+            print(f"\n\n WARNING: {dif} formulas was not included in dataset as they exceeded max node count! \n\n")
 
         batches = []
         current_batch = []
