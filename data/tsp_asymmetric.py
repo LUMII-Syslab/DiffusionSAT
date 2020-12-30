@@ -4,9 +4,7 @@ import math
 
 from data.dataset import Dataset
 from loss.unsupervised_tsp import inverse_identity
-from metrics.tsp_metrics import TSPMetrics
-
-PADDING_VALUE = -1
+from metrics.tsp_metrics import TSPMetrics, TSPInitialMetrics, PADDING_VALUE
 
 
 class AsymmetricTSP(Dataset):
@@ -15,6 +13,7 @@ class AsymmetricTSP(Dataset):
         self.max_node_count = 8
         self.train_data_size = 1000
         self.train_batch_size = 16
+        self.beam_width = 128
 
     def train_data(self) -> tf.data.Dataset:
         data = self.__generate_data(self.min_node_count, self.max_node_count, self.train_data_size,
@@ -107,8 +106,13 @@ class AsymmetricTSP(Dataset):
         return {"adj_matrix": step_data["adjacency_matrix"], "coords": step_data["coordinates"], "labels": step_data["labels"]}
 
 
-    def metrics(self) -> list:
-        return [TSPMetrics()]  # todo different metrics
+    def metrics(self, initial=False) -> list:
+        # todo different metrics (concorde doesnt work with asymmetric)
+        if initial:
+            return [TSPInitialMetrics(beam_width=self.beam_width)]
+        else:
+            return [TSPMetrics(beam_width=self.beam_width)]
+
 
 
 def generate_graph_and_coord(node_count):
