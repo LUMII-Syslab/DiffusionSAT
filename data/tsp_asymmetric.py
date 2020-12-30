@@ -4,7 +4,7 @@ import math
 
 from data.dataset import Dataset
 from loss.unsupervised_tsp import inverse_identity
-from metrics.tsp_metrics import TSPAccuracy, TSPMetrics
+from metrics.tsp_metrics import TSPMetrics
 
 PADDING_VALUE = -1
 
@@ -24,7 +24,7 @@ class AsymmetricTSP(Dataset):
         return data
 
     def validation_data(self) -> tf.data.Dataset:
-        data = self.__generate_validation_data(self.min_node_count, self.max_node_count, dataset_size=100, batch_size=1)
+        data = self.read_data_from_file(self.min_node_count, self.max_node_count, dataset_size=100, batch_size=1)
         data = data.shuffle(10000)
         data = data.repeat()
         return data
@@ -35,7 +35,7 @@ class AsymmetricTSP(Dataset):
         data = data.repeat()
         return data
 
-    def __generate_validation_data(self, min_node_count, max_node_count, dataset_size, batch_size) -> tf.data.Dataset:
+    def read_data_from_file(self, min_node_count, max_node_count, dataset_size, batch_size) -> tf.data.Dataset:
         # reads file made by asymmetric_tsp_gen.py
 
         graphs = []
@@ -108,7 +108,7 @@ class AsymmetricTSP(Dataset):
 
 
     def metrics(self) -> list:
-        return [TSPAccuracy(), TSPMetrics()]
+        return [TSPMetrics()]  # todo different metrics
 
 
 def generate_graph_and_coord(node_count):

@@ -2,7 +2,7 @@ import random
 import numpy as np
 import itertools
 
-# Generate a file of asymmetric tsp graphs of COUNT with labels of sizes from MIN to MAX
+# Generate a file of asymmetric tsp graphs of COUNT of sizes from MIN to MAX with labels
 COUNT = 100
 MIN = 6
 MAX = 8
