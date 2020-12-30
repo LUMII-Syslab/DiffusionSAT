@@ -46,10 +46,17 @@ class PairNorm(tf.keras.layers.Layer):
         """
         # input size: cells x feature_maps
         if self.subtract_mean and graph_mask is not None:  # subtracting mean may not be necessary: https://arxiv.org/abs/1910.07467
-            mean = tf.math.unsorted_segment_mean(inputs, graph_mask, tf.reduce_max(graph_mask) + 1)
+            #mean = tf.math.unsorted_segment_mean(inputs, graph_mask, tf.reduce_max(graph_mask) + 1)
+            mean = tf.math.segment_mean(inputs, graph_mask)
             inputs -= tf.gather(mean, graph_mask)
             inputs += self.bias
 
         # input size: cells x feature_maps
-        variance = tf.reduce_mean(tf.square(inputs), axis=1, keepdims=True)
+        # nb here we deviate from PairNorm, we use axis=0, PairNorm uses axis=1
+        if graph_mask is not None:
+            variance = tf.math.segment_mean(tf.square(inputs), graph_mask)
+            variance = tf.gather(variance, graph_mask)
+        else:
+            variance = tf.reduce_mean(tf.square(inputs), axis=0, keepdims=True)
+
         return inputs * tf.math.rsqrt(variance + self.epsilon)
