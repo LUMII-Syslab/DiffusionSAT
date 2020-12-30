@@ -8,6 +8,9 @@ from loss.tsp import tsp_loss
 from metrics.tsp_metrics import remove_padding, get_unpadded_size
 from utils.summary import plot_to_image
 
+from loss.unsupervised_tsp import inverse_identity
+from data.tsp import PADDING_VALUE
+
 
 def inv_sigmoid(y):
     return tf.math.log(y / (1 - y))
@@ -30,7 +33,7 @@ class TSPMatrixSE(tf.keras.Model):
 
     # @tf.function # only for supervised
     def call(self, inputs, training=None, mask=None, labels=None):
-        inputs_norm = inputs * tf.math.rsqrt(tf.reduce_mean(tf.square(inputs), axis=[1, 2], keepdims=True) + 1e-6)  # todo: masked norm
+        inputs_norm = inputs * mask * tf.math.rsqrt(tf.reduce_mean(tf.square(inputs * mask), axis=[1, 2], keepdims=True) + 1e-6)
         state = self.input_layer(tf.expand_dims(inputs_norm, -1)) * 0.25
         total_loss = 0.
         logits = None
@@ -40,8 +43,8 @@ class TSPMatrixSE(tf.keras.Model):
             state = self.graph_layer(state, training=training)
             logits = self.logits_layer(state) + self.logit_bias
             if training:
-                loss = tsp_loss(logits, inputs, log_in_tb=training and step == self.rounds - 1, unsupervised=True)
-                # loss = tsp_loss(logits, inputs, labels=labels, supervised=True, unsupervised=True)
+                # loss = tsp_loss(logits, inputs, log_in_tb=training and step == self.rounds - 1, unsupervised=True)
+                loss = tsp_loss(logits, inputs, labels=labels, supervised=True, unsupervised=True)
             else:
                 loss = 0.
             total_loss += loss
@@ -54,8 +57,10 @@ class TSPMatrixSE(tf.keras.Model):
         return logits, total_loss, last_loss
 
     def train_step(self, adj_matrix, coords, labels):
+        padded_size = tf.shape(adj_matrix)[1]
+        mask = tf.cast(tf.not_equal(labels, PADDING_VALUE), tf.float32) * inverse_identity(padded_size)
         with tf.GradientTape() as tape:
-            predictions, total_loss, last_loss = self.call(adj_matrix, training=True, labels=labels)
+            predictions, total_loss, last_loss = self.call(adj_matrix, training=True, mask=mask, labels=labels)
         gradients = tape.gradient(total_loss, self.trainable_variables)
         self.optimize(gradients)
 
@@ -69,7 +74,9 @@ class TSPMatrixSE(tf.keras.Model):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
     def predict_step(self, adj_matrix, coords, labels):
-        predictions, total_loss, last_loss = self.call(adj_matrix, training=False)
+        padded_size = tf.shape(adj_matrix)[1]
+        mask = tf.cast(tf.not_equal(labels, PADDING_VALUE), tf.float32) * inverse_identity(padded_size)
+        predictions, total_loss, last_loss = self.call(adj_matrix, training=False, mask=mask)
 
         return {
             # "loss": tsp_loss(predictions, adj_matrix, labels=labels),
@@ -77,7 +84,9 @@ class TSPMatrixSE(tf.keras.Model):
         }
 
     def log_visualizations(self, adj_matrix, coords, labels):
-        predictions, _, _ = self.call(adj_matrix, training=False)
+        padded_size = tf.shape(adj_matrix)[1]
+        mask = tf.cast(tf.not_equal(labels, PADDING_VALUE), tf.float32) * inverse_identity(padded_size)
+        predictions, _, _ = self.call(adj_matrix, training=False, mask=mask)
         node_count = get_unpadded_size(coords[0])
         prediction = remove_padding(predictions[0, :, :, 0], unpadded_size=node_count)
         coord = remove_padding(coords[0].numpy(), unpadded_size=node_count)
@@ -104,7 +113,7 @@ class TSPMatrixSE(tf.keras.Model):
         # draw label on top
         for i in range(n):
             for j in range(i):
-                if label[i, j] == 0.5 or label[j, i] == 0.5:
+                if label[i, j] == 0.5 or label[j, i] == 0.5 or label[i, j] == 1 or label[j, i] == 1:
                     plt.plot([coords[i, 0], coords[j, 0]], [coords[i, 1], coords[j, 1]], color='black', lw='2',
                              linestyle='--', dashes=(5, 8))
 

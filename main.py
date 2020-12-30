@@ -76,7 +76,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                 metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
                 metric.log_in_stdout(step=int(ckpt.step))
 
-            if Config.task == 'euclidean_tsp':  # TODO: Make it similar to metrics
+            if Config.task == 'euclidean_tsp' or Config.task == 'asymmetric_tsp':  # TODO: Make it similar to metrics
                 iterator = itertools.islice(validation_data, 1)
                 for step_data in iterator:
                     model_input = dataset.filter_model_inputs(step_data)

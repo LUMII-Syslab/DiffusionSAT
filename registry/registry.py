@@ -5,6 +5,7 @@ from data.CNFGen import SAT_3, Clique, DomSet
 from data.SHAGen import SHAGen
 from data.k_sat import KSAT
 from data.tsp import EuclideanTSP
+from data.tsp_asymmetric import AsymmetricTSP
 from model.attention_sat import AttentionSAT
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
@@ -52,5 +53,6 @@ class DatasetRegistry(Registry):
             "clique": Clique,
             "dominating_set": DomSet,
             "sha-gen": SHAGen,
-            "euclidean_tsp": EuclideanTSP
+            "euclidean_tsp": EuclideanTSP,
+            "asymmetric_tsp": AsymmetricTSP
         }
