@@ -22,7 +22,7 @@ class Config:
     warmup = 0.0
     learning_rate = 0.0001
     model = 'tsp_matrix_se'  # query_sat, neuro_sat, tsp_matrix_se
-    task = 'asymmetric_tsp'  # k_sat_variables, k_sat_literals, k_color, 3-sat, clique, euclidean_tsp, asymmetric_tsp
+    task = 'euclidean_tsp'  # k_sat_variables, k_sat_literals, k_color, 3-sat, clique, euclidean_tsp, asymmetric_tsp
     input_mode = 'variables'  # "variables" or "literals", applicable to SAT
 
     """Supported training and evaluation modes: """

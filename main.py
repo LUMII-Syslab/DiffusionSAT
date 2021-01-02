@@ -35,6 +35,8 @@ def main():
     if Config.evaluate:
         test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
         for metric in test_metrics:
+            if Config.task == 'euclidean_tsp':
+                metric.log_in_tensorboard(reset_state=False, scope="TSP_test_metrics")
             metric.log_in_stdout()
 
     if Config.evaluate_round_gen:

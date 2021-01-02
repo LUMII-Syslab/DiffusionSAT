@@ -117,13 +117,13 @@ class TSPMetrics(Metric):
         self.mean_model_beam.update_state(results[1])
         self.mean_model_beam_sph.update_state(results[2])
 
-    def log_in_tensorboard(self, step: int = None, reset_state=True):
+    def log_in_tensorboard(self, step: int = None, reset_state=True, scope="TSP_metrics"):
         model_greedy, model_beam, model_beam_sph = self.__get_scores()
 
         if reset_state:
             self.reset_state()
 
-        with tf.name_scope("TSP_metrics"):
+        with tf.name_scope(scope):
             tf.summary.scalar("model/greedy", model_greedy, step=step)
             tf.summary.scalar("model/beam", model_beam, step=step)
             tf.summary.scalar("model/beam_sph", model_beam_sph, step=step)

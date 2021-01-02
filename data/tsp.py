@@ -47,13 +47,14 @@ class EuclideanTSP(Dataset):
             tf.data.experimental.save(dataset, data_folder_str)
 
         # load, prepare and return the dataset:
-        padded_size = get_nearest_power_of_two(max_node_count)
+        # padded_size = get_nearest_power_of_two(max_node_count)
+        padded_size = max_node_count
         element_spec = {'adjacency_matrix': tf.TensorSpec(shape=(None, padded_size, padded_size), dtype=tf.float32),
                      'coordinates': tf.TensorSpec(shape=(None, padded_size, 2), dtype=tf.float32),
                      'labels': tf.TensorSpec(shape=(None, padded_size, padded_size), dtype=tf.float32)}
         dataset = tf.data.experimental.load(data_folder_str, element_spec)
         dataset = dataset.shuffle(dataset_size)
-        dataset = dataset.repeat()
+        if mode is not "test": dataset = dataset.repeat()
         return dataset
 
 
@@ -67,7 +68,8 @@ class EuclideanTSP(Dataset):
         coords = []
         labels = []
         print_iteration = 1000
-        padded_size = get_nearest_power_of_two(max_node_count)
+        # padded_size = get_nearest_power_of_two(max_node_count)
+        padded_size = max_node_count
 
         for i in range(dataset_size):
             node_count = np.random.randint(low=min_node_count, high=max_node_count + 1, size=1)[0]
