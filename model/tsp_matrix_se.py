@@ -6,9 +6,10 @@ from layers.dense_gnn import DenseGNN
 from layers.matrix_se import MatrixSE
 from loss.tsp import tsp_loss
 from metrics.tsp_metrics import remove_padding, get_unpadded_size
+from model.mlp import MLP
 from utils.summary import plot_to_image
 
-from loss.unsupervised_tsp import inverse_identity
+from loss.unsupervised_tsp import inverse_identity, sample_logistic
 from data.tsp import PADDING_VALUE
 
 
@@ -27,11 +28,11 @@ class TSPMatrixSE(tf.keras.Model):
         else:
             self.graph_layer = DenseGNN()
         self.input_layer = Dense(feature_maps, activation=None, name="input_layer")
-        self.logits_layer = Dense(1, activation=None, name="logits_layer")
+        self.logits_layer = MLP(2, feature_maps, 1, name="logits_layer", do_layer_norm=True, norm_axis=[1,2])
         n_vertices = 16  # todo: get from somewhere
         self.logit_bias = inv_sigmoid(1.0 / (n_vertices - 1))
 
-    @tf.function # only for supervised
+    #@tf.function # only for supervised
     def call(self, inputs, training=None, mask=None, labels=None):
         inputs_norm = inputs * mask * tf.math.rsqrt(tf.reduce_mean(tf.square(inputs * mask), axis=[1, 2], keepdims=True) + 1e-6)
         state = self.input_layer(tf.expand_dims(inputs_norm, -1)) * 0.25
@@ -43,15 +44,20 @@ class TSPMatrixSE(tf.keras.Model):
         for step in tf.range(self.rounds):
             state = self.graph_layer(state, training=training)
             logits = self.logits_layer(state) + self.logit_bias
+            logit_l2 = tf.reduce_mean(tf.square(logits))
+
             if training:
-                # loss = tsp_loss(logits, inputs, log_in_tb=training and step == self.rounds - 1, unsupervised=True)
-                loss = tsp_loss(logits, inputs, labels=labels, supervised=True, unsupervised=False)
+                loss = tsp_loss(logits, inputs, log_in_tb=training and step == self.rounds - 1, unsupervised=True)
+                #loss = tsp_loss(logits, inputs, labels=labels, supervised=True, unsupervised=False)
             else:
                 loss = 0.
             total_loss += loss
             last_loss = loss
+            # total_loss+=logit_l2 * 1e-4
 
         if training:
+            logit_l2 = tf.reduce_mean(tf.square(logits))
+            tf.summary.scalar("L2", logit_l2)
             tf.summary.scalar("last_layer_loss", last_loss)
             tf.summary.histogram("logits", logits)
 

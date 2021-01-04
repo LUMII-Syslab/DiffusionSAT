@@ -43,7 +43,7 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb=Fals
 
     else:
         subtours_cy = subtours(batch_size.numpy(), padded_size.numpy(), predictions.numpy(), adjacency_matrix.numpy(),
-                               PADDING_VALUE, 'asymmetric_tsp')  # todo dabūt task no kaut kurienes
+                               PADDING_VALUE, 'euclidean_tsp')  # todo dabūt task no kaut kurienes
 
         predictions = tf.reshape(predictions, (batch_size * padded_size * padded_size, 1))
 

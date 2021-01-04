@@ -34,6 +34,7 @@ class MLP(Model):
         self.dense_layers.append(Dense(out_nmap, activation=out_activation, bias_initializer=bias))
         self.normalizer = normalizer
 
+    @tf.function
     def call(self, inputs, training=None, graph_mask=None):
         current = inputs
         for layer in self.dense_layers:
