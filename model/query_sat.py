@@ -3,7 +3,6 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 
 from layers.normalization import PairNorm
-from layers.regularization import EdgeDropout
 from loss.sat import softplus_loss, unsat_clause_count, softplus_log_loss, softplus_mixed_loss
 from model.mlp import MLP
 
@@ -106,7 +105,7 @@ class QuerySAT(Model):
             # new_clause_gate = self.clause_update_gate(clause_unit)
             # tf.summary.histogram("clause_gate" + str(step), new_clause_gate)
             # clause_state = (1 - new_clause_gate) * clause_state + new_clause_gate * new_clause_value
-            clause_state = new_clause_value  # + 0.1*clause_state
+            clause_state = new_clause_value + 0.1 * clause_state
 
             unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
 
@@ -118,13 +117,13 @@ class QuerySAT(Model):
             # tf.summary.histogram("gate" + str(step), forget_gate)
 
             # variables = (1 - forget_gate) * variables + forget_gate * new_variables
-            variables = new_variables  # + 0.1*variables
+            variables = new_variables + 0.1 * variables
 
             logits = self.variables_output(variables, graph_mask=variables_mask)
             # step_logits = step_logits.write(step, logits)
             per_clause_loss = softplus_mixed_loss(logits, clauses)
             per_graph_loss = tf.math.segment_sum(per_clause_loss, clauses_mask)
-            logit_loss = tf.reduce_sum(tf.sqrt(per_graph_loss+1e-6))
+            logit_loss = tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
 
             step_losses = step_losses.write(step, logit_loss)
             n_unsat_clauses = unsat_clause_count(logits, clauses)
