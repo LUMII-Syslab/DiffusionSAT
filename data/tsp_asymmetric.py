@@ -1,10 +1,12 @@
 import numpy as np
 import tensorflow as tf
 import math
+from pathlib import Path
 
 from data.dataset import Dataset
 from loss.unsupervised_tsp import inverse_identity
 from metrics.tsp_metrics import TSPMetrics, TSPInitialMetrics, PADDING_VALUE
+from data.asymmetric_tsp_gen import generate_asymmetric_tsp
 
 
 class AsymmetricTSP(Dataset):
@@ -16,7 +18,9 @@ class AsymmetricTSP(Dataset):
         self.beam_width = 128
 
     def train_data(self) -> tf.data.Dataset:
-        data = self.__generate_data(self.min_node_count, self.max_node_count, self.train_data_size,
+        # data = self.read_data_from_file(self.min_node_count, self.max_node_count, self.train_data_size,
+        #                                 self.train_batch_size) # use this only for unsupervised (no labels, but quicker)
+        data = self.read_data_from_file(self.min_node_count, self.max_node_count, self.train_data_size,
                                     self.train_batch_size)
         data = data.shuffle(10000)
         data = data.repeat()
@@ -42,9 +46,13 @@ class AsymmetricTSP(Dataset):
         labels = []
         padded_size = get_nearest_power_of_two(max_node_count)
 
-        with open('/user/deep_loss/data/asymmetric_tsp_6-8_100.txt') as f:
-            _ = next(f)
-            _ = next(f)
+        path = Path("/user/deep_loss/data/asymmetric_tsp_{}-{}_{}.txt".format(min_node_count, max_node_count, dataset_size))
+        if not path.is_file():
+            generate_asymmetric_tsp(min_node_count, max_node_count, dataset_size)
+
+        with open(path) as f:
+            next(f)
+            next(f)
 
             for i in range(dataset_size):
                 node_count = int(next(f))
@@ -79,6 +87,7 @@ class AsymmetricTSP(Dataset):
         return data
 
 
+    # use this only for unsupervised (no labels but quicker)
     def __generate_data(self, min_node_count, max_node_count, dataset_size, batch_size) -> tf.data.Dataset:
         graphs = []
         coords = []
@@ -107,7 +116,6 @@ class AsymmetricTSP(Dataset):
 
 
     def metrics(self, initial=False) -> list:
-        # todo different metrics (concorde doesnt work with asymmetric)
         if initial:
             return [TSPInitialMetrics(beam_width=self.beam_width)]
         else:
