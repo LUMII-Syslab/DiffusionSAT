@@ -214,8 +214,6 @@ def test_invariance(dataset: Dataset, data: tf.data.Dataset, model: Model, steps
         print("\n")
         invariance_shuffle_literals(dataset, metrics, model, step_data.copy())
         print("\n")
-        # invariance_shuffle_clauses(dataset, metrics, model, step_data.copy())
-        # print("\n")
         invariance_inverse(dataset, metrics, model, step_data.copy())
         print("---------------------------\n")
 
@@ -227,27 +225,6 @@ def invariance_shuffle_literals(dataset, metrics, model, step_data):
     model_input = dataset.filter_model_inputs(step_data)
     output = model.predict_step(**model_input)
     print("Shuffle literals inside clauses:")
-    for metric in metrics:
-        metric.update_state(output, step_data)
-        metric.log_in_stdout()
-
-
-def invariance_shuffle_clauses(dataset, metrics, model, step_data):
-    graph_size = step_data['normal_clauses'].row_lengths()
-    clauses = tf.RaggedTensor.from_row_lengths(step_data['clauses'], graph_size)
-    rank = clauses.ragged_rank
-    clauses = clauses.to_tensor()
-    clauses = tf.random.shuffle(clauses)  # shuffle batch elements
-    clauses = tf.transpose(tf.random.shuffle(tf.transpose(clauses, [1, 0, 2])), [1, 0, 2])  # shuffle clauses inside
-    clauses = tf.RaggedTensor.from_tensor(clauses, padding=0, ragged_rank=rank, row_splits_dtype=tf.int32)
-    clauses = clauses.merge_dims(0, 1)
-    split, _ = tf.unique(clauses.nested_row_splits[0])
-    clauses = tf.RaggedTensor.from_nested_row_splits(clauses.flat_values, [split])
-    step_data["clauses"] = clauses
-
-    model_input = dataset.filter_model_inputs(step_data)
-    output = model.predict_step(**model_input)
-    print("Shuffle clauses:")
     for metric in metrics:
         metric.update_state(output, step_data)
         metric.log_in_stdout()

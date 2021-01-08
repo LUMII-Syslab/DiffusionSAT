@@ -30,7 +30,6 @@ class DIMACDataset(Dataset):
 
         self.dimacs_dir_name = "dimacs"
         self.data_dir_name = "data"
-        self.should_shuffle_batches = False
 
     @abstractmethod
     def train_generator(self) -> tuple:
@@ -58,8 +57,6 @@ class DIMACDataset(Dataset):
 
     def train_data(self) -> tf.data.Dataset:
         data = self.fetch_dataset(self.train_generator, mode="train")
-        if self.should_shuffle_batches:
-            data = data.map(self.shuffle_batch, tf.data.experimental.AUTOTUNE)
         data = data.shuffle(self.shuffle_size)
         data = data.repeat()
         return data.prefetch(tf.data.experimental.AUTOTUNE)
@@ -274,22 +271,6 @@ class DIMACDataset(Dataset):
             "clauses_in_formula": sparse_to_dense(parsed['clauses_in_formula']),
             "cells_in_formula": sparse_to_dense(parsed['cells_in_formula'])
         }
-
-    @staticmethod
-    def shuffle_batch(rec):
-        graph_size = rec['clauses'].row_lengths()
-        clauses = tf.RaggedTensor.from_row_lengths(rec['batched_clauses'], graph_size)
-        rank = clauses.ragged_rank
-        clauses = clauses.to_tensor()
-        clauses = tf.random.shuffle(clauses)  # shuffle batch elements
-        clauses = tf.transpose(tf.random.shuffle(tf.transpose(clauses, [1, 0, 2])), [1, 0, 2])  # shuffle clauses inside
-        clauses = tf.RaggedTensor.from_tensor(clauses, padding=0, ragged_rank=rank, row_splits_dtype=tf.int32)
-        clauses = clauses.merge_dims(0, 1)
-        split, _ = tf.unique(clauses.nested_row_splits[0])
-        clauses = tf.RaggedTensor.from_nested_row_splits(clauses.flat_values, [split])
-        rec['batched_clauses'] = clauses
-        return rec
-
 
 def sparse_to_dense(sparse_tensor, dtype=tf.int32, shape=None):
     tensor = tf.sparse.to_dense(sparse_tensor)
