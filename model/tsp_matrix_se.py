@@ -32,7 +32,7 @@ class TSPMatrixSE(tf.keras.Model):
         n_vertices = 16  # todo: get from somewhere
         self.logit_bias = inv_sigmoid(1.0 / (n_vertices - 1))
 
-    #@tf.function # only for supervised
+    # @tf.function  # only for supervised
     def call(self, inputs, training=None, mask=None, labels=None):
         inputs_norm = inputs * mask * tf.math.rsqrt(tf.reduce_mean(tf.square(inputs * mask), axis=[1, 2], keepdims=True) + 1e-6)
         state = self.input_layer(tf.expand_dims(inputs_norm, -1)) * 0.25
@@ -42,7 +42,7 @@ class TSPMatrixSE(tf.keras.Model):
         last_loss = tf.constant(0.0)
 
         for step in tf.range(self.rounds):
-            state = self.graph_layer(state, training=training)
+            state = self.graph_layer(state, training=training, mask=mask)
             logits = self.logits_layer(state) + self.logit_bias
             logit_l2 = tf.reduce_mean(tf.square(logits))
 

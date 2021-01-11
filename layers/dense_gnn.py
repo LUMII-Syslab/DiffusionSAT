@@ -39,11 +39,15 @@ class DenseGNN(tf.keras.layers.Layer):
         """
         input_shape = inputs.get_shape().as_list()
         n_vertices = input_shape[1]
-        sqrt_n = tf.sqrt(tf.cast(n_vertices, tf.float32))# todo: does it generalize to other size graphs?
+        sqrt_n = tf.sqrt(tf.cast(n_vertices, tf.float32))  # todo: does it generalize to other size graphs?
+
+        feature_maps = input_shape[3]
+        mask = tf.expand_dims(mask, axis=3)
+        mask = tf.repeat(mask, repeats=feature_maps, axis=3)
 
         # calculate data for each incoming and outgoing vertex for each edge
-        incoming_state = self.incoming_edge_mlp(inputs, training = training)
-        outgoing_state = self.outgoing_edge_mlp(inputs, training = training)
+        incoming_state = self.incoming_edge_mlp(inputs * mask, training=training)
+        outgoing_state = self.outgoing_edge_mlp(inputs * mask, training=training)
 
         # vertex state is formed as sum over its incoming and outgoing edge data
         incoming_state = tf.reduce_sum(incoming_state, axis=1) / sqrt_n
@@ -53,7 +57,7 @@ class DenseGNN(tf.keras.layers.Layer):
         # the new value for each edge is calculated from its in- and out-vertex data and the previous edge state
         vertex_tile_in = tf.tile(tf.expand_dims(vertex_state, 1), [1, n_vertices, 1, 1])
         vertex_tile_out = tf.tile(tf.expand_dims(vertex_state, 2), [1, 1, n_vertices, 1])
-        edge_unit = tf.concat([inputs, vertex_tile_in, vertex_tile_out], axis = -1)
+        edge_unit = tf.concat([inputs, vertex_tile_in, vertex_tile_out], axis=-1)
         candidate = self.edge_mlp(edge_unit)
 
         # use ReZero residual connection
