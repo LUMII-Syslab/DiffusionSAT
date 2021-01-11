@@ -10,6 +10,7 @@ from data.tsp_asymmetric import AsymmetricTSP
 from model.attention_sat import AttentionSAT
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
+from model.shuffle_gnn import ShuffleGNN
 from model.tsp_matrix_se import TSPMatrixSE
 
 
@@ -40,6 +41,7 @@ class ModelRegistry(Registry):
             "query_sat": QuerySAT,
             "neuro_sat": NeuroSAT,
             "tsp_matrix_se": TSPMatrixSE,
+            "shuffle_gnn": ShuffleGNN
         }
 
 
