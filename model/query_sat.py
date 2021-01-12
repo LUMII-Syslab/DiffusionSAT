@@ -41,6 +41,18 @@ class QuerySAT(Model):
                               do_layer_norm=False)
         # self.edge_dropout = EdgeDropout(0.05)
 
+        # zero_init = tf.keras.initializers.Ones()
+        # self.alpha_variables = self.add_weight("alpha_variables", (), dtype=tf.float32, initializer=zero_init)
+        # self.alpha_clauses = self.add_weight("alpha_clauses", (), dtype=tf.float32, initializer=zero_init)
+
+        # self.residual_weight = 0.9
+        # self.candidate_weight = np.sqrt(1 - self.residual_weight ** 2) * 0.25
+        # self.scale_init = np.log(self.residual_weight / (1 - self.residual_weight))
+        # initializer = tf.constant_initializer(self.scale_init)
+
+        # self.residual_scale_clauses = self.add_weight("residual_clauses", [feature_maps], initializer=initializer)
+        # self.residual_scale_variables = self.add_weight("residual_variables", [feature_maps], initializer=initializer)
+
         self.feature_maps = feature_maps
         self.query_maps = query_maps
 
@@ -105,6 +117,8 @@ class QuerySAT(Model):
             # new_clause_gate = self.clause_update_gate(clause_unit)
             # tf.summary.histogram("clause_gate" + str(step), new_clause_gate)
             # clause_state = (1 - new_clause_gate) * clause_state + new_clause_gate * new_clause_value
+            # residual_scale = tf.nn.sigmoid(self.residual_scale_clauses)
+            # clause_state = residual_scale * clause_state - new_clause_value * self.candidate_weight
             clause_state = new_clause_value + 0.1 * clause_state
 
             unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
@@ -117,6 +131,8 @@ class QuerySAT(Model):
             # tf.summary.histogram("gate" + str(step), forget_gate)
 
             # variables = (1 - forget_gate) * variables + forget_gate * new_variables
+            # residual_scale = tf.nn.sigmoid(self.residual_scale_variables)
+            # variables = residual_scale * variables - new_variables * self.candidate_weight
             variables = new_variables + 0.1 * variables
 
             logits = self.variables_output(variables, graph_mask=variables_mask)
@@ -148,10 +164,13 @@ class QuerySAT(Model):
             # log_as_histogram("step_losses", step_losses.stack())
             tf.summary.scalar("steps_taken", step)
             tf.summary.scalar("supervised_loss", supervised_loss)
+            #
+            # tf.summary.histogram("residual_variables", tf.sigmoid(self.residual_scale_variables))
+            # tf.summary.histogram("residual_clauses", tf.sigmoid(self.residual_scale_clauses))
             # tf.summary.scalar("query_scale", query_scale)
             # tf.summary.scalar("grad_scale", grad_scale)
 
-        return last_logits, tf.reduce_sum(step_losses.stack()) / self.train_rounds + supervised_loss
+        return last_logits, tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32) + supervised_loss
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
