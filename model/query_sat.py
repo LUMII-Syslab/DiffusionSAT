@@ -11,7 +11,7 @@ class QuerySAT(Model):
 
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
-                 vote_layers=3, train_rounds=32, test_rounds=64,
+                 vote_layers=3, train_rounds=16, test_rounds=64,
                  query_maps=32, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.train_rounds = train_rounds
@@ -52,6 +52,10 @@ class QuerySAT(Model):
 
         # self.residual_scale_clauses = self.add_weight("residual_clauses", [feature_maps], initializer=initializer)
         # self.residual_scale_variables = self.add_weight("residual_variables", [feature_maps], initializer=initializer)
+
+        init = tf.keras.initializers.zeros()
+        self.alpha_variables = self.add_weight("alpha_variables", (), initializer=init)
+        self.alpha_clauses = self.add_weight("alpha_clauses", (), initializer=init)
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -119,21 +123,20 @@ class QuerySAT(Model):
             # clause_state = (1 - new_clause_gate) * clause_state + new_clause_gate * new_clause_value
             # residual_scale = tf.nn.sigmoid(self.residual_scale_clauses)
             # clause_state = residual_scale * clause_state - new_clause_value * self.candidate_weight
-            clause_state = new_clause_value + 0.1 * clause_state
+            clause_state = new_clause_value + self.alpha_clauses * clause_state
 
             unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
 
             # forget_gate = self.forget_gate(unit)
             new_variables = self.update_gate(unit, graph_mask=variables_mask)
-            new_variables = self.variables_norm(new_variables, variables_mask,
-                                                training=training) * 0.25  # TODO: Rethink normalization
+            new_variables = self.variables_norm(new_variables, variables_mask, training=training) * 0.25  # TODO: Rethink normalization
             # new_variables = self.variables_norm(new_variables, training=training) * 0.25  # TODO: Rethink normalization
             # tf.summary.histogram("gate" + str(step), forget_gate)
 
             # variables = (1 - forget_gate) * variables + forget_gate * new_variables
             # residual_scale = tf.nn.sigmoid(self.residual_scale_variables)
             # variables = residual_scale * variables - new_variables * self.candidate_weight
-            variables = new_variables + 0.1 * variables
+            variables = new_variables + self.alpha_variables * variables
 
             logits = self.variables_output(variables, graph_mask=variables_mask)
             # step_logits = step_logits.write(step, logits)
@@ -146,7 +149,8 @@ class QuerySAT(Model):
             # tf.summary.scalar("unsat_clauses" + str(step), n_unsat_clauses)
             if logit_loss < 0.5 and n_unsat_clauses == 0:
                 labels = tf.round(tf.sigmoid(logits))  # now we know the answer, we can use it for supervised training
-                supervised_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=last_logits, labels=labels))
+                supervised_loss = tf.reduce_mean(
+                    tf.nn.sigmoid_cross_entropy_with_logits(logits=last_logits, labels=labels))
                 last_logits = logits
                 break
             last_logits = logits
@@ -164,7 +168,10 @@ class QuerySAT(Model):
             # log_as_histogram("step_losses", step_losses.stack())
             tf.summary.scalar("steps_taken", step)
             tf.summary.scalar("supervised_loss", supervised_loss)
-            #
+
+            tf.summary.scalar("alpha_variables", self.alpha_variables)
+            tf.summary.scalar("alpha_clauses", self.alpha_clauses)
+
             # tf.summary.histogram("residual_variables", tf.sigmoid(self.residual_scale_variables))
             # tf.summary.histogram("residual_clauses", tf.sigmoid(self.residual_scale_clauses))
             # tf.summary.scalar("query_scale", query_scale)
@@ -197,7 +204,8 @@ class QuerySAT(Model):
                                   tf.TensorSpec(shape=[None], dtype=tf.int32)
                                   ])
     def predict_step(self, adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count):
-        predictions, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count, training=False)
+        predictions, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count,
+                                      training=False)
 
         return {
             "loss": loss,
