@@ -6,6 +6,7 @@ import random
 import subprocess
 from enum import Enum
 from data.k_sat import KSAT
+from pysat.solvers import Cadical
 
 
 def random_binary_string(n):
@@ -40,14 +41,14 @@ class SHAGen2019(KSAT):
         #### constraints ####
         # how many free bits; max 512 free bits 
         self.bits_from = 5
-        self.bits_to = 30
+        self.bits_to = 15
 
         # the number of rounds (max==80 by SHA-1 specs)
-        self.sha_rounds_from = 17#17
-        self.sha_rounds_to = 17#17#30
+        self.sha_rounds_from = 2
+        self.sha_rounds_to = 2
         #### the desired number of variables ####
         self.min_vars = min_vars
-        self.max_vars = 10000#max_vars
+        self.max_vars = max_vars
         # how many times we need to check the number of variables to be within the given range before we stop the generator
         self.max_attempts = 100
 
@@ -76,13 +77,14 @@ class SHAGen2019(KSAT):
 
                 bitsstr = random_binary_string(512)
                 hashstr = random_binary_string(160)
-                cmd = SHAGen2019.CGEN_EXECUTABLE + " encode SHA1 -vM 0b" + bitsstr + " except:1.." + str(n_bits) + " -vH 0b"+hashstr+" -r " + str(
-                        sha_rounds) + " " + SHAGen2019.TMP_FILE_NAME
+
+                cmd = SHAGen2019.CGEN_EXECUTABLE + " encode SHA1 -vM 0b" + bitsstr + " except:1.." + str(n_bits) + " -r " + str(
+                    sha_rounds) + " " + SHAGen2019.TMP_FILE_NAME
 
                 # Launching the process and reading its output
                 if os.path.exists(SHAGen2019.TMP_FILE_NAME):
                     os.remove(SHAGen2019.TMP_FILE_NAME)
-
+                ok = False
                 out = ""
                 try:
                     out = subprocess.check_output(
@@ -91,11 +93,11 @@ class SHAGen2019(KSAT):
                     out = "" # an unsatisfiable formula or an execution error
                 #print(cmd)
                 #print(cmd,"["+out+"]") # -- debug
+                    
 
                 # Searching for the "CNF: <nvars> var" substring;
                 # ok will be true iff <nvars> is between MIN_VARS and MAX_VARS;
                 # if not ok, we will delete the file.
-                ok = False
                 j1 = out.find("CNF:")
                 j2 = out.find("var", j1 + 1)
                 if j1 >= 0 and j2 >= 0:
