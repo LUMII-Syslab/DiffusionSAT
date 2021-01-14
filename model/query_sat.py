@@ -53,9 +53,9 @@ class QuerySAT(Model):
         # self.residual_scale_clauses = self.add_weight("residual_clauses", [feature_maps], initializer=initializer)
         # self.residual_scale_variables = self.add_weight("residual_variables", [feature_maps], initializer=initializer)
 
-        init = tf.keras.initializers.zeros()
-        self.alpha_variables = self.add_weight("alpha_variables", (), initializer=init)
-        self.alpha_clauses = self.add_weight("alpha_clauses", (), initializer=init)
+        # init = tf.keras.initializers.zeros()
+        # self.alpha_variables = self.add_weight("alpha_variables", (), initializer=init)
+        # self.alpha_clauses = self.add_weight("alpha_clauses", (), initializer=init)
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -82,6 +82,7 @@ class QuerySAT(Model):
         clause_state = self.zero_state(n_clauses, self.feature_maps)
         # step_logits = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+        step_queries_unsat = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         last_logits = tf.zeros([n_vars, 1])
         supervised_loss = 0.
 
@@ -92,6 +93,7 @@ class QuerySAT(Model):
                 grad_tape.watch(variables)
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
                 query = self.variables_query(v1, graph_mask=variables_mask)
+                step_queries_unsat = step_queries_unsat.write(step, unsat_clause_count(query, clauses))
                 clauses_loss = softplus_loss(query, clauses)
                 step_loss = tf.reduce_sum(clauses_loss)
             variables_grad = grad_tape.gradient(step_loss, query)
@@ -122,8 +124,9 @@ class QuerySAT(Model):
             # tf.summary.histogram("clause_gate" + str(step), new_clause_gate)
             # clause_state = (1 - new_clause_gate) * clause_state + new_clause_gate * new_clause_value
             # residual_scale = tf.nn.sigmoid(self.residual_scale_clauses)
-            # clause_state = residual_scale * clause_state - new_clause_value * self.candidate_weight
-            clause_state = new_clause_value + self.alpha_clauses * clause_state
+            # clause_state = residual_scale * clause_state + new_clause_value * self.candidate_weight
+            # clause_state = new_clause_value + self.alpha_clauses * clause_state
+            clause_state = new_clause_value + 0.1 * clause_state
 
             unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
 
@@ -135,8 +138,9 @@ class QuerySAT(Model):
 
             # variables = (1 - forget_gate) * variables + forget_gate * new_variables
             # residual_scale = tf.nn.sigmoid(self.residual_scale_variables)
-            # variables = residual_scale * variables - new_variables * self.candidate_weight
-            variables = new_variables + self.alpha_variables * variables
+            # variables = residual_scale * variables + new_variables * self.candidate_weight
+            # variables = new_variables + self.alpha_variables * variables
+            variables = new_variables + 0.1 * variables
 
             logits = self.variables_output(variables, graph_mask=variables_mask)
             # step_logits = step_logits.write(step, logits)
@@ -166,11 +170,13 @@ class QuerySAT(Model):
             tf.summary.histogram("logits", last_logits)
             tf.summary.scalar("last_layer_loss", last_layer_loss)
             # log_as_histogram("step_losses", step_losses.stack())
+            unsat = step_queries_unsat.stack()
+            tf.summary.histogram("unsat_clauses_queries", unsat)
             tf.summary.scalar("steps_taken", step)
             tf.summary.scalar("supervised_loss", supervised_loss)
 
-            tf.summary.scalar("alpha_variables", self.alpha_variables)
-            tf.summary.scalar("alpha_clauses", self.alpha_clauses)
+            # tf.summary.scalar("alpha_variables", self.alpha_variables)
+            # tf.summary.scalar("alpha_clauses", self.alpha_clauses)
 
             # tf.summary.histogram("residual_variables", tf.sigmoid(self.residual_scale_variables))
             # tf.summary.histogram("residual_clauses", tf.sigmoid(self.residual_scale_clauses))
