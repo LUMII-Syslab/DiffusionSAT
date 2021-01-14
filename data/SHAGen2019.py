@@ -159,6 +159,10 @@ class SHAGen2019(KSAT):
                             is_sat = solver.solve()
                             print("Gluecose4 result: ",is_sat,'{0:.4f}s'.format(solver.time()),nvars," vars",len(clauses)," clauses")
 
+                    if len(clauses)==0:
+                        ok = False
+
+                if ok:
                     yield nvars, clauses
                     samplesSoFar += 1
                     break  # while attempts
