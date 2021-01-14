@@ -6,7 +6,11 @@ import random
 import subprocess
 from enum import Enum
 from data.k_sat import KSAT
-from pysat.solvers import Cadical
+from pysat.solvers import Solver
+from shutil import copyfile
+
+TEST_MODE = False # True
+BENCHMARK_MODE = False # True
 
 
 def random_binary_string(n):
@@ -37,11 +41,16 @@ class SHAGen2019(KSAT):
         # maximum number of samples; if there are less, we will stop earlier
         self.train_size = 10000
         self.test_size = 1000
+        if TEST_MODE:
+            self.test_size = 1
 
         #### constraints ####
         # how many free bits; max 512 free bits 
         self.bits_from = 5
         self.bits_to = 15
+
+        self.generate_hard_instances = False # If True, for #rounds < 6 the set of clauses will be empty.
+
 
         # the number of rounds (max==80 by SHA-1 specs)
         self.sha_rounds_from = 2
@@ -77,9 +86,21 @@ class SHAGen2019(KSAT):
 
                 bitsstr = random_binary_string(512)
                 hashstr = random_binary_string(160)
+                bitsstr = "0b"+bitsstr
 
-                cmd = SHAGen2019.CGEN_EXECUTABLE + " encode SHA1 -vM 0b" + bitsstr + " except:1.." + str(n_bits) + " -r " + str(
-                    sha_rounds) + " " + SHAGen2019.TMP_FILE_NAME
+                if TEST_MODE:
+                    #bitsstr = "string:a pad:sha1"
+                    n_bits = 512
+                    #n_bits = 75#145
+                    sha_rounds = 5
+                    self.max_vars = 100000
+
+                if self.generate_hard_instances:
+                    cmd = SHAGen2019.CGEN_EXECUTABLE + " encode SHA1 -vM " + bitsstr + " except:1.." + str(n_bits) + " -vH compute -r " + str(
+                        sha_rounds) + " " + SHAGen2019.TMP_FILE_NAME
+                else:
+                    cmd = SHAGen2019.CGEN_EXECUTABLE + " encode SHA1 -vM " + bitsstr + " except:1.." + str(n_bits) + " -r " + str(
+                        sha_rounds) + " " + SHAGen2019.TMP_FILE_NAME
 
                 # Launching the process and reading its output
                 if os.path.exists(SHAGen2019.TMP_FILE_NAME):
@@ -104,7 +125,11 @@ class SHAGen2019(KSAT):
                     nvars = int(out[j1 + 4:j2].strip())
                     ok = nvars >= self.min_vars and nvars <= self.max_vars
 
+
+                print (nvars, ok, self.max_vars)
                 if ok:
+                    #if TEST_MODE:
+                        #copyfile("sha1r17m75a_p.cnf", SHAGen2019.TMP_FILE_NAME)
                     f = open(SHAGen2019.TMP_FILE_NAME, 'r')
                     lines = f.readlines()
                     f.close()
@@ -121,6 +146,18 @@ class SHAGen2019(KSAT):
                                 break  # end of clause
                             clause.append(i)
                         clauses.append(clause)
+
+                    # try Cadical and Glucose3/4
+                    if BENCHMARK_MODE:
+                        with Solver(name="Cadical",bootstrap_with=clauses,use_timer=True) as solver:
+                            is_sat = solver.solve()
+                            print("Cadical result: ",is_sat,'{0:.4f}s'.format(solver.time()),nvars," vars",len(clauses)," clauses")
+                        with Solver(name="Glucose3",bootstrap_with=clauses,use_timer=True) as solver:
+                            is_sat = solver.solve()
+                            print("Gluecose3 result: ",is_sat,'{0:.4f}s'.format(solver.time()),nvars," vars",len(clauses)," clauses")
+                        with Solver(name="Glucose4",bootstrap_with=clauses,use_timer=True) as solver:
+                            is_sat = solver.solve()
+                            print("Gluecose4 result: ",is_sat,'{0:.4f}s'.format(solver.time()),nvars," vars",len(clauses)," clauses")
 
                     yield nvars, clauses
                     samplesSoFar += 1
