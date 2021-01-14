@@ -49,7 +49,7 @@ class SHAGen2019(KSAT):
         self.bits_from = 5
         self.bits_to = 15
 
-        self.generate_hard_instances = False # If True, for #rounds < 6 the set of clauses will be empty.
+        self.generate_hard_instances = True # If True, for #rounds < 6 the set of clauses will be empty.
 
 
         # the number of rounds (max==80 by SHA-1 specs)
