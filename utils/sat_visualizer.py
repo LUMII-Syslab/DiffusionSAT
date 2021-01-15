@@ -3,10 +3,8 @@ import math
 
 import matplotlib.pyplot as plt
 import networkx as nx
-import tensorflow as tf
 
 from data.PrimesGen import PrimesGen
-from data.SHAGen import SHAGen
 
 
 def normalize(x):
@@ -34,18 +32,18 @@ def draw_interaction_graph(var_count: int, clauses: list):
 
     edges = graph.edges
     node_color = ["green" for _ in graph]
-    edge_width = [graph[u][v]['count'] for u, v in edges]
+    edge_width = [math.log10(graph[u][v]['count']) for u, v in edges]
 
     options = {
         "edgelist": edges,
         "edge_color": edge_width,
         "node_color": node_color,
         "node_size": 20,
-        "width": 2,
+        "width": 1,
         "edge_cmap": plt.cm.Greys
     }
 
-    pos = nx.spring_layout(graph)
+    pos = nx.spring_layout(graph, k=10 / math.sqrt(var_count))
     nx.draw(graph, pos, **options)
     plt.show()
 
@@ -73,7 +71,7 @@ def draw_factor_graph(var_count: int, clauses: list):
         "node_size": 20,
     }
 
-    pos = nx.spring_layout(graph)
+    pos = nx.spring_layout(graph, k=10 / math.sqrt(clauses_count + var_count))
     nx.draw(graph, pos, **options)
     plt.show()
 
@@ -114,7 +112,7 @@ def draw_resolution_graph(clauses: list):
         "width": 1,
     }
 
-    pos = nx.spring_layout(graph)
+    pos = nx.spring_layout(graph, k=10 / math.sqrt(clauses_count))
     nx.draw(graph, pos, **options)
     plt.show()
 
@@ -124,7 +122,7 @@ def main():
     # dataset = KSATVariables("/tmp")
     # dataset = SHAGen("/tmp")
     dataset = PrimesGen("/tmp")
-    var_count, clauses = [x for x in itertools.islice(dataset.train_generator(), 2)][1]
+    var_count, clauses = [x for x in itertools.islice(dataset.train_generator(), 4)][3]
     print(clauses)
 
     print("Min lits in single clause: ", min([len(c) for c in clauses]))
