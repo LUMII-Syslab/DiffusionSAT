@@ -126,7 +126,6 @@ class SHAGen2019(KSAT):
                     ok = nvars >= self.min_vars and nvars <= self.max_vars
 
 
-                print (nvars, ok, self.max_vars)
                 if ok:
                     #if TEST_MODE:
                         #copyfile("sha1r17m75a_p.cnf", SHAGen2019.TMP_FILE_NAME)
