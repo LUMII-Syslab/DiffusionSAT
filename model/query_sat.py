@@ -5,6 +5,7 @@ from tensorflow.keras.optimizers import Optimizer
 from layers.normalization import PairNorm
 from loss.sat import softplus_loss, unsat_clause_count, softplus_log_loss, softplus_mixed_loss
 from model.mlp import MLP
+from utils.summary import log_discreate_as_histogram
 
 
 class QuerySAT(Model):
@@ -171,7 +172,7 @@ class QuerySAT(Model):
             tf.summary.scalar("last_layer_loss", last_layer_loss)
             # log_as_histogram("step_losses", step_losses.stack())
             unsat = step_queries_unsat.stack()
-            tf.summary.histogram("unsat_clauses_queries", unsat)
+            log_discreate_as_histogram("unsat_clauses_queries", unsat)
             tf.summary.scalar("steps_taken", step)
             tf.summary.scalar("supervised_loss", supervised_loss)
 
