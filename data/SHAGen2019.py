@@ -5,8 +5,18 @@ import platform
 import random
 import subprocess
 from enum import Enum
-from data.k_sat import KSAT
-from pysat.solvers import Solver
+try:
+    from data.k_sat import KSAT
+    from pysat.solvers import Solver
+except ImportError as err:
+    if __name__ != "__main__":
+        print("import error; run the main script outside the data folder")
+        raise err
+    else:
+        print("import ok")
+        class KSAT:
+            pass
+
 from shutil import copyfile
 
 TEST_MODE = False # True
@@ -15,6 +25,49 @@ BENCHMARK_MODE = False # True
 
 def random_binary_string(n):
     return "".join([str(random.randint(0, 1)) for _ in range(n)])
+
+
+def remove_unused_vars(nvars, clauses):
+
+    used_vars = set()
+    n=0
+    max_v=0
+    for clause in clauses:
+        for lit in clause:
+            if lit==0:
+                continue
+            v = abs(lit)
+            if v>max_v:
+                max_v=v
+            if v not in used_vars:
+                used_vars.add(v)
+                n += 1
+    if n==nvars and max_v==n:
+        return nvars, clauses # do not change since all the variables are used
+    # otherwise not all variables are used (or the wrong number specified)
+    n=0
+    d = {}
+    new_clauses = []
+    for clause in clauses:
+        new_clause = []
+        for lit in clause:
+            if lit==0:
+                continue
+            v = abs(lit)
+            if v in d:
+                new_v = d[v]
+            else:
+                n += 1
+                new_v = n
+                d[v] = new_v
+            if lit>0:
+                new_clause.append(new_v)
+            else:
+                new_clause.append(-new_v)
+        new_clauses.append(new_clause)
+                
+    return n, new_clauses
+        
 
 class SHAGen2019(KSAT):
     """ Dataset with random SAT instances based on the SHA1 algorithm. We use cgen with the parameters similar to SAT Competition 2019.
@@ -161,6 +214,12 @@ class SHAGen2019(KSAT):
                     if len(clauses)==0:
                         ok = False
 
+                    if TEST_MODE:
+                        print("Cgen vars: ",nvars)
+                    nvars, clauses = remove_unused_vars(nvars, clauses)
+                    if TEST_MODE:
+                        print("Fixed vars: ",nvars)
+
                 if ok:
                     yield nvars, clauses
                     samplesSoFar += 1
@@ -174,3 +233,10 @@ class SHAGen2019(KSAT):
             # after while ended, let's check if we reached the attempt limit
             if attempts == self.max_attempts:
                 break  # stop the iterator, too many attempts; perhaps, we are not able to generate the desired number of variables according to the given constraints
+
+
+if __name__ == "__main__":
+    nvars, clauses = remove_unused_vars(10, [[-1,4,9],[-4,1,-10],[10]])
+    #nvars, clauses = remove_unused_vars(3, [[-1,3]])
+    #nvars, clauses = remove_unused_vars(3, [[]])
+    print(nvars, clauses)
