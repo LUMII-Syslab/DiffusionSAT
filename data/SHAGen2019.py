@@ -219,6 +219,7 @@ class SHAGen2019(KSAT):
                     nvars, clauses = remove_unused_vars(nvars, clauses)
                     if TEST_MODE:
                         print("Fixed vars: ",nvars)
+                    ok = nvars >= self.min_vars and nvars <= self.max_vars # checking once again after the removal of unused vars
 
                 if ok:
                     yield nvars, clauses
