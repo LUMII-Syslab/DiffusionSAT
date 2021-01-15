@@ -83,7 +83,8 @@ class QuerySAT(Model):
         clause_state = self.zero_state(n_clauses, self.feature_maps)
         # step_logits = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
-        step_queries_unsat = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+        unsat_queries = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+        unsat_output = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         last_logits = tf.zeros([n_vars, 1])
         supervised_loss = 0.
 
@@ -94,7 +95,7 @@ class QuerySAT(Model):
                 grad_tape.watch(variables)
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
                 query = self.variables_query(v1, graph_mask=variables_mask)
-                step_queries_unsat = step_queries_unsat.write(step, unsat_clause_count(query, clauses))
+                unsat_queries = unsat_queries.write(step, unsat_clause_count(query, clauses))
                 clauses_loss = softplus_loss(query, clauses)
                 step_loss = tf.reduce_sum(clauses_loss)
             variables_grad = grad_tape.gradient(step_loss, query)
@@ -151,6 +152,7 @@ class QuerySAT(Model):
 
             step_losses = step_losses.write(step, logit_loss)
             n_unsat_clauses = unsat_clause_count(logits, clauses)
+            unsat_output = unsat_output.write(step, n_unsat_clauses)
             # tf.summary.scalar("unsat_clauses" + str(step), n_unsat_clauses)
             if logit_loss < 0.5 and n_unsat_clauses == 0:
                 labels = tf.round(tf.sigmoid(logits))  # now we know the answer, we can use it for supervised training
@@ -171,8 +173,13 @@ class QuerySAT(Model):
             tf.summary.histogram("logits", last_logits)
             tf.summary.scalar("last_layer_loss", last_layer_loss)
             # log_as_histogram("step_losses", step_losses.stack())
-            unsat = step_queries_unsat.stack()
-            log_discreate_as_histogram("unsat_clauses_queries", unsat)
+
+            with tf.name_scope("unsat_clauses"):
+                unsat_q = unsat_queries.stack()
+                unsat_o = unsat_output.stack()
+                log_discreate_as_histogram("queries", unsat_q)
+                log_discreate_as_histogram("outputs", unsat_o)
+
             tf.summary.scalar("steps_taken", step)
             tf.summary.scalar("supervised_loss", supervised_loss)
 
