@@ -11,7 +11,7 @@ from metrics.base import EmptyMetric
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
-
+import numpy as np
 
 def main():
     # optimizer = tfa.optimizers.RectifiedAdam(Config.learning_rate,
@@ -128,6 +128,9 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
         tf.summary.experimental.set_step(ckpt.step)
 
         model_data = dataset.filter_model_inputs(step_data)
+        # labels = calc_labels(step_data)
+        # model_data["labels"] = labels
+
         model_output = model.train_step(**model_data)
         loss, gradients = model_output["loss"], model_output["gradients"]
         mean_loss.update_state(loss)
@@ -183,6 +186,29 @@ def prepare_checkpoints(model, optimizer):
         print("Initializing new model!")
 
     return ckpt, manager
+
+
+def calc_labels(step_data):
+    clauses = step_data["normal_clauses"]
+    varcount = step_data["variable_count"]
+    labels = [labels_for_single(clause, varcount[i]) for i, clause in enumerate(clauses)]
+    labels = np.concatenate(labels)
+    return labels
+
+def labels_for_single(clauses, varcount):
+    from pysat.formula import CNF
+    from pysat.solvers import Cadical
+
+    formula = CNF(from_clauses=[x.tolist() for x in clauses.numpy()])
+    with Cadical(bootstrap_with=formula.clauses) as solver:
+        solver.solve()
+        variables = np.array(solver.get_model())
+        variables[variables < 0] = 0
+        variables[variables > 0] = 1
+
+    variables = np.pad(variables,(0, varcount-variables.size))
+
+    return variables
 
 
 def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False) -> list:

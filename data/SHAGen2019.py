@@ -100,7 +100,7 @@ class SHAGen2019(KSAT):
         #### constraints ####
         # how many free bits; max 512 free bits 
         self.bits_from = 2
-        self.bits_to = 4
+        self.bits_to = 6
 
         self.generate_hard_instances = True # If True, for #rounds < 6 the set of clauses will be empty.
 

@@ -79,7 +79,8 @@ class SATAccuracy(Metric):
         with Cadical(bootstrap_with=formula.clauses) as solver:
             assum = [i if prediction[i - 1] == 1 else -i for i in range(1, len(prediction), 1)]
             correct_pred = solver.solve(assumptions=assum)
-            solver.solve()
+            is_sat = solver.solve()
+            assert is_sat # all instances in dataset should be satisfiable
             variables = np.array(solver.get_model())
             variables[variables < 0] = 0
             variables[variables > 0] = 1

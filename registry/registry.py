@@ -4,6 +4,7 @@ from data.CNFGen import KColor
 from data.CNFGen import SAT_3, Clique, DomSet
 from data.PrimesGen import PrimesGen
 from data.SHAGen import SHAGen
+from data.SHAGen2019 import SHAGen2019
 from data.k_sat import KSAT
 from data.tsp import EuclideanTSP
 from data.tsp_asymmetric import AsymmetricTSP
@@ -56,6 +57,7 @@ class DatasetRegistry(Registry):
             "clique": Clique,
             "dominating_set": DomSet,
             "sha-gen": SHAGen,
+            "sha-gen2019": SHAGen2019,
             "euclidean_tsp": EuclideanTSP,
             "asymmetric_tsp": AsymmetricTSP,
             "primes": PrimesGen

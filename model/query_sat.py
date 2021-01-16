@@ -12,7 +12,7 @@ class QuerySAT(Model):
 
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
-                 vote_layers=3, train_rounds=16, test_rounds=64,
+                 vote_layers=3, train_rounds=32, test_rounds=64,
                  query_maps=32, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.train_rounds = train_rounds
