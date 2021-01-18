@@ -6,6 +6,7 @@ import glob
 import os
 
 from data.k_sat import KSAT
+from utils.sat import remove_unused_vars, remove_useless_clauses
 
 
 class PrimesGen(KSAT):
@@ -81,14 +82,8 @@ class PrimesGen(KSAT):
                     clauses.append(clause)
 
                 if ok:
-                    # nvars count doesn't match highest variable in the clauses
-                    real_vars = sorted(set([abs(x) for c in clauses for x in c]))
-                    map_pos = {v2: v + 1 for v, v2 in enumerate(real_vars)}
-                    map_neg = {-v2: -(v + 1) for v, v2 in enumerate(real_vars)}
-                    map_vars = {**map_pos, **map_neg}
-                    clauses = [[map_vars[x] for x in c] for c in clauses]
-
-                    yield nvars, clauses
+                    clauses = remove_useless_clauses(clauses)
+                    yield remove_unused_vars(nvars, clauses)
                     samples_so_far += 1
                     break  # while attempts
 
