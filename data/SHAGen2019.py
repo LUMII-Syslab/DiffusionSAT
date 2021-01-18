@@ -4,7 +4,9 @@ import os
 import platform
 import random
 import subprocess
-from enum import Enum
+
+from utils.sat import remove_unused_vars
+
 try:
     from data.k_sat import KSAT
     from pysat.solvers import Solver
@@ -14,60 +16,18 @@ except ImportError as err:
         raise err
     else:
         print("import ok")
+
+
         class KSAT:
             pass
 
-from shutil import copyfile
-
-TEST_MODE = False # True
-BENCHMARK_MODE = False # True
+TEST_MODE = False  # True
+BENCHMARK_MODE = False  # True
 
 
 def random_binary_string(n):
     return "".join([str(random.randint(0, 1)) for _ in range(n)])
 
-
-def remove_unused_vars(nvars, clauses):
-
-    used_vars = set()
-    n=0
-    max_v=0
-    for clause in clauses:
-        for lit in clause:
-            if lit==0:
-                continue
-            v = abs(lit)
-            if v>max_v:
-                max_v=v
-            if v not in used_vars:
-                used_vars.add(v)
-                n += 1
-    if n==nvars and max_v==n:
-        return nvars, clauses # do not change since all the variables are used
-    # otherwise not all variables are used (or the wrong number specified)
-    n=0
-    d = {}
-    new_clauses = []
-    for clause in clauses:
-        new_clause = []
-        for lit in clause:
-            if lit==0:
-                continue
-            v = abs(lit)
-            if v in d:
-                new_v = d[v]
-            else:
-                n += 1
-                new_v = n
-                d[v] = new_v
-            if lit>0:
-                new_clause.append(new_v)
-            else:
-                new_clause.append(-new_v)
-        new_clauses.append(new_clause)
-                
-    return n, new_clauses
-        
 
 class SHAGen2019(KSAT):
     """ Dataset with random SAT instances based on the SHA1 algorithm. We use cgen with the parameters similar to SAT Competition 2019.
@@ -90,7 +50,7 @@ class SHAGen2019(KSAT):
                  min_vars=4, max_vars=100000,
                  force_data_gen=False, **kwargs) -> None:
         super(SHAGen2019, self).__init__(data_dir, min_vars=min_vars,
-                                     max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
+                                         max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         # maximum number of samples; if there are less, we will stop earlier
         self.train_size = 10000
         self.test_size = 1000
@@ -102,8 +62,7 @@ class SHAGen2019(KSAT):
         self.bits_from = 2
         self.bits_to = 6
 
-        self.generate_hard_instances = True # If True, for #rounds < 6 the set of clauses will be empty.
-
+        self.generate_hard_instances = True  # If True, for #rounds < 6 the set of clauses will be empty.
 
         # the number of rounds (max==80 by SHA-1 specs)
         self.sha_rounds_from = 17
@@ -139,20 +98,22 @@ class SHAGen2019(KSAT):
 
                 bitsstr = random_binary_string(512)
                 hashstr = random_binary_string(160)
-                bitsstr = "0b"+bitsstr
+                bitsstr = "0b" + bitsstr
 
                 if TEST_MODE:
-                    #bitsstr = "string:a pad:sha1"
+                    # bitsstr = "string:a pad:sha1"
                     n_bits = 512
-                    #n_bits = 75#145
+                    # n_bits = 75#145
                     sha_rounds = 5
                     self.max_vars = 100000
 
                 if self.generate_hard_instances:
-                    cmd = SHAGen2019.CGEN_EXECUTABLE + " encode SHA1 -vM " + bitsstr + " except:1.." + str(n_bits) + " -vH compute -r " + str(
+                    cmd = SHAGen2019.CGEN_EXECUTABLE + " encode SHA1 -vM " + bitsstr + " except:1.." + str(
+                        n_bits) + " -vH compute -r " + str(
                         sha_rounds) + " " + SHAGen2019.TMP_FILE_NAME
                 else:
-                    cmd = SHAGen2019.CGEN_EXECUTABLE + " encode SHA1 -vM " + bitsstr + " except:1.." + str(n_bits) + " -r " + str(
+                    cmd = SHAGen2019.CGEN_EXECUTABLE + " encode SHA1 -vM " + bitsstr + " except:1.." + str(
+                        n_bits) + " -r " + str(
                         sha_rounds) + " " + SHAGen2019.TMP_FILE_NAME
 
                 # Launching the process and reading its output
@@ -164,10 +125,9 @@ class SHAGen2019(KSAT):
                     out = subprocess.check_output(
                         cmd, shell=True, universal_newlines=True)
                 except:
-                    out = "" # an unsatisfiable formula or an execution error
-                #print(cmd)
-                #print(cmd,"["+out+"]") # -- debug
-                    
+                    out = ""  # an unsatisfiable formula or an execution error
+                # print(cmd)
+                # print(cmd,"["+out+"]") # -- debug
 
                 # Searching for the "CNF: <nvars> var" substring;
                 # ok will be true iff <nvars> is between MIN_VARS and MAX_VARS;
@@ -178,10 +138,9 @@ class SHAGen2019(KSAT):
                     nvars = int(out[j1 + 4:j2].strip())
                     ok = nvars >= self.min_vars and nvars <= self.max_vars
 
-
                 if ok:
-                    #if TEST_MODE:
-                        #copyfile("sha1r17m75a_p.cnf", SHAGen2019.TMP_FILE_NAME)
+                    # if TEST_MODE:
+                    # copyfile("sha1r17m75a_p.cnf", SHAGen2019.TMP_FILE_NAME)
                     f = open(SHAGen2019.TMP_FILE_NAME, 'r')
                     lines = f.readlines()
                     f.close()
@@ -201,25 +160,25 @@ class SHAGen2019(KSAT):
 
                     # try Cadical and Glucose3/4
                     if BENCHMARK_MODE:
-                        with Solver(name="Cadical",bootstrap_with=clauses,use_timer=True) as solver:
+                        with Solver(name="Cadical", bootstrap_with=clauses, use_timer=True) as solver:
                             is_sat = solver.solve()
-                            print("Cadical result: ",is_sat,'{0:.4f}s'.format(solver.time()),nvars," vars",len(clauses)," clauses")
-                        with Solver(name="Glucose3",bootstrap_with=clauses,use_timer=True) as solver:
+                            print("Cadical result: ", is_sat, '{0:.4f}s'.format(solver.time()), nvars, " vars",len(clauses), " clauses")
+                        with Solver(name="Glucose3", bootstrap_with=clauses, use_timer=True) as solver:
                             is_sat = solver.solve()
-                            print("Gluecose3 result: ",is_sat,'{0:.4f}s'.format(solver.time()),nvars," vars",len(clauses)," clauses")
-                        with Solver(name="Glucose4",bootstrap_with=clauses,use_timer=True) as solver:
+                            print("Gluecose3 result: ", is_sat, '{0:.4f}s'.format(solver.time()), nvars, " vars",len(clauses), " clauses")
+                        with Solver(name="Glucose4", bootstrap_with=clauses, use_timer=True) as solver:
                             is_sat = solver.solve()
-                            print("Gluecose4 result: ",is_sat,'{0:.4f}s'.format(solver.time()),nvars," vars",len(clauses)," clauses")
+                            print("Gluecose4 result: ", is_sat, '{0:.4f}s'.format(solver.time()), nvars, " vars", len(clauses), " clauses")
 
-                    if len(clauses)==0:
+                    if len(clauses) == 0:
                         ok = False
 
                     if TEST_MODE:
-                        print("Cgen vars: ",nvars)
+                        print("Cgen vars: ", nvars)
                     nvars, clauses = remove_unused_vars(nvars, clauses)
                     if TEST_MODE:
-                        print("Fixed vars: ",nvars)
-                    ok = nvars >= self.min_vars and nvars <= self.max_vars # checking once again after the removal of unused vars
+                        print("Fixed vars: ", nvars)
+                    ok = nvars >= self.min_vars and nvars <= self.max_vars  # checking once again after the removal of unused vars
 
                 if ok:
                     yield nvars, clauses
@@ -237,7 +196,7 @@ class SHAGen2019(KSAT):
 
 
 if __name__ == "__main__":
-    nvars, clauses = remove_unused_vars(10, [[-1,4,9],[-4,1,-10],[10]])
-    #nvars, clauses = remove_unused_vars(3, [[-1,3]])
-    #nvars, clauses = remove_unused_vars(3, [[]])
+    nvars, clauses = remove_unused_vars(10, [[-1, 4, 9], [-4, 1, -10], [10]])
+    # nvars, clauses = remove_unused_vars(3, [[-1,3]])
+    # nvars, clauses = remove_unused_vars(3, [[]])
     print(nvars, clauses)
