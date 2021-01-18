@@ -2,6 +2,7 @@ import itertools
 import time
 from pathlib import Path
 
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import Model
 
@@ -11,7 +12,7 @@ from metrics.base import EmptyMetric
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
-import numpy as np
+
 
 def main():
     # optimizer = tfa.optimizers.RectifiedAdam(Config.learning_rate,
@@ -56,7 +57,6 @@ def evaluate_variable_generalization(model):
     results_file = get_valid_file("gen_variables_size_result.txt")
 
     lower_limit = 4
-    lower_limit = 4
     upper_limit = 1100
     step = 100
 
@@ -69,8 +69,10 @@ def evaluate_variable_generalization(model):
                                                          min_vars=var_count,
                                                          max_vars=var_count + step)
 
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
-        prepend_line = f"Results for dataset with min_vars={var_count} and max_vars={var_count + step}:"
+        start_time = time.time()
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model, steps=1)
+        elapsed = time.time() - start_time
+        prepend_line = f"Results for dataset with min_vars={var_count} and max_vars={var_count + step} and elapsed_time={elapsed:.2f}:"
         for metric in test_metrics:
             metric.log_in_file(str(results_file), prepend_str=prepend_line)
 
@@ -87,15 +89,17 @@ def evaluate_batch_generalization(model):
     results_file = get_valid_file("gen_batch_size_results.txt")
 
     # for SAT by default we train on max_batch_size=5000
-    for batch_size in range(3000, 10500, 500):
+    for batch_size in range(3000, 40500, 1000):
         print(f"Generating dataset with max_batch_size={batch_size}")
         dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                          force_data_gen=Config.force_data_gen,
                                                          input_mode=Config.input_mode,
-                                                         max_batch_size=batch_size)
+                                                         max_nodes_per_batch=batch_size)
 
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
-        prepend_line = f"Results for dataset with max_batch_size={batch_size}:"
+        start_time = time.time()
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model, steps=1)
+        elapsed = time.time() - start_time
+        prepend_line = f"Results for dataset with max_batch_size={batch_size} and total_time={elapsed:.2f}:"
         for metric in test_metrics:
             metric.log_in_file(str(results_file), prepend_str=prepend_line)
 
@@ -108,10 +112,14 @@ def evaluate_round_generalization(dataset, optimizer):
         model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, test_rounds=test_rounds)
         print(f"Evaluating model with test_rounds={test_rounds}")
         _ = prepare_checkpoints(model, optimizer)
-        test_metrics = evaluate_metrics(dataset, test_data, model)
 
+        start_time = time.time()
+        test_metrics = evaluate_metrics(dataset, test_data, model, steps=1)
+        elapsed_time = start_time - start_time
+
+        message = f"Results for model with test_rounds={test_rounds} and elapsed_time={elapsed_time}:"
         for metric in test_metrics:
-            metric.log_in_file(str(results_file), prepend_str=f"Results for model with test_rounds={test_rounds}:")
+            metric.log_in_file(str(results_file), prepend_str=message)
 
 
 def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
@@ -195,6 +203,7 @@ def calc_labels(step_data):
     labels = np.concatenate(labels)
     return labels
 
+
 def labels_for_single(clauses, varcount):
     from pysat.formula import CNF
     from pysat.solvers import Cadical
@@ -206,7 +215,7 @@ def labels_for_single(clauses, varcount):
         variables[variables < 0] = 0
         variables[variables > 0] = 1
 
-    variables = np.pad(variables,(0, varcount-variables.size))
+    variables = np.pad(variables, (0, varcount - variables.size))
 
     return variables
 
