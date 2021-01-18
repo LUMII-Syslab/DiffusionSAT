@@ -117,8 +117,12 @@ def main():
     # dataset = KSATVariables("/tmp")
     # dataset = SHAGen("/tmp")
     dataset = PrimesGen("/tmp")
-    var_count, clauses = [x for x in itertools.islice(dataset.train_generator(), 4)][3]
+    var_count, clauses = [x for x in itertools.islice(dataset.train_generator(), 5)][4]
     print(clauses)
+
+    print("Var count:", var_count)
+    print("Max lit: ", max([l for c in clauses for l in c]))
+    print("Min lit:", min([l for c in clauses for l in c]))
 
     print("Min lits in single clause: ", min([len(c) for c in clauses]))
     print("Max lits in single clause: ", max([len(c) for c in clauses]))
