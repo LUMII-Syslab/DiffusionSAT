@@ -7,11 +7,6 @@ import networkx as nx
 from data.PrimesGen import PrimesGen
 
 
-def normalize(x):
-    vmax = max(x)
-    return [math.log(math.exp(-y / vmax), math.e) for y in x]
-
-
 def draw_interaction_graph(var_count: int, clauses: list):
     """ Implements visualization of interactions graphs according to http://www.carstensinz.de/papers/SAT-2005.pdf .
     Vertices are variables and edge is added between two variables if they
