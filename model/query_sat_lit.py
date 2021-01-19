@@ -22,12 +22,14 @@ class QuerySATLit(Model):
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
 
-        self.update_gate = MLP(vote_layers, feature_maps * 2, feature_maps, name="update_gate", do_layer_norm=False)
+        self.clauses_update = MLP(vote_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update",
+                                  do_layer_norm=False)
+        self.literals_update = MLP(vote_layers, feature_maps * 2, feature_maps, name="variables_update",
+                                   do_layer_norm=False)
 
-        self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output", do_layer_norm=False)
-        self.variables_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query", do_layer_norm=False)
-        self.clause_mlp = MLP(vote_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update",
-                              do_layer_norm=False)
+        self.literals_output = MLP(vote_layers, feature_maps, 1, name="variables_output", do_layer_norm=False)
+        self.literals_query = MLP(msg_layers, query_maps * 2, query_maps * 2, name="variables_query",
+                                  do_layer_norm=False)
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -64,18 +66,19 @@ class QuerySATLit(Model):
         for step in tf.range(rounds):
             with tf.GradientTape() as grad_tape:
                 grad_tape.watch(literals)
-                v1 = tf.concat([literals, tf.random.normal([n_literals, 4])], axis=-1)
-                v1 = tf.reshape(v1, [n_literals // 2, (self.feature_maps + 4) * 2])
-                query = self.variables_query(v1)
+                v1 = tf.reshape(literals, [n_literals // 2, self.feature_maps * 2])
+                v1 = tf.concat([v1, tf.random.normal([n_literals // 2, 4])], axis=-1)
+                query = self.literals_query(v1)
 
                 unsat_queries = unsat_queries.write(step, unsat_clause_count(query, clauses))
                 clauses_loss = softplus_loss(query, clauses)
-                step_loss = tf.reduce_sum(clauses_loss),
-            literals_grad = grad_tape.gradient(step_loss, literals)
-            # literals_grad = tf.concat([variables_grad, variables_grad], axis=0)
+                step_loss = tf.reduce_sum(clauses_loss)
+            literals_grad = grad_tape.gradient(step_loss, query)
+            literals_grad = tf.reshape(literals_grad, [n_literals, self.query_maps // 2])
+            # literals_grad = tf.concat([variables_grad, variables_Ugrad], axis=0)
 
             clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
-            clause_data = self.clause_mlp(clause_unit)
+            clause_data = self.clauses_update(clause_unit)
 
             new_clause_value = clause_data[:, self.query_maps:]
             new_clause_value = self.clauses_norm(new_clause_value, clauses_mask, training=training) * 0.25
@@ -85,12 +88,12 @@ class QuerySATLit(Model):
             literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, literals_loss_all)
 
             unit = tf.concat([literals, literals_grad, literals_loss], axis=-1)
-            new_literals = self.update_gate(unit)
+            new_literals = self.literals_update(unit)
             new_literals = self.variables_norm(new_literals, literals_mask, training=training) * 0.25
-            literals = self.flip(new_literals, n_literals // 2) + 0.1 * literals
+            literals = self.flip(new_literals, new_literals // 2) + 0.1 * literals
 
             variables = tf.reshape(literals, [n_literals // 2, self.feature_maps * 2])
-            logits = self.variables_output(variables)
+            logits = self.literals_output(variables)
 
             per_clause_loss = softplus_mixed_loss(logits, clauses)
             per_graph_loss = tf.math.segment_sum(per_clause_loss, clauses_mask)
