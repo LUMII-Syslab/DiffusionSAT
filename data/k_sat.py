@@ -134,6 +134,8 @@ class KSAT(DIMACDataset):
         elif input_mode == "literals":
             return lambda step_data: {
                 "adj_matrix": step_data["adjacency_matrix"],
+                "variable_count": step_data["variable_count"],
+                "clauses_count": step_data["clauses_count"],
                 "clauses": step_data["clauses"]
             }
         else:

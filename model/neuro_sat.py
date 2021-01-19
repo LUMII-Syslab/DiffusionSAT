@@ -74,10 +74,10 @@ class NeuroSAT(Model):
         return tf.concat([literals[n_vars:(2 * n_vars), :], literals[0:n_vars, :]], axis=0)
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL
-                 )
-    def train_step(self, adj_matrix, clauses):
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32)])
+    def train_step(self, adj_matrix, clauses, variable_count, clauses_count):
         with tf.GradientTape() as tape:
             logits, loss = self.call(adj_matrix, clauses, training=True)
             gradients = tape.gradient(loss, self.trainable_variables)
@@ -89,9 +89,10 @@ class NeuroSAT(Model):
         }
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)],
-                 experimental_autograph_options=tf.autograph.experimental.Feature.ALL)
-    def predict_step(self, adj_matrix, clauses):
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32)])
+    def predict_step(self, adj_matrix, clauses, variable_count, clauses_count):
         predictions, loss = self.call(adj_matrix, clauses, training=False)
 
         return {

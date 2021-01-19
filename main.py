@@ -46,6 +46,9 @@ def main():
     if Config.evaluate_batch_gen:
         evaluate_batch_generalization(model)
 
+    if Config.evaluate_batch_gen_train:
+        evaluate_batch_generalization_training(model)
+
     if Config.evaluate_variable_gen:
         evaluate_variable_generalization(model)
 
@@ -85,23 +88,54 @@ def get_valid_file(file: str):
     return results_file
 
 
-def evaluate_batch_generalization(model):
-    results_file = get_valid_file("gen_batch_size_results.txt")
+def evaluate_batch_generalization_training(model):
+    results_file = get_valid_file("gen_batch_size_results_train.txt")
 
     # for SAT by default we train on max_batch_size=5000
-    for batch_size in range(3000, 40500, 1000):
+    for batch_size in range(3000, 24000, 1000):
         print(f"Generating dataset with max_batch_size={batch_size}")
         dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                          force_data_gen=Config.force_data_gen,
                                                          input_mode=Config.input_mode,
                                                          max_nodes_per_batch=batch_size)
 
+        iterator = itertools.islice(dataset.train_data(), 1)
         start_time = time.time()
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model, steps=1)
+        for step_data in iterator:
+            model_input = dataset.filter_model_inputs(step_data)
+            output = model.train_step(**model_input)
+
         elapsed = time.time() - start_time
-        prepend_line = f"Results for dataset with max_batch_size={batch_size} and total_time={elapsed:.2f}:"
-        for metric in test_metrics:
-            metric.log_in_file(str(results_file), prepend_str=prepend_line)
+        message = f"Train results for dataset with max_batch_size={batch_size} and total_time={elapsed:.2f}\n"
+
+        file_path = Path(results_file)
+        with file_path.open("a") as file:
+            file.write(message)
+
+
+def evaluate_batch_generalization(model):
+    results_file = get_valid_file("gen_batch_size_results.txt")
+
+    # for SAT by default we train on max_batch_size=5000
+    for batch_size in range(3000, 24000, 1000):
+        print(f"Generating dataset with max_batch_size={batch_size}")
+        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                         force_data_gen=Config.force_data_gen,
+                                                         input_mode=Config.input_mode,
+                                                         max_nodes_per_batch=batch_size)
+
+        iterator = itertools.islice(dataset.test_data(), 1)
+
+        start_time = time.time()
+        for step_data in iterator:
+            model_input = dataset.filter_model_inputs(step_data)
+            output = model.predict_step(**model_input)
+        elapsed = time.time() - start_time
+
+        message = f"Results for dataset with max_batch_size={batch_size} and total_time={elapsed:.2f}\n"
+        file_path = Path(results_file)
+        with file_path.open("a") as file:
+            file.write(message)
 
 
 def evaluate_round_generalization(dataset, optimizer):

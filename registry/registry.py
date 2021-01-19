@@ -11,6 +11,7 @@ from data.tsp_asymmetric import AsymmetricTSP
 from model.attention_sat import AttentionSAT
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
+from model.query_sat_lit import QuerySATLit
 from model.shuffle_gnn import ShuffleGNN
 from model.tsp_matrix_se import TSPMatrixSE
 
@@ -40,6 +41,7 @@ class ModelRegistry(Registry):
         return {
             "attention_sat": AttentionSAT,
             "query_sat": QuerySAT,
+            "query_sat_lit": QuerySATLit,
             "neuro_sat": NeuroSAT,
             "tsp_matrix_se": TSPMatrixSE,
             "shuffle_gnn": ShuffleGNN
@@ -60,5 +62,5 @@ class DatasetRegistry(Registry):
             "sha-gen2019": SHAGen2019,
             "euclidean_tsp": EuclideanTSP,
             "asymmetric_tsp": AsymmetricTSP,
-            "primes": PrimesGen
+            "primes": PrimesGen,
         }
