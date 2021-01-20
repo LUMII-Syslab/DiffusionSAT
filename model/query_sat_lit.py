@@ -13,7 +13,7 @@ class QuerySATLit(Model):
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
                  vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=32, **kwargs):
+                 query_maps=64, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
@@ -74,7 +74,7 @@ class QuerySATLit(Model):
                 clauses_loss = softplus_loss(query, clauses)
                 step_loss = tf.reduce_sum(clauses_loss)
             literals_grad = grad_tape.gradient(step_loss, query)
-            literals_grad = tf.reshape(literals_grad, [n_literals, self.query_maps // 2])
+            literals_grad = tf.reshape(literals_grad, [n_literals, self.query_maps])
             # literals_grad = tf.concat([variables_grad, variables_Ugrad], axis=0)
 
             clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
@@ -88,9 +88,10 @@ class QuerySATLit(Model):
             literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, literals_loss_all)
 
             unit = tf.concat([literals, literals_grad, literals_loss], axis=-1)
+            unit = self.flip(unit, n_literals // 2)
             new_literals = self.literals_update(unit)
             new_literals = self.variables_norm(new_literals, literals_mask, training=training) * 0.25
-            literals = self.flip(new_literals, new_literals // 2) + 0.1 * literals
+            literals = new_literals + 0.1 * literals
 
             variables = tf.reshape(literals, [n_literals // 2, self.feature_maps * 2])
             logits = self.literals_output(variables)
