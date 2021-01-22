@@ -4,6 +4,7 @@ from tensorflow.keras.models import Model
 
 from loss.sat import softplus_log_square_loss, unsat_clause_count
 from model.mlp import MLP
+from utils.parameters_log import *
 
 
 class NeuroSAT(Model):
@@ -27,6 +28,7 @@ class NeuroSAT(Model):
 
         self.denom = tf.sqrt(tf.cast(feature_maps, tf.float32))
         self.feature_maps = feature_maps
+        self.vote_layers = vote_layers
 
     def call(self, adj_matrix, clauses=None, training=None, mask=None):
         shape = tf.shape(adj_matrix)  # inputs is sparse adjacency matrix
@@ -99,3 +101,11 @@ class NeuroSAT(Model):
             "loss": loss,
             "prediction": tf.squeeze(predictions, axis=-1)
         }
+
+    def get_config(self):
+        return {HP_MODEL: self.__class__.__name__,
+                HP_FEATURE_MAPS: self.feature_maps,
+                HP_TRAIN_ROUNDS: self.rounds,
+                HP_TEST_ROUNDS: self.rounds,
+                HP_MLP_LAYERS: self.vote_layers
+                }

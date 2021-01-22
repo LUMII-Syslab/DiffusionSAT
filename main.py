@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
+from tensorboard.plugins.hparams import api as hp
 from tensorflow.keras import Model
 
 from config import Config
@@ -12,6 +13,7 @@ from metrics.base import EmptyMetric
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
+from utils.parameters_log import HP_TRAINABLE_PARAMS
 
 
 def main():
@@ -206,6 +208,10 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                 for step_data in iterator:
                     model_input = dataset.filter_model_inputs(step_data)
                     model.log_visualizations(**model_input)
+
+            hparams = model.get_config()
+            hparams[HP_TRAINABLE_PARAMS] = np.sum([np.prod(v.shape) for v in model.trainable_variables])
+            hp.hparams(hparams)
 
         if int(ckpt.step) % 1000 == 0:
             save_path = ckpt_manager.save()

@@ -2,15 +2,14 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
 
+from data.tsp import PADDING_VALUE
 from layers.dense_gnn import DenseGNN
 from layers.matrix_se import MatrixSE
 from loss.tsp import tsp_loss
+from loss.unsupervised_tsp import inverse_identity
 from metrics.tsp_metrics import remove_padding, get_unpadded_size
 from model.mlp import MLP
 from utils.summary import plot_to_image
-
-from loss.unsupervised_tsp import inverse_identity, sample_logistic
-from data.tsp import PADDING_VALUE
 
 
 def inv_sigmoid(y):
@@ -28,7 +27,7 @@ class TSPMatrixSE(tf.keras.Model):
         else:
             self.graph_layer = DenseGNN()
         self.input_layer = Dense(feature_maps, activation=None, name="input_layer")
-        self.logits_layer = MLP(2, feature_maps, 1, name="logits_layer", do_layer_norm=True, norm_axis=[1,2])
+        self.logits_layer = MLP(2, feature_maps, 1, name="logits_layer", do_layer_norm=True, norm_axis=[1, 2])
         n_vertices = 16  # todo: get from somewhere
         self.logit_bias = inv_sigmoid(1.0 / (n_vertices - 1))
 
@@ -38,7 +37,7 @@ class TSPMatrixSE(tf.keras.Model):
         state = self.input_layer(tf.expand_dims(inputs_norm, -1)) * 0.25
         total_loss = 0.
         input_shape = tf.shape(inputs)
-        logits = tf.zeros([input_shape[0],input_shape[1], input_shape[2],1])
+        logits = tf.zeros([input_shape[0], input_shape[1], input_shape[2], 1])
         last_loss = tf.constant(0.0)
 
         for step in tf.range(self.rounds):
@@ -48,7 +47,7 @@ class TSPMatrixSE(tf.keras.Model):
 
             if training:
                 loss = tsp_loss(logits, inputs, log_in_tb=training and step == self.rounds - 1, unsupervised=True)
-                #loss = tsp_loss(logits, inputs, labels=labels, supervised=True, unsupervised=False)
+                # loss = tsp_loss(logits, inputs, labels=labels, supervised=True, unsupervised=False)
             else:
                 loss = 0.
             total_loss += loss
@@ -125,3 +124,6 @@ class TSPMatrixSE(tf.keras.Model):
                              linestyle='--', dashes=(5, 8))
 
         return figure
+
+    def get_config(self):
+        return {}

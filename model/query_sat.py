@@ -5,6 +5,7 @@ from tensorflow.keras.optimizers import Optimizer
 from layers.normalization import PairNorm
 from loss.sat import softplus_loss, unsat_clause_count, softplus_log_loss, softplus_mixed_loss
 from model.mlp import MLP
+from utils.parameters_log import *
 from utils.summary import log_discreate_as_histogram
 
 
@@ -225,3 +226,12 @@ class QuerySAT(Model):
             "loss": loss,
             "prediction": tf.squeeze(predictions, axis=-1)
         }
+
+    def get_config(self):
+        return {HP_MODEL: self.__class__.__name__,
+                HP_FEATURE_MAPS: self.feature_maps,
+                HP_QUERY_MAPS: self.query_maps,
+                HP_TRAIN_ROUNDS: self.train_rounds,
+                HP_TEST_ROUNDS: self.test_rounds,
+                HP_MLP_LAYERS: self.vote_layers,
+                }

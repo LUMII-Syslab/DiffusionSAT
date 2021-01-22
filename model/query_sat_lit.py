@@ -5,6 +5,7 @@ from tensorflow.keras.optimizers import Optimizer
 from layers.normalization import PairNorm
 from loss.sat import softplus_loss, unsat_clause_count, softplus_log_loss, softplus_mixed_loss
 from model.mlp import MLP
+from utils.parameters_log import *
 from utils.summary import log_discreate_as_histogram
 
 
@@ -18,6 +19,7 @@ class QuerySATLit(Model):
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
+        self.vote_layers = vote_layers
 
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
@@ -163,6 +165,15 @@ class QuerySATLit(Model):
             "loss": loss,
             "gradients": gradients
         }
+
+    def get_config(self):
+        return {HP_MODEL: self.__class__.__name__,
+                HP_FEATURE_MAPS: self.feature_maps,
+                HP_QUERY_MAPS: self.query_maps,
+                HP_TRAIN_ROUNDS: self.train_rounds,
+                HP_TEST_ROUNDS: self.test_rounds,
+                HP_MLP_LAYERS: self.vote_layers,
+                }
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
