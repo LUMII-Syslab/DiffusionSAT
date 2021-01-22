@@ -69,7 +69,6 @@ class QuerySATLit(Model):
             with tf.GradientTape() as grad_tape:
                 grad_tape.watch(literals)
                 v1 = tf.concat([literals[:n_literals // 2], literals[n_literals // 2:]], axis=-1)
-                # v1 = tf.reshape(literals, [n_literals // 2, self.feature_maps * 2])
                 v1 = tf.concat([v1, tf.random.normal([n_literals // 2, 4])], axis=-1)
                 query = self.literals_query(v1)
 
@@ -77,6 +76,7 @@ class QuerySATLit(Model):
                 clauses_loss = softplus_loss(query, clauses)
                 step_loss = tf.reduce_sum(clauses_loss)
             variables_grad = grad_tape.gradient(step_loss, query)
+            # TODO: Better way to handle variable and literal size mismatch?
             literals_grad = tf.reshape(variables_grad, [n_literals, self.query_maps])
             # literals_grad = tf.concat([variables_grad, variables_grad], axis=0)
 
@@ -90,7 +90,7 @@ class QuerySATLit(Model):
             literals_loss_all = clause_data[:, 0:self.query_maps]
             literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, literals_loss_all)
 
-            unit = tf.concat([literals, literals_loss], axis=-1)
+            unit = tf.concat([literals, literals_grad, literals_loss], axis=-1)
             new_literals = self.literals_update(unit)
             new_literals = self.variables_norm(new_literals, literals_mask, training=training) * 0.25
             literals = new_literals + 0.1 * literals
