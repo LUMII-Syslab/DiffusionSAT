@@ -68,7 +68,8 @@ class QuerySATLit(Model):
         for step in tf.range(rounds):
             with tf.GradientTape() as grad_tape:
                 grad_tape.watch(literals)
-                v1 = tf.reshape(literals, [n_literals // 2, self.feature_maps * 2])
+                v1 = tf.concat([literals[:n_literals // 2], literals[n_literals // 2:]], axis=-1)
+                # v1 = tf.reshape(literals, [n_literals // 2, self.feature_maps * 2])
                 v1 = tf.concat([v1, tf.random.normal([n_literals // 2, 4])], axis=-1)
                 query = self.literals_query(v1)
 
@@ -89,12 +90,12 @@ class QuerySATLit(Model):
             literals_loss_all = clause_data[:, 0:self.query_maps]
             literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, literals_loss_all)
 
-            unit = tf.concat([literals, literals_grad, literals_loss], axis=-1)
+            unit = tf.concat([literals, literals_loss], axis=-1)
             new_literals = self.literals_update(unit)
             new_literals = self.variables_norm(new_literals, literals_mask, training=training) * 0.25
             literals = new_literals + 0.1 * literals
 
-            variables = tf.reshape(literals, [n_literals // 2, self.feature_maps * 2])
+            variables = tf.concat([literals[:n_literals // 2], literals[n_literals // 2:]], axis=-1)
             logits = self.literals_output(variables)
 
             per_clause_loss = softplus_mixed_loss(logits, clauses)
