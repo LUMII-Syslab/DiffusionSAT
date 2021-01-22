@@ -6,7 +6,6 @@ from layers.normalization import PairNorm
 from loss.sat import softplus_loss, unsat_clause_count, softplus_log_loss, softplus_mixed_loss
 from model.mlp import MLP
 from utils.parameters_log import *
-from utils.summary import log_discreate_as_histogram
 
 
 class QuerySATLit(Model):
@@ -20,6 +19,9 @@ class QuerySATLit(Model):
         self.test_rounds = test_rounds
         self.optimizer = optimizer
         self.vote_layers = vote_layers
+
+        self.add_gradient = True
+        self.use_message_passing = False
 
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
@@ -58,9 +60,10 @@ class QuerySATLit(Model):
 
         # step_logits = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
-        unsat_queries = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
-        unsat_output = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+        # unsat_queries = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+        # unsat_output = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         last_logits = tf.zeros([n_literals, 1])
+        literals_grad = tf.zeros([n_literals, self.query_maps])
         supervised_loss = 0.
 
         rounds = self.train_rounds if training else self.test_rounds
@@ -68,17 +71,22 @@ class QuerySATLit(Model):
         for step in tf.range(rounds):
             with tf.GradientTape() as grad_tape:
                 grad_tape.watch(literals)
-                v1 = tf.concat([literals[:n_literals // 2], literals[n_literals // 2:]], axis=-1)
-                v1 = tf.concat([v1, tf.random.normal([n_literals // 2, 4])], axis=-1)
-                query = self.literals_query(v1)
+                if self.use_message_passing:
+                    clauses_loss = tf.sparse.sparse_dense_matmul(adj_matrix, literals, adjoint_a=True)
+                else:
+                    v1 = tf.concat([literals[:n_literals // 2], literals[n_literals // 2:]], axis=-1)
+                    v1 = tf.concat([v1, tf.random.normal([n_literals // 2, 4])], axis=-1)
+                    query = self.literals_query(v1)
 
-                unsat_queries = unsat_queries.write(step, unsat_clause_count(query, clauses))
-                clauses_loss = softplus_loss(query, clauses)
-                step_loss = tf.reduce_sum(clauses_loss)
-            variables_grad = grad_tape.gradient(step_loss, query)
-            # TODO: Better way to handle variable and literal size mismatch?
-            literals_grad = tf.reshape(variables_grad, [n_literals, self.query_maps])
-            # literals_grad = tf.concat([variables_grad, variables_grad], axis=0)
+                    # unsat_queries = unsat_queries.write(step, unsat_clause_count(query, clauses))
+                    clauses_loss = softplus_loss(query, clauses)
+                    step_loss = tf.reduce_sum(clauses_loss)
+
+                    var_grad = grad_tape.gradient(step_loss, query)
+                    # TODO: Better way to handle variable and literal size mismatch?
+                    var_grad = tf.convert_to_tensor(var_grad)
+                    literals_grad = tf.concat([var_grad[:, :self.query_maps], var_grad[:, self.query_maps:]], axis=0)
+                    # literals_grad = tf.concat([variables_grad, variables_grad], axis=0)
 
             clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
             clause_data = self.clauses_update(clause_unit)
@@ -90,7 +98,11 @@ class QuerySATLit(Model):
             literals_loss_all = clause_data[:, 0:self.query_maps]
             literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, literals_loss_all)
 
-            unit = tf.concat([literals, literals_grad, literals_loss], axis=-1)
+            if self.add_gradient and not self.use_message_passing:
+                unit = tf.concat([literals, literals_grad, literals_loss], axis=-1)
+            else:
+                unit = tf.concat([literals, literals_loss], axis=-1)
+
             new_literals = self.literals_update(unit)
             new_literals = self.variables_norm(new_literals, literals_mask, training=training) * 0.25
             literals = new_literals + 0.1 * literals
@@ -104,7 +116,7 @@ class QuerySATLit(Model):
 
             step_losses = step_losses.write(step, logit_loss)
             n_unsat_clauses = unsat_clause_count(logits, clauses)
-            unsat_output = unsat_output.write(step, n_unsat_clauses)
+            # unsat_output = unsat_output.write(step, n_unsat_clauses)
             if logit_loss < 0.5 and n_unsat_clauses == 0:
                 labels = tf.round(tf.sigmoid(logits))  # now we know the answer, we can use it for supervised training
                 supervised_loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=last_logits, labels=labels)
@@ -127,11 +139,11 @@ class QuerySATLit(Model):
             tf.summary.scalar("last_layer_loss", last_layer_loss)
             # log_as_histogram("step_losses", step_losses.stack())
 
-            with tf.name_scope("unsat_clauses"):
-                unsat_q = unsat_queries.stack()
-                unsat_o = unsat_output.stack()
-                log_discreate_as_histogram("queries", unsat_q)
-                log_discreate_as_histogram("outputs", unsat_o)
+            # with tf.name_scope("unsat_clauses"):
+                # unsat_q = unsat_queries.stack()
+                # unsat_o = unsat_output.stack()
+                # log_discreate_as_histogram("queries", unsat_q)
+                # log_discreate_as_histogram("outputs", unsat_o)
 
             tf.summary.scalar("steps_taken", step)
             tf.summary.scalar("supervised_loss", supervised_loss)
