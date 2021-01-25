@@ -61,6 +61,7 @@ class QuerySAT(Model):
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
+        self.vote_layers = vote_layers
 
     def zero_state(self, n_units, n_features, stddev=0.25):
         onehot = tf.one_hot(tf.zeros([n_units], dtype=tf.int64), n_features)
