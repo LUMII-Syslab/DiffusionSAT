@@ -47,6 +47,7 @@ class QuerySATLit(Model):
     def call(self, adj_matrix, clauses=None, variable_count=None, clauses_count=None, training=None, mask=None):
         shape = tf.shape(adj_matrix)
         n_literals = shape[0]
+        n_vars = n_literals // 2
         n_clauses = shape[1]
 
         graph_count = tf.shape(variable_count)
@@ -63,7 +64,6 @@ class QuerySATLit(Model):
         # unsat_queries = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         # unsat_output = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         last_logits = tf.zeros([n_literals, 1])
-        literals_grad = tf.zeros([n_literals, self.query_maps])
         supervised_loss = 0.
 
         rounds = self.train_rounds if training else self.test_rounds
@@ -71,24 +71,26 @@ class QuerySATLit(Model):
         for step in tf.range(rounds):
             with tf.GradientTape() as grad_tape:
                 grad_tape.watch(literals)
-                if self.use_message_passing:
-                    clauses_loss = tf.sparse.sparse_dense_matmul(adj_matrix, literals, adjoint_a=True)
-                else:
-                    v1 = tf.concat([literals[:n_literals // 2], literals[n_literals // 2:]], axis=-1)
-                    v1 = tf.concat([v1, tf.random.normal([n_literals // 2, 4])], axis=-1)
-                    query = self.literals_query(v1)
+                v1 = tf.concat([literals[:n_vars], literals[n_vars:]], axis=-1)
+                v1 = tf.concat([v1, tf.random.normal([n_vars, 4])], axis=-1)
+                query = self.literals_query(v1)
 
-                    # unsat_queries = unsat_queries.write(step, unsat_clause_count(query, clauses))
-                    clauses_loss = softplus_loss(query, clauses)
-                    step_loss = tf.reduce_sum(clauses_loss)
+                # unsat_queries = unsat_queries.write(step, unsat_clause_count(query, clauses))
+                clauses_loss = softplus_loss(query, clauses)
+                step_loss = tf.reduce_sum(clauses_loss)
 
-                    var_grad = grad_tape.gradient(step_loss, query)
-                    # TODO: Better way to handle variable and literal size mismatch?
-                    var_grad = tf.convert_to_tensor(var_grad)
-                    literals_grad = tf.concat([var_grad[:, :self.query_maps], var_grad[:, self.query_maps:]], axis=0)
-                    # literals_grad = tf.concat([variables_grad, variables_grad], axis=0)
+                var_grad = grad_tape.gradient(step_loss, query)
+                # TODO: Better way to handle variable and literal size mismatch?
+                var_grad = tf.convert_to_tensor(var_grad)
+                literals_grad = tf.concat([var_grad[:, :self.query_maps], var_grad[:, self.query_maps:]], axis=0)
+                # literals_grad = tf.concat([variables_grad, variables_grad], axis=0)
 
-            clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
+            if self.use_message_passing:
+                clause_messages = tf.sparse.sparse_dense_matmul(adj_matrix, literals, adjoint_a=True)
+                clause_unit = tf.concat([clause_state, clause_messages, clauses_loss], axis=-1)
+            else:
+                clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
+
             clause_data = self.clauses_update(clause_unit)
 
             new_clause_value = clause_data[:, self.query_maps:]
@@ -98,7 +100,7 @@ class QuerySATLit(Model):
             literals_loss_all = clause_data[:, 0:self.query_maps]
             literals_loss = tf.sparse.sparse_dense_matmul(adj_matrix, literals_loss_all)
 
-            if self.add_gradient and not self.use_message_passing:
+            if self.add_gradient:
                 unit = tf.concat([literals, literals_grad, literals_loss], axis=-1)
             else:
                 unit = tf.concat([literals, literals_loss], axis=-1)
@@ -107,7 +109,7 @@ class QuerySATLit(Model):
             new_literals = self.variables_norm(new_literals, literals_mask, training=training) * 0.25
             literals = new_literals + 0.1 * literals
 
-            variables = tf.concat([literals[:n_literals // 2], literals[n_literals // 2:]], axis=-1)
+            variables = tf.concat([literals[:n_vars], literals[n_vars:]], axis=-1)
             logits = self.literals_output(variables)
 
             per_clause_loss = softplus_mixed_loss(logits, clauses)
