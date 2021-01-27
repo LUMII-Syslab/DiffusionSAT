@@ -67,6 +67,7 @@ def softplus_log_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor,
 
     return -(tf.math.log(1 - clauses_val + eps) - tf.math.log(1 + eps))
 
+
 def softplus_square_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
@@ -75,6 +76,7 @@ def softplus_square_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTens
     """
     clauses_val = softplus_loss(variable_predictions, clauses)
     return tf.square(clauses_val)
+
 
 def softplus_mixed_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, eps=1e-8):
     """
@@ -86,7 +88,8 @@ def softplus_mixed_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTenso
     log_clauses = -(tf.math.log(1 - clauses_val + eps) - tf.math.log(1 + eps))
     return clauses_val * log_clauses
 
-def softplus_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, power = 1.):
+
+def softplus_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, power=1.):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
     :param clauses: RaggedTensor of input clauses in DIMAC format

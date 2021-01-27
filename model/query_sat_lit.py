@@ -26,14 +26,11 @@ class QuerySATLit(Model):
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
 
-        self.clauses_update = MLP(vote_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update",
-                                  do_layer_norm=False)
-        self.literals_update = MLP(vote_layers, feature_maps * 2, feature_maps, name="variables_update",
-                                   do_layer_norm=False)
+        self.clauses_update = MLP(vote_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
+        self.literals_update = MLP(vote_layers, feature_maps * 2, feature_maps, name="variables_update", do_layer_norm=False)
 
         self.literals_output = MLP(vote_layers, feature_maps, 1, name="variables_output", do_layer_norm=False)
-        self.literals_query = MLP(msg_layers, query_maps * 2, query_maps * 2, name="variables_query",
-                                  do_layer_norm=False)
+        self.literals_query = MLP(msg_layers, query_maps * 2, query_maps * 2, name="variables_query", do_layer_norm=False)
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -67,6 +64,7 @@ class QuerySATLit(Model):
         supervised_loss = 0.
 
         rounds = self.train_rounds if training else self.test_rounds
+        cl_adj_matrix = tf.sparse.transpose(adj_matrix)
 
         for step in tf.range(rounds):
             with tf.GradientTape() as grad_tape:
@@ -86,7 +84,7 @@ class QuerySATLit(Model):
                 # literals_grad = tf.concat([variables_grad, variables_grad], axis=0)
 
             if self.use_message_passing:
-                clause_messages = tf.sparse.sparse_dense_matmul(adj_matrix, literals, adjoint_a=True)
+                clause_messages = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals)
                 clause_unit = tf.concat([clause_state, clause_messages, clauses_loss], axis=-1)
             else:
                 clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
