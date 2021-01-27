@@ -12,7 +12,7 @@ from model.attention_sat import AttentionSAT
 from model.neuro_sat import NeuroSAT
 from model.query_sat import QuerySAT
 from model.query_sat_lit import QuerySATLit
-from model.shuffle_gnn import ShuffleGNN
+from model.simple_neurosat import SimpleNeuroSAT
 from model.tsp_matrix_se import TSPMatrixSE
 
 
@@ -44,7 +44,7 @@ class ModelRegistry(Registry):
             "query_sat_lit": QuerySATLit,
             "neuro_sat": NeuroSAT,
             "tsp_matrix_se": TSPMatrixSE,
-            "shuffle_gnn": ShuffleGNN
+            "simple_neuro_sat": SimpleNeuroSAT
         }
 
 
