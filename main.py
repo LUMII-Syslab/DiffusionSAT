@@ -13,7 +13,7 @@ from metrics.base import EmptyMetric
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
-from utils.parameters_log import HP_TRAINABLE_PARAMS
+from utils.parameters_log import HP_TRAINABLE_PARAMS, HP_TASK
 
 
 def main():
@@ -210,6 +210,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                     model.log_visualizations(**model_input)
 
             hparams = model.get_config()
+            hparams[HP_TASK] = dataset.__class__.__name__
             hparams[HP_TRAINABLE_PARAMS] = np.sum([np.prod(v.shape) for v in model.trainable_variables])
             hp.hparams(hparams)
 
