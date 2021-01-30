@@ -61,7 +61,7 @@ class SATAccuracy(Metric):
         acc = [self.__accuracy_for_single(pred, clause) for pred, clause in zip(prediction, clauses)]
         acc, total_acc = zip(*acc)
 
-        return np.mean(acc), np.mean(total_acc)
+        return acc, total_acc
 
     @staticmethod
     def __split_batch(predictions, variable_count):
