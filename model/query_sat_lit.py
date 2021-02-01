@@ -30,7 +30,7 @@ class QuerySATLit(Model):
         self.literals_update = MLP(vote_layers, feature_maps * 2, feature_maps, name="variables_update", do_layer_norm=False)
 
         self.literals_output = MLP(vote_layers, feature_maps, 1, name="variables_output", do_layer_norm=False)
-        self.literals_query = MLP(msg_layers, query_maps * 2, query_maps * 2, name="variables_query", do_layer_norm=False)
+        self.literals_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query", do_layer_norm=False)
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -78,10 +78,8 @@ class QuerySATLit(Model):
                 step_loss = tf.reduce_sum(clauses_loss)
 
                 var_grad = grad_tape.gradient(step_loss, query)
-                # TODO: Better way to handle variable and literal size mismatch?
                 var_grad = tf.convert_to_tensor(var_grad)
-                literals_grad = tf.concat([var_grad[:, :self.query_maps], var_grad[:, self.query_maps:]], axis=0)
-                # literals_grad = tf.concat([variables_grad, variables_grad], axis=0)
+                literals_grad = tf.concat([var_grad, -var_grad], axis=0)
 
             if self.use_message_passing:
                 clause_messages = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals)
