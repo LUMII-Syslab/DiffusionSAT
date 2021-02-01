@@ -54,7 +54,7 @@ class Clique(KSAT):
         super(Clique, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000
-        self.test_size = 1000
+        self.test_size = 5000
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
         self.clique_size = 3
@@ -98,7 +98,7 @@ class DomSet(KSAT):
         super(DomSet, self).__init__(data_dir, min_vars=min_vertices, max_vertices=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000
-        self.test_size = 1000
+        self.test_size = 5000
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
 
@@ -144,7 +144,7 @@ class KColor(KSAT):
     def __init__(self, data_dir, min_vertices=5, max_vertices=20, force_data_gen=False, **kwargs) -> None:
         super(KColor, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000
-        self.test_size = 1000
+        self.test_size = 5000
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
 
