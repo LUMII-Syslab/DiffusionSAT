@@ -4,6 +4,7 @@ from abc import abstractmethod
 from pathlib import Path
 
 import tensorflow as tf
+from pysat.solvers import Glucose4
 
 from data.dataset import Dataset
 from utils.iterable import elements_to_str, elements_to_int, flatten
@@ -104,9 +105,15 @@ class DIMACDataset(Dataset):
             output_folder.mkdir(parents=True)
 
         print(f"Generating DIMACS data in '{output_folder}' directory!")
-        for idx, (n_vars, clauses) in enumerate(data_generator()):
+        for idx, (n_vars, clauses, *solution) in enumerate(data_generator()):
+
+            solution = solution if solution else get_sat_model(clauses)
+            solution = [int(x > 0) for x in solution]
+            solution = elements_to_str(solution)
+
             clauses = [elements_to_str(c) for c in clauses]
-            file = [f"p cnf {n_vars} {len(clauses)}"]
+            file = [f"c sol " + " ".join(solution)]
+            file += [f"p cnf {n_vars} {len(clauses)}"]
             file += [f"{' '.join(c)} 0" for c in clauses]
 
             out_filename = output_folder / f"sat_{n_vars}_{len(clauses)}_{idx}.dimacs"
@@ -119,10 +126,10 @@ class DIMACDataset(Dataset):
     @staticmethod
     def __read_dimacs_details(file):
         with open(file, 'r') as f:
-            first_line = f.readline()
-            first_line = first_line.strip()
-            *_, var_count, clauses_count = first_line.split()
-            return int(var_count), int(clauses_count)
+            for line in f:
+                values = line.strip().split()
+                if values[0] == "p" and values[1] == "cnf":
+                    return int(values[2]), int(values[3])
 
     @staticmethod
     def shift_variable(x, offset):
@@ -177,20 +184,23 @@ class DIMACDataset(Dataset):
         variable_count = []
         offset = 0
         original_clauses = []
+        solutions = []
 
         for file in batch:
             with open(file, 'r') as f:
                 lines = f.readlines()
 
-            *_, var_count, clauses_count = lines[0].strip().split()
+            solution = elements_to_int(lines[0].strip().split()[2:])
+            *_, var_count, clauses_count = lines[1].strip().split()
             var_count = int(var_count)
             clauses_count = int(clauses_count)
 
-            clauses = [elements_to_int(line.strip().split()[:-1]) for line in lines[1:]]
+            clauses = [elements_to_int(line.strip().split()[:-1]) for line in lines[2:]]
 
             clauses_in_formula.append(clauses_count)
             original_clauses.append(clauses)
             variable_count.append(var_count)
+            solutions.append(solution)
             batched_clauses.extend(self.shift_clause(clauses, offset))
             cells_in_formula.append(sum([len(c) for c in clauses]))
             offset += var_count
@@ -198,6 +208,8 @@ class DIMACDataset(Dataset):
         adj_indices_pos, adj_indices_neg = compute_adj_indices(batched_clauses)
 
         example_map = {
+            'solutions': self.__int64_feat(solutions),
+            'solutions_rows': self.__int64_feat([len(s) for s in solutions]),
             'clauses': self.__int64_feat(original_clauses),
             'clauses_len_first': self.__int64_feat([len(c) for c in original_clauses]),
             'clauses_len_second': self.__int64_feat([len(x) for c in original_clauses for x in c]),
@@ -253,24 +265,36 @@ class DIMACDataset(Dataset):
                                                        tf.io.RaggedFeature.RowLengths("clauses_len_second")]),
             'batched_clauses': tf.io.RaggedFeature(dtype=tf.int64, value_key="batched_clauses",
                                                    partitions=[tf.io.RaggedFeature.RowLengths('batched_clauses_rows')]),
+            'solutions': tf.io.RaggedFeature(dtype=tf.int64, value_key='solutions',
+                                             partitions=[tf.io.RaggedFeature.RowLengths('solutions_rows')]),
             'adj_indices_pos': tf.io.VarLenFeature(tf.int64),
             'adj_indices_neg': tf.io.VarLenFeature(tf.int64),
             'variable_count': tf.io.VarLenFeature(tf.int64),
             'clauses_in_formula': tf.io.VarLenFeature(tf.int64),
-            'cells_in_formula': tf.io.VarLenFeature(tf.int64)
+            'cells_in_formula': tf.io.VarLenFeature(tf.int64),
         }
 
         parsed = tf.io.parse_single_example(data_record, features)
 
         return {
             "clauses": tf.cast(parsed['clauses'], tf.int32),
+            "solutions": tf.cast(parsed['solutions'], tf.int32),
             "batched_clauses": tf.cast(parsed['batched_clauses'], tf.int32),
             "adj_indices_pos": sparse_to_dense(parsed['adj_indices_pos'], dtype=tf.int64, shape=[-1, 2]),
             "adj_indices_neg": sparse_to_dense(parsed['adj_indices_neg'], dtype=tf.int64, shape=[-1, 2]),
             "variable_count": sparse_to_dense(parsed['variable_count']),
             "clauses_in_formula": sparse_to_dense(parsed['clauses_in_formula']),
-            "cells_in_formula": sparse_to_dense(parsed['cells_in_formula'])
+            "cells_in_formula": sparse_to_dense(parsed['cells_in_formula']),
         }
+
+
+def get_sat_model(clauses: list):
+    with Glucose4(bootstrap_with=clauses) as solver:
+        is_sat = solver.solve()
+        if not is_sat:
+            raise ValueError("Can't get model for unSAT clause")
+        return solver.get_model()
+
 
 def sparse_to_dense(sparse_tensor, dtype=tf.int32, shape=None):
     tensor = tf.sparse.to_dense(sparse_tensor)

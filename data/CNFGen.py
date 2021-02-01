@@ -7,10 +7,6 @@ from pysat.solvers import Cadical
 
 from data.k_sat import KSAT
 
-
-# todo: implement literals version
-# todo: add more problems from cnfgen
-
 class SAT_3(KSAT):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
     """

@@ -99,7 +99,8 @@ class KSAT(DIMACDataset):
             "clauses": tf.cast(data["batched_clauses"], tf.int32),
             "variable_count": data["variable_count"],
             "clauses_count": data["clauses_in_formula"],
-            "normal_clauses": data["clauses"]
+            "normal_clauses": data["clauses"],
+            "solutions": data["solutions"]
         }
 
     @staticmethod

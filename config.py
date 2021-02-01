@@ -20,8 +20,8 @@ class Config:
     train_steps = 1000000
     warmup = 0.0
     learning_rate = 0.0001
-    model = 'query_sat_lit'  # query_sat, neuro_sat, tsp_matrix_se
-    task = 'sha-gen2019'  # k_sat_variables, k_sat_literals, k_color, 3-sat, clique, euclidean_tsp, asymmetric_tsp
+    model = 'query_sat_lit'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
+    task = 'sha-gen2019'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
 
     """Supported training and evaluation modes: """
