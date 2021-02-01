@@ -29,7 +29,7 @@ def tsp_loss(predictions, adjacency_matrix, labels=None, noise=0, log_in_tb=Fals
         loss_tensor = tf.nn.sigmoid_cross_entropy_with_logits(labels, predictions)
         loss_tensor = loss_tensor * mask  # sets padding and diagonal to zeros
         item_loss = tf.reduce_sum(loss_tensor, axis=[1,2])/tf.reduce_sum(mask, axis=[1,2])
-        #loss+=tf.reduce_mean(-tf.exp(-item_loss))
+        #loss += 1 - tf.reduce_mean(tf.exp(-item_loss))
         loss += tf.reduce_mean(item_loss)
     if unsupervised:
         loss += tsp_unsupervised_loss(predictions, adjacency_matrix, noise, log_in_tb, fast_inaccurate, subtour_projection)

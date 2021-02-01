@@ -14,8 +14,9 @@ class QuerySAT(Model):
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
                  vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=32, **kwargs):
+                 query_maps=32, supervised=False, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
+        self.supervised = supervised
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
@@ -69,7 +70,7 @@ class QuerySAT(Model):
         onehot = onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
         return onehot
 
-    def call(self, adj_matrix_pos, adj_matrix_neg, clauses=None, variable_count=None, clauses_count=None, training=None, mask=None):
+    def call(self, adj_matrix_pos, adj_matrix_neg, clauses=None, variable_count=None, clauses_count=None, training=None, mask=None, labels=None):
         shape = tf.shape(adj_matrix_pos)
         n_vars = shape[0]
         n_clauses = shape[1]
@@ -147,19 +148,23 @@ class QuerySAT(Model):
             variables = new_variables + 0.1 * variables
 
             logits = self.variables_output(variables, graph_mask=variables_mask)
-            # step_logits = step_logits.write(step, logits)
-            per_clause_loss = softplus_mixed_loss(logits, clauses)
-            per_graph_loss = tf.math.segment_sum(per_clause_loss, clauses_mask)
-            logit_loss = tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
+            if self.supervised:
+                if labels is not None:
+                    logit_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.expand_dims(tf.cast(labels, tf.float32), -1)))
+                else: logit_loss = 0.
+            else:
+                per_clause_loss = softplus_mixed_loss(logits, clauses)
+                per_graph_loss = tf.math.segment_sum(per_clause_loss, clauses_mask)
+                logit_loss = tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
 
             step_losses = step_losses.write(step, logit_loss)
             n_unsat_clauses = unsat_clause_count(logits, clauses)
             unsat_output = unsat_output.write(step, n_unsat_clauses)
-            # tf.summary.scalar("unsat_clauses" + str(step), n_unsat_clauses)
-            if logit_loss < 0.5 and n_unsat_clauses == 0:
-                labels = tf.round(tf.sigmoid(logits))  # now we know the answer, we can use it for supervised training
-                supervised_loss = tf.reduce_mean(
-                    tf.nn.sigmoid_cross_entropy_with_logits(logits=last_logits, labels=labels))
+            if n_unsat_clauses == 0:
+                if not self.supervised:
+                    labels_got = tf.round(tf.sigmoid(logits))  # now we know the answer, we can use it for supervised training
+                    supervised_loss = tf.reduce_mean(
+                        tf.nn.sigmoid_cross_entropy_with_logits(logits=last_logits, labels=labels_got))
                 last_logits = logits
                 break
             last_logits = logits
@@ -199,11 +204,12 @@ class QuerySAT(Model):
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
-                                  tf.TensorSpec(shape=[None], dtype=tf.int32)])
-    def train_step(self, adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count):
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
+    def train_step(self, adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count, solutions):
 
         with tf.GradientTape() as tape:
-            _, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count, training=True)
+            _, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count, training=True, labels=solutions.flat_values)
             train_vars = self.trainable_variables
             gradients = tape.gradient(loss, train_vars)
             self.optimizer.apply_gradients(zip(gradients, train_vars))
@@ -217,9 +223,10 @@ class QuerySAT(Model):
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
-                                  tf.TensorSpec(shape=[None], dtype=tf.int32)
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
                                   ])
-    def predict_step(self, adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count):
+    def predict_step(self, adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count,solutions):
         predictions, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count,
                                       training=False)
 

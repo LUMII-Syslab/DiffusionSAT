@@ -47,7 +47,7 @@ class SHAGen2019(KSAT):
     TMP_FILE_NAME = "data.tmp"
 
     def __init__(self, data_dir,
-                 min_vars=4, max_vars=100000,
+                 min_vars=4, max_vars=100020,
                  force_data_gen=False, **kwargs) -> None:
         super(SHAGen2019, self).__init__(data_dir, min_vars=min_vars,
                                          max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
@@ -60,7 +60,7 @@ class SHAGen2019(KSAT):
         #### constraints ####
         # how many free bits; max 512 free bits 
         self.bits_from = 2
-        self.bits_to = 6
+        self.bits_to = 20
 
         self.generate_hard_instances = True  # If True, for #rounds < 6 the set of clauses will be empty.
 
