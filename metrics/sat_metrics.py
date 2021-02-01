@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 from pysat.formula import CNF
-from pysat.solvers import Cadical
+from pysat.solvers import Glucose4
 
 from metrics.base import Metric
 
@@ -76,7 +76,7 @@ class SATAccuracy(Metric):
     @staticmethod
     def __accuracy_for_single(prediction, clauses):
         formula = CNF(from_clauses=[x.tolist() for x in clauses.numpy()])
-        with Cadical(bootstrap_with=formula.clauses) as solver:
+        with Glucose4(bootstrap_with=formula.clauses) as solver:
             assum = [i if prediction[i - 1] == 1 else -i for i in range(1, len(prediction), 1)]
             correct_pred = solver.solve(assumptions=assum)
             is_sat = solver.solve()
