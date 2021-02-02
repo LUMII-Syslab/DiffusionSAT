@@ -58,6 +58,7 @@ class DIMACDataset(Dataset):
 
     def train_data(self) -> tf.data.Dataset:
         data = self.fetch_dataset(self.train_generator, mode="train")
+        data = data.cache(str(self.data_dir / "train.cache"))
         data = data.shuffle(self.shuffle_size)
         data = data.repeat()
         return data.prefetch(tf.data.experimental.AUTOTUNE)
@@ -87,8 +88,7 @@ class DIMACDataset(Dataset):
     def read_dataset(self, data_folder):
         data_folder = data_folder / self.data_dir_name
         data_files = [str(d) for d in data_folder.glob("*.tfrecord")]
-
-        data = tf.data.TFRecordDataset(data_files, "GZIP")
+        data = tf.data.TFRecordDataset(data_files, "GZIP", num_parallel_reads=8)
         data = data.map(self.feature_from_file, tf.data.experimental.AUTOTUNE)
         return data
 

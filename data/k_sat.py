@@ -126,9 +126,8 @@ class KSAT(DIMACDataset):
     def __prepare_filter(self, input_mode):
         if input_mode == "variables":
             return lambda step_data: {
-                #"adj_matrix_pos": step_data["adjacency_matrix_pos"],
-                #"adj_matrix_neg": step_data["adjacency_matrix_neg"],
-                "adj_matrix": step_data["adjacency_matrix"],
+                "adj_matrix_pos": step_data["adjacency_matrix_pos"],
+                "adj_matrix_neg": step_data["adjacency_matrix_neg"],
                 "variable_count": step_data["variable_count"],
                 "clauses_count": step_data["clauses_count"],
                 "clauses": step_data["clauses"],
@@ -139,7 +138,8 @@ class KSAT(DIMACDataset):
                 "adj_matrix": step_data["adjacency_matrix"],
                 "variable_count": step_data["variable_count"],
                 "clauses_count": step_data["clauses_count"],
-                "clauses": step_data["clauses"]
+                "clauses": step_data["clauses"],
+                "solutions": step_data["solutions"]
             }
         else:
             raise NotImplementedError(
