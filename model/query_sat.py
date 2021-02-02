@@ -40,9 +40,9 @@ class QuerySAT(Model):
         onehot = onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
         return onehot
 
-    def call(self, adj_matrix_pos, adj_matrix_neg, clauses=None, variable_count=None, clauses_count=None, training=None, mask=None, labels=None):
-        shape = tf.shape(adj_matrix_pos)
-        n_vars = shape[0]
+    def call(self, adj_matrix, clauses=None, variable_count=None, clauses_count=None, training=None, mask=None, labels=None):
+        shape = tf.shape(adj_matrix)
+        n_vars = shape[0] // 2
         n_clauses = shape[1]
 
         graph_count = tf.shape(variable_count)
@@ -76,9 +76,9 @@ class QuerySAT(Model):
             new_clause_value = self.clauses_norm(new_clause_value, clauses_mask, training=training) * 0.25
             clause_state = new_clause_value + 0.1 * clause_state
 
-            # Aggregate loss over positive edges (x) and negative edges (not x)
-            variables_loss_pos = tf.sparse.sparse_dense_matmul(adj_matrix_pos, variables_loss_all)
-            variables_loss_neg = tf.sparse.sparse_dense_matmul(adj_matrix_neg, variables_loss_all)
+            # Aggregate loss over edges
+            variables_loss = tf.sparse.sparse_dense_matmul(adj_matrix, variables_loss_all)
+            variables_loss_pos, variables_loss_neg = tf.split(variables_loss, 2, axis=0)
 
             # calculate new variable state
             unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
@@ -132,15 +132,14 @@ class QuerySAT(Model):
         return last_logits, tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32) + supervised_loss
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
-    def train_step(self, adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count, solutions):
+    def train_step(self, adj_matrix, clauses, variable_count, clauses_count, solutions):
 
         with tf.GradientTape() as tape:
-            _, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count, training=True, labels=solutions.flat_values)
+            _, loss = self.call(adj_matrix, clauses, variable_count, clauses_count, training=True, labels=solutions.flat_values)
             train_vars = self.trainable_variables
             gradients = tape.gradient(loss, train_vars)
             self.optimizer.apply_gradients(zip(gradients, train_vars))
@@ -151,14 +150,13 @@ class QuerySAT(Model):
         }
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
                                   ])
-    def predict_step(self, adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count,solutions):
-        predictions, loss = self.call(adj_matrix_pos, adj_matrix_neg, clauses, variable_count, clauses_count,
+    def predict_step(self, adj_matrix, clauses, variable_count, clauses_count,solutions):
+        predictions, loss = self.call(adj_matrix, clauses, variable_count, clauses_count,
                                       training=False)
 
         return {
