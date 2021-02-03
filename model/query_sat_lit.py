@@ -163,8 +163,9 @@ class QuerySATLit(Model):
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
-                                  tf.TensorSpec(shape=[None], dtype=tf.int32)])
-    def train_step(self, adj_matrix, clauses, variable_count, clauses_count):
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
+    def train_step(self, adj_matrix, clauses, variable_count, clauses_count, solutions):
 
         with tf.GradientTape() as tape:
             _, loss = self.call(adj_matrix, clauses, variable_count, clauses_count, training=True)
@@ -189,9 +190,9 @@ class QuerySATLit(Model):
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
-                                  tf.TensorSpec(shape=[None], dtype=tf.int32)
-                                  ])
-    def predict_step(self, adj_matrix, clauses, variable_count, clauses_count):
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
+    def predict_step(self, adj_matrix, clauses, variable_count, clauses_count, solutions):
         predictions, loss = self.call(adj_matrix, clauses, variable_count, clauses_count, training=False)
 
         return {
