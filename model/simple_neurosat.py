@@ -16,8 +16,8 @@ class SimpleNeuroSAT(Model):
         self.feature_maps = 80
         self.n_rounds = 32
         self.norm_axis = 0
-        self.norm_eps = 1e-3
-        self.n_update_layers = 1
+        self.norm_eps = 1e-6
+        self.n_update_layers = 2
         self.n_score_layers = 3
 
         self.L_updates = [MLP(self.n_update_layers + 1, 2 * self.feature_maps + self.feature_maps, self.feature_maps,
@@ -75,11 +75,13 @@ class SimpleNeuroSAT(Model):
 
         return logits, loss / self.n_rounds
 
+
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
-                                  tf.TensorSpec(shape=[None], dtype=tf.int32)])
-    def train_step(self, adj_matrix, clauses, variable_count, clauses_count):
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
+    def train_step(self, adj_matrix, clauses, variable_count, clauses_count, solutions):
         with tf.GradientTape() as tape:
             logits, loss = self.call(adj_matrix, clauses, clauses_count, training=True)
             gradients = tape.gradient(loss, self.trainable_variables)
@@ -90,11 +92,13 @@ class SimpleNeuroSAT(Model):
             "gradients": gradients
         }
 
+
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
-                                  tf.TensorSpec(shape=[None], dtype=tf.int32)])
-    def predict_step(self, adj_matrix, clauses, variable_count, clauses_count):
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)])
+    def predict_step(self, adj_matrix, clauses, variable_count, clauses_count, solutions):
         predictions, loss = self.call(adj_matrix, clauses, clauses_count, training=False)
 
         return {
