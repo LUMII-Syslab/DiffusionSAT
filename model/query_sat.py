@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 
@@ -90,7 +91,8 @@ class QuerySAT(Model):
             logits = self.variables_output(variables, graph_mask=variables_mask)
             if self.supervised:
                 if labels is not None:
-                    logit_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.expand_dims(tf.cast(labels, tf.float32), -1)))
+                    smoothed_labels = 0.5*0.1+tf.expand_dims(tf.cast(labels, tf.float32), -1)*0.9
+                    logit_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=smoothed_labels))
                 else: logit_loss = 0.
             else:
                 per_clause_loss = softplus_mixed_loss(logits, clauses)
