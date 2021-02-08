@@ -3,27 +3,28 @@ import math
 import tensorflow as tf
 from tensorflow.keras.models import Model
 
-from loss.sat import softplus_mixed_loss
+from loss.sat import softplus_mixed_loss, unsat_clause_count
 from model.mlp import MLP
 from utils.parameters_log import *
 
 
 class SimpleNeuroSAT(Model):
-    def __init__(self, optimizer, **kwargs):
+    def __init__(self, optimizer, test_rounds=64, train_rounds=32, **kwargs):
         super(SimpleNeuroSAT, self).__init__(**kwargs)
         self.optimizer = optimizer
 
-        self.feature_maps = 80
-        self.n_rounds = 32
+        self.feature_maps = 128
+        self.train_rounds = train_rounds
+        self.test_rounds = test_rounds
         self.norm_axis = 0
         self.norm_eps = 1e-6
         self.n_update_layers = 2
         self.n_score_layers = 3
 
-        self.L_updates = [MLP(self.n_update_layers + 1, 2 * self.feature_maps + self.feature_maps, self.feature_maps,
-                              activation=tf.nn.relu6, name="L_u")] * self.n_rounds
-        self.C_updates = [MLP(self.n_update_layers + 1, self.feature_maps + self.feature_maps, self.feature_maps,
-                              activation=tf.nn.relu6, name="C_u")] * self.n_rounds
+        self.L_updates = MLP(self.n_update_layers + 1, 2 * self.feature_maps + self.feature_maps, self.feature_maps,
+                             activation=tf.nn.relu6, name="L_u")
+        self.C_updates = MLP(self.n_update_layers + 1, self.feature_maps + self.feature_maps, self.feature_maps,
+                             activation=tf.nn.relu6, name="C_u")
 
         init = tf.constant_initializer(1.0 / math.sqrt(self.feature_maps))
         self.L_init_scale = self.add_weight(name="L_init_scale", shape=[], initializer=init)
@@ -48,20 +49,23 @@ class SimpleNeuroSAT(Model):
         graph_id = tf.range(0, graph_count[0])
         clauses_mask = tf.repeat(graph_id, clauses_count)
 
-        loss = 0
+        loss = 0.
 
         def flip(lits):
             return tf.concat([lits[n_vars:, :], lits[0:n_vars, :]], axis=0)
 
-        for t in range(self.n_rounds):
+        rounds = self.train_rounds if training else self.test_rounds
+        logits = tf.zeros([n_vars, 1])
+
+        for _ in tf.range(rounds):
             LC_msgs = tf.sparse.sparse_dense_matmul(CL, L) * self.LC_scale
-            C = self.C_updates[t](tf.concat([C, LC_msgs], axis=-1))
+            C = self.C_updates(tf.concat([C, LC_msgs], axis=-1))
             C = tf.debugging.check_numerics(C, message="C after update")
             C = normalize(C, axis=self.norm_axis, eps=self.norm_eps)
             C = tf.debugging.check_numerics(C, message="C after norm")
 
             CL_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, C) * self.CL_scale
-            L = self.L_updates[t](tf.concat([L, CL_msgs, flip(L)], axis=-1))
+            L = self.L_updates(tf.concat([L, CL_msgs, flip(L)], axis=-1))
             L = tf.debugging.check_numerics(L, message="L after update")
             L = normalize(L, axis=self.norm_axis, eps=self.norm_eps)
             L = tf.debugging.check_numerics(L, message="L after norm")
@@ -73,8 +77,11 @@ class SimpleNeuroSAT(Model):
             per_graph_loss = tf.math.segment_sum(per_clause_loss, clauses_mask)
             loss += tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
 
-        return logits, loss / self.n_rounds
+            n_unsat_clauses = unsat_clause_count(logits, clauses)
+            if n_unsat_clauses == 0:
+                break
 
+        return logits, loss / tf.cast(rounds, tf.float32)
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
@@ -92,7 +99,6 @@ class SimpleNeuroSAT(Model):
             "gradients": gradients
         }
 
-
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
@@ -109,8 +115,8 @@ class SimpleNeuroSAT(Model):
     def get_config(self):
         return {HP_MODEL: self.__class__.__name__,
                 HP_FEATURE_MAPS: self.feature_maps,
-                HP_TRAIN_ROUNDS: self.n_rounds,
-                HP_TEST_ROUNDS: self.n_rounds,
+                HP_TRAIN_ROUNDS: self.train_rounds,
+                HP_TEST_ROUNDS: self.test_rounds,
                 HP_MLP_LAYERS: self.n_update_layers
                 }
 
