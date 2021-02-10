@@ -36,8 +36,8 @@ class PairNorm(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         num_units = input_shape.as_list()[-1]
-        if self.subtract_mean:
-            self.bias = self.add_weight("bias", [num_units], initializer=tf.zeros_initializer)
+        # if self.subtract_mean:
+        #     self.bias = self.add_weight("bias", [num_units], initializer=tf.zeros_initializer)
 
     def call(self, inputs, graph_mask=None, **kwargs):
         """
@@ -49,14 +49,14 @@ class PairNorm(tf.keras.layers.Layer):
             mean = tf.math.unsorted_segment_mean(inputs, graph_mask, tf.reduce_max(graph_mask) + 1)
             # mean = tf.math.segment_mean(inputs, graph_mask)
             inputs -= tf.gather(mean, graph_mask)
-            inputs += self.bias
+            #inputs += self.bias
 
         # input size: cells x feature_maps
         # nb here we deviate from PairNorm, we use axis=0, PairNorm uses axis=1
-        if graph_mask is not None:
-            variance = tf.math.unsorted_segment_mean(tf.square(inputs), graph_mask, tf.reduce_max(graph_mask) + 1)
-            variance = tf.gather(variance, graph_mask)
-        else:
-            variance = tf.reduce_mean(tf.square(inputs), axis=0, keepdims=True)
+        # if graph_mask is not None:
+        #     variance = tf.math.unsorted_segment_mean(tf.square(inputs), graph_mask, tf.reduce_max(graph_mask) + 1)
+        #     variance = tf.gather(variance, graph_mask)
+        # else:
+        variance = tf.reduce_mean(tf.square(inputs), axis=1, keepdims=True)
 
-        return inputs * tf.math.rsqrt(variance + self.epsilon)
+        return inputs * tf.math.rsqrt(variance + self.epsilon)#+self.bias

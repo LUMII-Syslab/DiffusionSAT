@@ -15,12 +15,13 @@ class QuerySAT(Model):
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
                  vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=32, supervised=False, **kwargs):
+                 query_maps=32, supervised=True, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
+        self.use_message_passing = True
 
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
@@ -30,6 +31,7 @@ class QuerySAT(Model):
         self.variables_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query", do_layer_norm=False)
         self.clause_mlp = MLP(vote_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update",
                               do_layer_norm=False)
+        self.lit_mlp = MLP(msg_layers, query_maps * 4, query_maps*2, name="lit_query", do_layer_norm=False)
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
@@ -53,24 +55,74 @@ class QuerySAT(Model):
 
         variables = self.zero_state(n_vars, self.feature_maps)
         clause_state = self.zero_state(n_clauses, self.feature_maps)
-        step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
-        unsat_output = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         last_logits = tf.zeros([n_vars, 1])
         supervised_loss = 0.
 
         rounds = self.train_rounds if training else self.test_rounds
+        # pre_rounds = tf.random.uniform([],0,32, dtype = tf.int32)
+        #
+        # last_logits, step, step_losses, supervised_loss, unsat_output, clause_state, variables = self.loop(adj_matrix, clause_state, clauses, clauses_mask, labels, last_logits, n_vars, pre_rounds, supervised_loss,
+        #                                                                           training, variables, variables_mask)
+        #
+        # clause_state = tf.stop_gradient(clause_state)
+        # variables = tf.stop_gradient(variables)
+        last_logits, step, step_losses, supervised_loss, unsat_output, clause_state, variables = self.loop(adj_matrix, clause_state, clauses, clauses_mask, labels, last_logits, n_vars, rounds, supervised_loss,
+                                                                                  training, variables, variables_mask)
+
+        if training:
+            last_clauses = softplus_loss(last_logits, clauses)
+            tf.summary.histogram("clauses", last_clauses)
+            last_layer_loss = tf.reduce_sum(softplus_log_loss(last_logits, clauses))
+            tf.summary.histogram("logits", last_logits)
+            tf.summary.scalar("last_layer_loss", last_layer_loss)
+            # log_as_histogram("step_losses", step_losses.stack())
+
+            with tf.name_scope("unsat_clauses"):
+                unsat_o = unsat_output.stack()
+                log_discreate_as_histogram("outputs", unsat_o)
+
+            tf.summary.scalar("steps_taken", step)
+            tf.summary.scalar("supervised_loss", supervised_loss)
+
+        return last_logits, tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32) + supervised_loss
+
+    def loop(self, adj_matrix, clause_state, clauses, clauses_mask, labels, last_logits, n_vars, rounds, supervised_loss, training, variables, variables_mask):
+        step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+        unsat_output = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+        cl_adj_matrix = tf.sparse.transpose(adj_matrix)
+        shape = tf.shape(adj_matrix)
+        n_clauses = shape[1]
+        lit_degree = tf.sparse.sparse_dense_matmul(adj_matrix, tf.ones([n_clauses,1]))
+        degree_weight = tf.math.rsqrt(lit_degree+1)
+        #rev_degree_weight = tf.math.rsqrt(tf.sparse.sparse_dense_matmul(cl_adj_matrix, tf.ones([n_vars*2,1]))+1)
+        rev_degree_weight1 = tf.math.sqrt(tf.sparse.sparse_dense_matmul(cl_adj_matrix, tf.ones([n_vars*2,1]))+1)
+        var_degree_weight = tf.math.rsqrt(lit_degree[0:n_vars]+lit_degree[n_vars:]+1)
+        q_msg = tf.zeros([n_clauses, self.query_maps])
+        cl_msg = tf.zeros([n_clauses, self.query_maps])
+
 
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
             with tf.GradientTape() as grad_tape:
-                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1) # add some randomness to avoid zero collapse in normalization
+                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)  # add some randomness to avoid zero collapse in normalization
                 query = self.variables_query(v1, graph_mask=variables_mask)
                 clauses_loss = softplus_loss(query, clauses)
                 step_loss = tf.reduce_sum(clauses_loss)
             variables_grad = grad_tape.gradient(step_loss, query)
 
             # calculate new clause state
-            clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
+            #clauses_loss*=rev_degree_weight1
+            if self.use_message_passing:
+                var_msg = self.lit_mlp(variables, training=training, graph_mask=variables_mask)
+                lit1, lit2 = tf.split(var_msg, 2, axis=1)
+                literals = tf.concat([lit1, lit2], axis=0)
+                clause_messages = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals)
+                #clause_messages *= rev_degree_weight
+                q_msg = clauses_loss
+                cl_msg = clause_messages
+                clause_unit = tf.concat([clause_state, clause_messages, clauses_loss], axis=-1)
+            else:
+                clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
             clause_data = self.clause_mlp(clause_unit, graph_mask=clauses_mask)
             variables_loss_all = clause_data[:, 0:self.query_maps]
             new_clause_value = clause_data[:, self.query_maps:]
@@ -79,10 +131,11 @@ class QuerySAT(Model):
 
             # Aggregate loss over edges
             variables_loss = tf.sparse.sparse_dense_matmul(adj_matrix, variables_loss_all)
+            variables_loss *= degree_weight
             variables_loss_pos, variables_loss_neg = tf.split(variables_loss, 2, axis=0)
 
             # calculate new variable state
-            unit = tf.concat([variables, variables_grad, variables_loss_pos, variables_loss_neg], axis=-1)
+            unit = tf.concat([variables_grad, variables, variables_loss_pos, variables_loss_neg], axis=-1)
             new_variables = self.update_gate(unit, graph_mask=variables_mask)
             new_variables = self.variables_norm(new_variables, variables_mask, training=training) * 0.25
             variables = new_variables + 0.1 * variables
@@ -91,9 +144,10 @@ class QuerySAT(Model):
             logits = self.variables_output(variables, graph_mask=variables_mask)
             if self.supervised:
                 if labels is not None:
-                    smoothed_labels = 0.5*0.1+tf.expand_dims(tf.cast(labels, tf.float32), -1)*0.9
+                    smoothed_labels = 0.5 * 0.1 + tf.expand_dims(tf.cast(labels, tf.float32), -1) * 0.9
                     logit_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=smoothed_labels))
-                else: logit_loss = 0.
+                else:
+                    logit_loss = 0.
             else:
                 per_clause_loss = softplus_mixed_loss(logits, clauses)
                 per_graph_loss = tf.math.segment_sum(per_clause_loss, clauses_mask)
@@ -117,21 +171,9 @@ class QuerySAT(Model):
             clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
 
         if training:
-            last_clauses = softplus_loss(last_logits, clauses)
-            tf.summary.histogram("clauses", last_clauses)
-            last_layer_loss = tf.reduce_sum(softplus_log_loss(last_logits, clauses))
-            tf.summary.histogram("logits", last_logits)
-            tf.summary.scalar("last_layer_loss", last_layer_loss)
-            # log_as_histogram("step_losses", step_losses.stack())
-
-            with tf.name_scope("unsat_clauses"):
-                unsat_o = unsat_output.stack()
-                log_discreate_as_histogram("outputs", unsat_o)
-
-            tf.summary.scalar("steps_taken", step)
-            tf.summary.scalar("supervised_loss", supervised_loss)
-
-        return last_logits, tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32) + supervised_loss
+            tf.summary.histogram("query_msg", q_msg)
+            tf.summary.histogram("clause_msg", cl_msg)
+        return last_logits, step, step_losses, supervised_loss, unsat_output, clause_state, variables
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
