@@ -15,7 +15,7 @@ class QuerySAT(Model):
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
                  vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=32, supervised=True, **kwargs):
+                 query_maps=32, supervised=False, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
         self.train_rounds = train_rounds
@@ -93,13 +93,15 @@ class QuerySAT(Model):
         shape = tf.shape(adj_matrix)
         n_clauses = shape[1]
         lit_degree = tf.sparse.sparse_dense_matmul(adj_matrix, tf.ones([n_clauses,1]))
-        degree_weight = tf.math.rsqrt(lit_degree+1)
-        #rev_degree_weight = tf.math.rsqrt(tf.sparse.sparse_dense_matmul(cl_adj_matrix, tf.ones([n_vars*2,1]))+1)
-        rev_degree_weight1 = tf.math.sqrt(tf.sparse.sparse_dense_matmul(cl_adj_matrix, tf.ones([n_vars*2,1]))+1)
-        var_degree_weight = tf.math.rsqrt(lit_degree[0:n_vars]+lit_degree[n_vars:]+1)
+        degree_weight = tf.math.rsqrt(tf.maximum(lit_degree,1))
+        var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars,:]+lit_degree[n_vars:,:], 1))
+        rev_lit_degree = tf.sparse.sparse_dense_matmul(cl_adj_matrix, tf.ones([n_vars*2,1]))
+        rev_degree_weight = tf.math.rsqrt(rev_lit_degree+1)
         q_msg = tf.zeros([n_clauses, self.query_maps])
         cl_msg = tf.zeros([n_clauses, self.query_maps])
-
+        v_grad = tf.zeros([n_vars, self.query_maps])
+        query = tf.zeros([n_vars, self.query_maps])
+        var_loss_msg = tf.zeros([n_vars*2, self.query_maps])
 
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
@@ -108,17 +110,19 @@ class QuerySAT(Model):
                 query = self.variables_query(v1, graph_mask=variables_mask)
                 clauses_loss = softplus_loss(query, clauses)
                 step_loss = tf.reduce_sum(clauses_loss)
-            variables_grad = grad_tape.gradient(step_loss, query)
 
+            variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
+            variables_grad = variables_grad*var_degree_weight
             # calculate new clause state
-            #clauses_loss*=rev_degree_weight1
+            clauses_loss *= 4
+            q_msg = clauses_loss
+
             if self.use_message_passing:
                 var_msg = self.lit_mlp(variables, training=training, graph_mask=variables_mask)
                 lit1, lit2 = tf.split(var_msg, 2, axis=1)
                 literals = tf.concat([lit1, lit2], axis=0)
                 clause_messages = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals)
-                #clause_messages *= rev_degree_weight
-                q_msg = clauses_loss
+                clause_messages *= rev_degree_weight
                 cl_msg = clause_messages
                 clause_unit = tf.concat([clause_state, clause_messages, clauses_loss], axis=-1)
             else:
@@ -132,7 +136,9 @@ class QuerySAT(Model):
             # Aggregate loss over edges
             variables_loss = tf.sparse.sparse_dense_matmul(adj_matrix, variables_loss_all)
             variables_loss *= degree_weight
+            var_loss_msg = variables_loss
             variables_loss_pos, variables_loss_neg = tf.split(variables_loss, 2, axis=0)
+            v_grad = variables_grad
 
             # calculate new variable state
             unit = tf.concat([variables_grad, variables, variables_loss_pos, variables_loss_neg], axis=-1)
@@ -170,9 +176,12 @@ class QuerySAT(Model):
             variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
             clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
 
-        if training:
-            tf.summary.histogram("query_msg", q_msg)
-            tf.summary.histogram("clause_msg", cl_msg)
+        # if training:
+        #     tf.summary.histogram("query_msg", q_msg)
+        #     tf.summary.histogram("clause_msg", cl_msg)
+        #     tf.summary.histogram("var_grad", v_grad)
+        #     tf.summary.histogram("var_loss_msg", var_loss_msg)
+        #     tf.summary.histogram("query", query)
         return last_logits, step, step_losses, supervised_loss, unsat_output, clause_state, variables
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
