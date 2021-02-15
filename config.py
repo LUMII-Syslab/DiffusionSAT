@@ -32,6 +32,7 @@ class Config:
     evaluate_batch_gen = False
     evaluate_batch_gen_train = False
     evaluate_variable_gen = False
+    test_classic_solver = False
 
     """Internal config variables: """
     __arguments_parsed = False

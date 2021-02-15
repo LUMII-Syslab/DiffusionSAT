@@ -14,6 +14,7 @@ from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
 from utils.parameters_log import HP_TRAINABLE_PARAMS, HP_TASK
+from pysat.solvers import Cadical
 
 
 def main():
@@ -57,6 +58,9 @@ def main():
     if Config.test_invariance:
         test_invariance(dataset, dataset.test_data(), model, 20)
 
+    if Config.test_classic_solver:
+        variable_gen_classic_solver()
+
 
 def evaluate_variable_generalization(model):
     results_file = get_valid_file("gen_variables_size_result.txt")
@@ -80,6 +84,40 @@ def evaluate_variable_generalization(model):
         prepend_line = f"Results for dataset with min_vars={var_count} and max_vars={var_count + step} and elapsed_time={elapsed:.2f}:"
         for metric in test_metrics:
             metric.log_in_file(str(results_file), prepend_str=prepend_line)
+
+
+def variable_gen_classic_solver():
+    results_file = get_valid_file("evaluation_classic_solver.txt")
+
+    lower_limit = 5
+    upper_limit = 1100
+    step = 100
+
+    for var_count in range(lower_limit, upper_limit, step):
+        print(f"Generating dataset with min_vars={var_count} and max_vars={var_count + step}")
+        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                         force_data_gen=Config.force_data_gen,
+                                                         input_mode=Config.input_mode,
+                                                         max_nodes_per_batch=20000,
+                                                         min_vars=var_count,
+                                                         max_vars=var_count + step)
+
+        total_time = evaluate_classic_solver(dataset.test_data(), steps=1)
+        prepend_line = f"Results for dataset with min_vars={var_count} and max_vars={var_count + step} and elapsed_time={total_time:.2f}\n"
+        with results_file.open("a") as file:
+            file.write(prepend_line)
+
+
+def evaluate_classic_solver(data: tf.data.Dataset, steps: int = None):
+    iterator = itertools.islice(data, steps) if steps else data
+    total_time = 0
+    for step_data in iterator:
+        clauses = step_data["clauses"].numpy().tolist()
+        with Cadical(bootstrap_with=clauses, use_timer=True) as solver:
+            _ = solver.solve()
+            total_time = solver.time()
+
+    return total_time
 
 
 def get_valid_file(file: str):
