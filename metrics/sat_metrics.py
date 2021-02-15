@@ -129,7 +129,7 @@ class SATAccuracy(Metric):
 
     def __accuracy(self, prediction, step_data):
         prediction = tf.round(tf.sigmoid(prediction))
-        prediction = self.__split_batch(prediction, step_data["variable_count"])
+        prediction = self.__split_batch(prediction, step_data["variables_in_graph"])
 
         clauses = step_data["normal_clauses"]
         acc = [self.__accuracy_for_single(pred, clause) for pred, clause in zip(prediction, clauses)]

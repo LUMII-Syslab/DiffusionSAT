@@ -58,7 +58,6 @@ class DIMACDataset(Dataset):
 
     def train_data(self) -> tf.data.Dataset:
         data = self.fetch_dataset(self.train_generator, mode="train")
-        data = data.cache(str(self.data_dir / "train.cache"))
         data = data.shuffle(self.shuffle_size)
         data = data.repeat()
         return data.prefetch(tf.data.experimental.AUTOTUNE)

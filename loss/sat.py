@@ -89,6 +89,17 @@ def softplus_mixed_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTenso
     return clauses_val * log_clauses
 
 
+def softplus_mixed_loss_adj(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, eps=1e-8):
+    """
+    :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
+    :param clauses: RaggedTensor of input clauses in DIMAC format
+    :return: returns per clause loss which is log_loss multiplied with linear loss
+    """
+    clauses_val = softplus_loss_adj(variable_predictions, adj_matrix)
+    log_clauses = -(tf.math.log(1 - clauses_val + eps) - tf.math.log(1 + eps))
+    return clauses_val * log_clauses
+
+
 def softplus_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, power=1.):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
@@ -106,6 +117,21 @@ def softplus_loss(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor, pow
 
     variables = tf.nn.softplus(variables)
     clauses_val = tf.math.segment_sum(variables, clauses_mask)
+    clauses_val = tf.exp(-clauses_val * power)
+
+    return clauses_val
+
+
+def softplus_loss_adj(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, power=1.):
+    """
+    :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
+    :param adj_matrix: Sparse tensor with dense shape literals x clauses
+    :return: returns per clause loss in range [0..1] - 0 if clause is satisfied, 1 if not satisfied
+    """
+
+    literals = tf.concat([variable_predictions, -variable_predictions], axis=0)
+    literals = tf.nn.softplus(literals)
+    clauses_val = tf.sparse.sparse_dense_matmul(adj_matrix, literals)
     clauses_val = tf.exp(-clauses_val * power)
 
     return clauses_val
