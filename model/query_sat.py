@@ -87,11 +87,11 @@ class QuerySAT(Model):
         n_clauses = shape[1]
         n_vars = shape[0] // 2
         last_logits = tf.zeros([n_vars, 1])
-        lit_degree = tf.sparse.sparse_dense_matmul(adj_matrix, tf.ones([n_clauses,1]))
+        lit_degree = tf.reshape(tf.sparse.reduce_sum(adj_matrix, axis=1),[n_vars*2,1])
         degree_weight = tf.math.rsqrt(tf.maximum(lit_degree,1))
         var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars,:]+lit_degree[n_vars:,:], 1))
-        rev_lit_degree = tf.sparse.sparse_dense_matmul(cl_adj_matrix, tf.ones([n_vars*2,1]))
-        rev_degree_weight = tf.math.rsqrt(rev_lit_degree+1)
+        rev_lit_degree = tf.reshape(tf.sparse.reduce_sum(cl_adj_matrix, axis=1), [n_clauses, 1])
+        rev_degree_weight = tf.math.rsqrt(tf.maximum(rev_lit_degree,1))
         # q_msg = tf.zeros([n_clauses, self.query_maps])
         # cl_msg = tf.zeros([n_clauses, self.query_maps])
         # v_grad = tf.zeros([n_vars, self.query_maps])
