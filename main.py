@@ -102,7 +102,7 @@ def variable_gen_classic_solver():
                                                          min_vars=var_count,
                                                          max_vars=var_count + step)
 
-        total_time = evaluate_classic_solver(dataset.test_data(), steps=1)
+        total_time = evaluate_classic_solver(dataset.test_data(), steps=100)
         prepend_line = f"Results for dataset with min_vars={var_count} and max_vars={var_count + step} and elapsed_time={total_time:.2f}\n"
         with results_file.open("a") as file:
             file.write(prepend_line)
@@ -117,7 +117,7 @@ def evaluate_classic_solver(data: tf.data.Dataset, steps: int = None):
             _ = solver.solve()
             total_time = solver.time()
 
-    return total_time
+    return total_time / steps
 
 
 def get_valid_file(file: str):
@@ -180,18 +180,19 @@ def evaluate_batch_generalization(model):
 
 def evaluate_round_generalization(dataset, optimizer):
     results_file = get_valid_file("gen_steps_result.txt")
+    steps = 100
 
     test_data = dataset.test_data()
-    for test_rounds in [2 ** r for r in range(4, 11, 1)]:
+    for test_rounds in [2 ** r for r in range(4, 15, 1)]:
         model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, test_rounds=test_rounds)
         print(f"Evaluating model with test_rounds={test_rounds}")
         _ = prepare_checkpoints(model, optimizer)
 
         start_time = time.time()
-        test_metrics = evaluate_metrics(dataset, test_data, model, steps=1)
-        elapsed_time = start_time - start_time
+        test_metrics = evaluate_metrics(dataset, test_data, model, steps=steps)
+        elapsed_time = time.time() - start_time
 
-        message = f"Results for model with test_rounds={test_rounds} and elapsed_time={elapsed_time}:"
+        message = f"Results for model with test_rounds={test_rounds} and elapsed_time={elapsed_time/steps:.3f}:"
         for metric in test_metrics:
             metric.log_in_file(str(results_file), prepend_str=message)
 

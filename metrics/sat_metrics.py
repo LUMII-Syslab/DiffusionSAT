@@ -55,13 +55,28 @@ class SATAccuracyTF(Metric):
 
     def __accuracy(self, predictions, step_data):
         predictions = tf.round(tf.sigmoid(predictions))
-        equal_variables = tf.equal(tf.cast(predictions, tf.int32), step_data["solutions"].flat_values)
-        equal_variables = tf.cast(equal_variables, tf.float32)
-        correct = tf.reduce_sum(equal_variables)
-        acc = correct / tf.cast(tf.reduce_sum(step_data["variable_count"]), tf.float32)
+        predictions = tf.cast(predictions, tf.int32)
 
-        clauses = step_data["clauses"]
-        total_acc = self.is_sat_assignment(predictions, clauses, step_data["clauses_count"])
+        lc_adj_matrix = tf.cast(step_data["adjacency_matrix"], tf.int32)
+
+        if "solutions" in step_data and step_data["solutions"] is not None:
+            equal_variables = tf.equal(predictions, step_data["solutions"].flat_values)
+            equal_variables = tf.cast(equal_variables, tf.float32)
+            correct = tf.reduce_sum(equal_variables)
+            acc = correct / tf.cast(tf.shape(lc_adj_matrix)[0], tf.float32)
+        else:
+            acc = -1
+
+        literals = tf.concat([predictions, 1 - predictions], axis=0)
+        literals = tf.expand_dims(literals, axis=-1)
+        clauses = tf.sparse.sparse_dense_matmul(lc_adj_matrix, literals, adjoint_a=True)
+        clauses = tf.clip_by_value(clauses, 0, 1)
+
+        gc_adj = step_data["clauses_graph_adj"]
+        gc_adj = tf.cast(gc_adj, tf.int32)
+        sat_clauses_per_graph = tf.sparse.sparse_dense_matmul(gc_adj, clauses)
+        sat_clauses_per_graph = tf.squeeze(sat_clauses_per_graph, axis=-1)
+        total_acc = tf.equal(sat_clauses_per_graph, tf.sparse.reduce_sum(gc_adj, axis=-1))
 
         return acc, total_acc
 
