@@ -13,13 +13,14 @@ class QuerySAT(Model):
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
                  vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=32, supervised=False, **kwargs):
+                 query_maps=128, supervised=True, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
         self.use_message_passing = True
+        self.skip_first_rounds = 0
 
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
@@ -48,31 +49,18 @@ class QuerySAT(Model):
 
         variables = self.zero_state(n_vars, self.feature_maps)
         clause_state = self.zero_state(n_clauses, self.feature_maps)
-        last_logits = tf.zeros([n_vars, 1])
-        supervised_loss = 0.
-
         rounds = self.train_rounds if training else self.test_rounds
-        # pre_rounds = tf.random.uniform([],0,32, dtype = tf.int32)
-        #
-        # last_logits, step, step_losses, supervised_loss, unsat_output, clause_state, variables = self.loop(adj_matrix, clause_state, clauses, clauses_mask, labels, last_logits, n_vars, pre_rounds, supervised_loss,
-        #                                                                           training, variables, variables_mask)
-        #
-        # clause_state = tf.stop_gradient(clause_state)
-        # variables = tf.stop_gradient(variables)
-        last_logits, step, step_losses, supervised_loss, unsat_output, clause_state, variables = self.loop(
-            adj_matrix=adj_matrix,
-            clause_state=clause_state,
-            clauses_graph=clauses_graph,
-            clauses_in_graph=clauses_in_graph,
-            labels=labels,
-            last_logits=last_logits,
-            n_vars=n_vars,
-            rounds=rounds,
-            supervised_loss=supervised_loss,
-            training=training,
-            variables=variables,
-            variables_graph=variables_graph,
-            variables_in_graph=variables_in_graph)
+
+        if training and self.skip_first_rounds > 0: # do some first rounds without training
+            pre_rounds = tf.random.uniform([], 0, self.skip_first_rounds + 1, dtype = tf.int32)
+            _, _, _, supervised_loss0, _, clause_state, variables = self.loop(adj_matrix, clause_state, clauses_graph, clauses_in_graph, labels, pre_rounds,
+                                                                                      training, variables, variables_graph, variables_in_graph)
+
+            clause_state = tf.stop_gradient(clause_state)
+            variables = tf.stop_gradient(variables)
+
+        last_logits, step, step_losses, supervised_loss, unsat_output, clause_state, variables = self.loop(adj_matrix, clause_state, clauses_graph, clauses_in_graph, labels, rounds,
+                                                                                  training, variables, variables_graph, variables_in_graph)
 
         if training:
             last_clauses = softplus_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix))
@@ -91,23 +79,25 @@ class QuerySAT(Model):
 
         return last_logits, tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32) + supervised_loss
 
-    def loop(self, adj_matrix, clause_state, clauses_graph, clauses_in_graph, labels, last_logits, n_vars, rounds,
-             supervised_loss, training, variables, variables_graph, variables_in_graph):
+    def loop(self, adj_matrix, clause_state, clauses_graph, clauses_in_graph, labels, rounds, training, variables, variables_graph, variables_in_graph):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         unsat_output = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
         shape = tf.shape(adj_matrix)
         n_clauses = shape[1]
-        lit_degree = tf.sparse.sparse_dense_matmul(adj_matrix, tf.ones([n_clauses, 1]))
-        degree_weight = tf.math.rsqrt(tf.maximum(lit_degree, 1))
-        var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars, :] + lit_degree[n_vars:, :], 1))
-        rev_lit_degree = tf.sparse.sparse_dense_matmul(cl_adj_matrix, tf.ones([n_vars * 2, 1]))
-        rev_degree_weight = tf.math.rsqrt(rev_lit_degree + 1)
-        q_msg = tf.zeros([n_clauses, self.query_maps])
-        cl_msg = tf.zeros([n_clauses, self.query_maps])
-        v_grad = tf.zeros([n_vars, self.query_maps])
-        query = tf.zeros([n_vars, self.query_maps])
-        var_loss_msg = tf.zeros([n_vars * 2, self.query_maps])
+        n_vars = shape[0] // 2
+        last_logits = tf.zeros([n_vars, 1])
+        lit_degree = tf.sparse.sparse_dense_matmul(adj_matrix, tf.ones([n_clauses,1]))
+        degree_weight = tf.math.rsqrt(tf.maximum(lit_degree,1))
+        var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars,:]+lit_degree[n_vars:,:], 1))
+        rev_lit_degree = tf.sparse.sparse_dense_matmul(cl_adj_matrix, tf.ones([n_vars*2,1]))
+        rev_degree_weight = tf.math.rsqrt(rev_lit_degree+1)
+        # q_msg = tf.zeros([n_clauses, self.query_maps])
+        # cl_msg = tf.zeros([n_clauses, self.query_maps])
+        # v_grad = tf.zeros([n_vars, self.query_maps])
+        # query = tf.zeros([n_vars, self.query_maps])
+        # var_loss_msg = tf.zeros([n_vars*2, self.query_maps])
+        supervised_loss = 0.
 
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
