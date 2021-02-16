@@ -100,7 +100,7 @@ class KSAT(DIMACDataset):
         c_g_indices = tf.stack([clauses_mask, clauses_enum], axis=1)
         c_g_indices = tf.cast(c_g_indices, tf.int64)
         clauses_graph_adj = self.create_adjacency_matrix(c_g_indices,
-                                                  self.create_shape(tf.cast(graph_count[0], tf.int64),
+                                                         self.create_shape(tf.cast(graph_count[0], tf.int64),
                                                                            var_shape[1]))
 
         variables_enum = tf.range(0, var_shape[0], dtype=tf.int32)
@@ -114,13 +114,9 @@ class KSAT(DIMACDataset):
             "adjacency_matrix_pos": adj_matrix_pos,
             "adjacency_matrix_neg": adj_matrix_neg,
             "adjacency_matrix": adj_matrix_lit,
-
             "clauses": tf.cast(data["batched_clauses"], tf.int32),
             "variables_in_graph": data["variable_count"],
-            "clauses_in_graph": data["clauses_in_formula"],
             "normal_clauses": data["clauses"],
-            "variables_mask": variables_mask,
-            "clauses_mask": clauses_mask,
             "clauses_graph_adj": clauses_graph_adj,
             "variables_graph_adj": variables_graph_adj,
             "solutions": data["solutions"]
@@ -151,8 +147,6 @@ class KSAT(DIMACDataset):
             return lambda step_data: {
                 "adj_matrix_pos": step_data["adjacency_matrix_pos"],
                 "adj_matrix_neg": step_data["adjacency_matrix_neg"],
-                "variables_in_graph": step_data["variables_in_graph"],
-                "clauses_in_graph": step_data["clauses_in_graph"],
                 "clauses_graph": step_data["clauses_graph_adj"],
                 "variables_graph": step_data["variables_graph_adj"],
                 "solutions": step_data["solutions"]
@@ -160,8 +154,6 @@ class KSAT(DIMACDataset):
         elif input_mode == "literals":
             return lambda step_data: {
                 "adj_matrix": step_data["adjacency_matrix"],
-                "variables_in_graph": step_data["variables_in_graph"],
-                "clauses_in_graph": step_data["clauses_in_graph"],
                 "clauses_graph": step_data["clauses_graph_adj"],
                 "variables_graph": step_data["variables_graph_adj"],
                 "solutions": step_data["solutions"]

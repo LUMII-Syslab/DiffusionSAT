@@ -40,21 +40,17 @@ class PairNorm(tf.keras.layers.Layer):
         # if self.subtract_mean:
         #     self.bias = self.add_weight("bias", [num_units], initializer=tf.zeros_initializer)
 
-    def call(self, inputs, graph: tf.SparseTensor = None, count_in_graph: tf.Tensor = None, **kwargs):
+    def call(self, inputs, graph: tf.SparseTensor = None, **kwargs):
         """
         :param graph: graph level adjacency matrix
         :param count_in_graph: element count in each graph
         :param inputs: input tensor variables or clauses state
         """
-        if count_in_graph is not None:
-            count_in_graph = tf.cast(count_in_graph, tf.float32)
-            count_in_graph = tf.expand_dims(count_in_graph, axis=-1)
-
         mask = graph.indices[:, 0] if graph is not None else None
 
         # input size: cells x feature_maps
         if self.subtract_mean and graph is not None:  # subtracting mean may not be necessary: https://arxiv.org/abs/1910.07467
-            mean = tf.sparse.sparse_dense_matmul(graph, inputs) / count_in_graph
+            mean = tf.sparse.sparse_dense_matmul(graph, inputs)
             # mean = tf.math.unsorted_segment_mean(inputs, graph_mask, tf.reduce_max(graph_mask) + 1)
             # mean = tf.math.segment_mean(inputs, graph_mask)
 
