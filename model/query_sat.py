@@ -189,7 +189,7 @@ class QuerySAT(Model):
         #     tf.summary.histogram("var_loss_msg", var_loss_msg)
         #     tf.summary.histogram("query", query)
 
-        unsupervised_loss = tf.reduce_sum(step_losses.stack()) / tf.cast(step, tf.float32)
+        unsupervised_loss = tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32)
         return last_logits, step, unsupervised_loss, supervised_loss, clause_state, variables
 
     @staticmethod
