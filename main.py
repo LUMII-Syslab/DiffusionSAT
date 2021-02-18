@@ -14,7 +14,7 @@ from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
 from utils.parameters_log import HP_TRAINABLE_PARAMS, HP_TASK
-from pysat.solvers import Cadical
+from pysat.solvers import Minisat22, Glucose3, Glucose4
 
 
 def main():
@@ -113,9 +113,10 @@ def evaluate_classic_solver(data: tf.data.Dataset, steps: int = None):
     total_time = 0
     for step_data in iterator:
         clauses = step_data["clauses"].numpy().tolist()
-        with Cadical(bootstrap_with=clauses, use_timer=True) as solver:
+        with Glucose4(bootstrap_with=clauses, use_timer=True) as solver:
             _ = solver.solve()
-            total_time = solver.time()
+            _ = solver.get_model()
+            total_time += solver.time()
 
     return total_time / steps
 
