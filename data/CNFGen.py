@@ -6,6 +6,8 @@ from cnfgen import RandomKCNF, CliqueFormula, DominatingSet, GraphColoringFormul
 from pysat.solvers import Cadical
 
 from data.k_sat import KSAT
+from utils.sat import run_external_solver, build_dimacs_file
+
 
 class SAT_3(KSAT):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
@@ -28,17 +30,19 @@ class SAT_3(KSAT):
         for _ in range(size):
             n_vars = random.randint(self.min_vars, self.max_vars)
             n_clauses = 4.258 * n_vars + 58.26 * np.power(n_vars, -2 / 3.)
+            n_clauses = int(n_clauses)
 
             while True:
                 F = RandomKCNF(3, n_vars, n_clauses)
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
-                with Cadical(bootstrap_with=iclauses) as solver:
-                    is_sat = solver.solve()
 
-                if is_sat: break
+                dimacs = build_dimacs_file(iclauses, n_vars)
+                is_sat, solution = run_external_solver(dimacs)
+                if is_sat:
+                    break
 
-            yield n_vars, iclauses
+            yield n_vars, iclauses, solution
 
 
 class Clique(KSAT):
