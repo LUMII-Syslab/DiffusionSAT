@@ -16,7 +16,7 @@ class SAT_3(KSAT):
     def __init__(self, data_dir, min_vars=5, max_vars=40, force_data_gen=False, **kwargs) -> None:
         super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 100000
-        self.test_size = 5000
+        self.test_size = 10000
         self.min_vars = min_vars
         self.max_vars = max_vars
 

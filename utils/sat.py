@@ -89,7 +89,7 @@ def run_external_solver(input_dimacs: str, solver_exe: str = "binary/treengeling
     :return: returns True if formula is satisfiable and False otherwise, and solutions in form [1,2,-3, ...]
     """
     exe_path = Path(solver_exe).resolve()
-    output = subprocess.run([str(exe_path), " --portfolio"], input=input_dimacs, stdout=subprocess.PIPE, universal_newlines=True)
+    output = subprocess.run([str(exe_path)], input=input_dimacs, stdout=subprocess.PIPE, universal_newlines=True)
     satisfiable = [line for line in output.stdout.split("\n") if line.startswith("s ")]
     if len(satisfiable) > 1:
         raise ValueError("More than one satisifiability line returned!")
