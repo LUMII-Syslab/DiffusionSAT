@@ -14,7 +14,7 @@ class QuerySAT(Model):
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
                  vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=32, supervised=False, trial: optuna.Trial = None, **kwargs):
+                 query_maps=64, supervised=False, trial: optuna.Trial = None, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
         self.train_rounds = train_rounds
@@ -23,10 +23,10 @@ class QuerySAT(Model):
         self.use_message_passing = False
         self.skip_first_rounds = 0
 
-        update_layers = trial.suggest_int("variables_update_layers", 1, 5) if trial else msg_layers
-        output_layers = trial.suggest_int("output_layers", 1, 5) if trial else vote_layers
-        query_layers = trial.suggest_int("query_layers", 1, 5) if trial else vote_layers
-        clauses_layers = trial.suggest_int("clauses_update_layers", 1, 5) if trial else msg_layers
+        update_layers = trial.suggest_int("variables_update_layers", 2, 5) if trial else msg_layers
+        output_layers = trial.suggest_int("output_layers", 2, 5) if trial else vote_layers
+        query_layers = trial.suggest_int("query_layers", 2, 5) if trial else vote_layers
+        clauses_layers = trial.suggest_int("clauses_update_layers", 2, 5) if trial else msg_layers
         feature_maps = trial.suggest_int("feature_maps", 16, 64) if trial else feature_maps
         query_maps = trial.suggest_int("query_maps", 1, 64) if trial else query_maps
 
@@ -46,8 +46,7 @@ class QuerySAT(Model):
     def zero_state(self, n_units, n_features, stddev=0.25):
         onehot = tf.one_hot(tf.zeros([n_units], dtype=tf.int64), n_features)
         onehot -= 1 / n_features
-        onehot = onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
-        return onehot
+        return onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
 
     def call(self, adj_matrix, clauses_graph=None, variables_graph=None, training=None, labels=None, mask=None):
         shape = tf.shape(adj_matrix)
