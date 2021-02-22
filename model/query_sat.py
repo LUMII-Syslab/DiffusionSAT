@@ -1,3 +1,4 @@
+import optuna
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
@@ -13,22 +14,29 @@ class QuerySAT(Model):
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
                  vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=64, supervised=False, **kwargs):
+                 query_maps=32, supervised=False, trial: optuna.Trial = None, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
-        self.use_message_passing = True
+        self.use_message_passing = False
         self.skip_first_rounds = 0
+
+        update_layers = trial.suggest_int("variables_update_layers", 1, 5) if trial else msg_layers
+        output_layers = trial.suggest_int("output_layers", 1, 5) if trial else vote_layers
+        query_layers = trial.suggest_int("query_layers", 1, 5) if trial else vote_layers
+        clauses_layers = trial.suggest_int("clauses_update_layers", 1, 5) if trial else msg_layers
+        feature_maps = trial.suggest_int("feature_maps", 16, 64) if trial else feature_maps
+        query_maps = trial.suggest_int("query_maps", 1, 64) if trial else query_maps
 
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
-        self.update_gate = MLP(vote_layers, feature_maps * 2, feature_maps, name="update_gate", do_layer_norm=False)
+        self.update_gate = MLP(update_layers, feature_maps * 2, feature_maps, name="update_gate", do_layer_norm=False)
 
-        self.variables_output = MLP(vote_layers, feature_maps, 1, name="variables_output", do_layer_norm=False)
-        self.variables_query = MLP(msg_layers, query_maps * 2, query_maps, name="variables_query", do_layer_norm=False)
-        self.clause_mlp = MLP(vote_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
+        self.variables_output = MLP(output_layers, feature_maps, 1, name="variables_output", do_layer_norm=False)
+        self.variables_query = MLP(query_layers, query_maps * 2, query_maps, name="variables_query", do_layer_norm=False)
+        self.clause_mlp = MLP(clauses_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
         self.lit_mlp = MLP(msg_layers, query_maps * 4, query_maps * 2, name="lit_query", do_layer_norm=False)
 
         self.feature_maps = feature_maps

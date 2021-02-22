@@ -49,10 +49,13 @@ def objective_fn(trial):
 
 
 def prepare_model(trial: optuna.Trial, train_dir):
-    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3)
-    optimizer = AdaBeliefOptimizer(learning_rate, beta_1=0.5, clip_gradients=True)
+    learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-3)
+    beta_1 = trial.suggest_float("beta_1", 0, 1)
+    beta_2 = trial.suggest_float("beta_2", 0, 1)
 
-    model = ModelRegistry().resolve(Config.model)(optimizer=optimizer)
+    optimizer = AdaBeliefOptimizer(learning_rate, beta_1=beta_1, beta_2=beta_2, clip_gradients=True)
+
+    model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, trial=trial)
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                      force_data_gen=Config.force_data_gen,
                                                      input_mode=Config.input_mode)
@@ -94,7 +97,7 @@ def train(train_dir, trial: optuna.Trial, dataset: Dataset, model: Model, ckpt, 
                         tf.summary.histogram(var.name, var, step=int(ckpt.step))
 
         if int(ckpt.step) % 1000 == 0:
-            metrics = evaluate_metrics(dataset, validation_data, model, initial=(int(ckpt.step) == 0))
+            metrics = evaluate_metrics(dataset, validation_data, model, steps=100, initial=(int(ckpt.step) == 0))
             total_accuracy = metrics[0].get_values(reset_state=False)[1].numpy()
 
             for metric in metrics:
@@ -133,7 +136,7 @@ if __name__ == '__main__':
     create_if_doesnt_exist(Config.hyperopt_dir)
 
     study_name = str(uuid.uuid1())
-    storage = f"sqlite:///{Config.hyperopt_dir}/studies.db"
+    storage = f"sqlite:///{Config.hyperopt_dir}/np_solvers.db"
     runs_folder = Config.hyperopt_dir + "/" + study_name
     Config.train_dir = runs_folder
 
@@ -147,4 +150,25 @@ if __name__ == '__main__':
         pruner=optuna.pruners.HyperbandPruner(),
         direction="minimize")
 
+    study.set_user_attr("model", Config.model)
+    study.set_user_attr("dataset", Config.task)
+    study.set_user_attr("train_steps", Config.train_steps)
+
     study.optimize(objective_fn, n_trials=100)
+
+    pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
+    complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+
+    print("Study statistics: ")
+    print("  Number of finished trials: ", len(study.trials))
+    print("  Number of pruned trials: ", len(pruned_trials))
+    print("  Number of complete trials: ", len(complete_trials))
+
+    print("Best trial:")
+    trial = study.best_trial
+
+    print("\t Value: ", trial.value)
+
+    print("\t Params: ")
+    for key, value in trial.params.items():
+        print(f"\t\t{key}: {value}")
