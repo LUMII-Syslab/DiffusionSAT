@@ -94,8 +94,8 @@ def train(train_dir, trial: optuna.Trial, dataset: Dataset, model: Model, ckpt, 
                         tf.summary.histogram(var.name, var, step=int(ckpt.step))
 
         if int(ckpt.step) % 1000 == 0:
-            metrics = evaluate_metrics(dataset, validation_data, model, steps=100, initial=(int(ckpt.step) == 0))
-            total_accuracy = metrics[0].get_values()[1].numpy()
+            metrics = evaluate_metrics(dataset, validation_data, model, initial=(int(ckpt.step) == 0))
+            total_accuracy = metrics[0].get_values(reset_state=False)[1].numpy()
 
             for metric in metrics:
                 metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
