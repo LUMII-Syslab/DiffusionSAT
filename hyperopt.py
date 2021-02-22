@@ -148,7 +148,7 @@ if __name__ == '__main__':
         load_if_exists=True,
         sampler=optuna.samplers.TPESampler(),
         pruner=optuna.pruners.HyperbandPruner(),
-        direction="minimize")
+        direction="maximize")
 
     study.set_user_attr("model", Config.model)
     study.set_user_attr("dataset", Config.task)
