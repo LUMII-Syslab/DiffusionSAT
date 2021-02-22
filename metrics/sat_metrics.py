@@ -44,6 +44,9 @@ class SATAccuracyTF(Metric):
         self.mean_acc.reset_states()
         self.mean_total_acc.reset_states()
 
+    def get_values(self, reset_state=True):
+        return self.__calc_accuracy(reset_state)
+
     def __calc_accuracy(self, reset_state):
         mean_acc = self.mean_acc.result()
         mean_total_acc = self.mean_total_acc.result()

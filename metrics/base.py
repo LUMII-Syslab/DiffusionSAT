@@ -24,6 +24,8 @@ class Metric(metaclass=ABCMeta):
     def reset_state(self):
         pass
 
+    def get_values(self, reset_state=True):
+        pass
 
 class EmptyMetric(Metric):
     """
