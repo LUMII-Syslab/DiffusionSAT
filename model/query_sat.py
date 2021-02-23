@@ -23,20 +23,27 @@ class QuerySAT(Model):
         self.use_message_passing = False
         self.skip_first_rounds = 0
 
-        update_layers = trial.suggest_int("variables_update_layers", 2, 5) if trial else msg_layers
-        output_layers = trial.suggest_int("output_layers", 2, 5) if trial else vote_layers
-        query_layers = trial.suggest_int("query_layers", 2, 5) if trial else vote_layers
-        clauses_layers = trial.suggest_int("clauses_update_layers", 2, 5) if trial else msg_layers
-        feature_maps = trial.suggest_int("feature_maps", 16, 64) if trial else feature_maps
-        query_maps = trial.suggest_int("query_maps", 1, 64) if trial else query_maps
+        update_layers = trial.suggest_int("variables_update_layers", 2, 4) if trial else msg_layers
+        output_layers = trial.suggest_int("output_layers", 2, 4) if trial else vote_layers
+        query_layers = trial.suggest_int("query_layers", 2, 4) if trial else vote_layers
+        clauses_layers = trial.suggest_int("clauses_update_layers", 2, 4) if trial else msg_layers
+
+        feature_maps = trial.suggest_categorical("feature_maps", [16, 32, 64]) if trial else feature_maps
+        query_maps = trial.suggest_categorical("query_maps", [16, 32, 64]) if trial else query_maps
+
+        update_scale = trial.suggest_discrete_uniform("update_scale", 0.2, 2., 0.2) if trial else 2
+        output_scale = trial.suggest_discrete_uniform("output_scale", 0.2, 2., 0.2) if trial else 1
+        clauses_scale = trial.suggest_discrete_uniform("clauses_scale", 0.2, 2., 0.2) if trial else 2
+        query_scale = trial.suggest_discrete_uniform("query_scale", 0.2, 2., 0.2) if trial else 3
 
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
-        self.update_gate = MLP(update_layers, feature_maps * 2, feature_maps, name="update_gate", do_layer_norm=False)
 
-        self.variables_output = MLP(output_layers, feature_maps, 1, name="variables_output", do_layer_norm=False)
-        self.variables_query = MLP(query_layers, query_maps * 2, query_maps, name="variables_query", do_layer_norm=False)
-        self.clause_mlp = MLP(clauses_layers, feature_maps * 3, feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
+        self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate", do_layer_norm=False)
+        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), 1, name="variables_output", do_layer_norm=False)
+        self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query", do_layer_norm=False)
+        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
+
         self.lit_mlp = MLP(msg_layers, query_maps * 4, query_maps * 2, name="lit_query", do_layer_norm=False)
 
         self.feature_maps = feature_maps
@@ -78,7 +85,8 @@ class QuerySAT(Model):
         if training:
             last_clauses = softplus_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix))
             tf.summary.histogram("clauses", last_clauses)
-            last_layer_loss = tf.reduce_sum(softplus_mixed_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix)))
+            last_layer_loss = tf.reduce_sum(
+                softplus_mixed_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix)))
             tf.summary.histogram("logits", last_logits)
             tf.summary.scalar("last_layer_loss", last_layer_loss)
             # log_as_histogram("step_losses", step_losses.stack())
@@ -113,7 +121,8 @@ class QuerySAT(Model):
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
             with tf.GradientTape() as grad_tape:
-                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)  # add some randomness to avoid zero collapse in normalization
+                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])],
+                               axis=-1)  # add some randomness to avoid zero collapse in normalization
                 query = self.variables_query(v1)
                 clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
                 step_loss = tf.reduce_sum(clauses_loss)

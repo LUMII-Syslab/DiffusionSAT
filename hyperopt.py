@@ -49,11 +49,11 @@ def objective_fn(trial):
 
 
 def prepare_model(trial: optuna.Trial, train_dir):
-    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
-    beta_1 = trial.suggest_float("beta_1", 0.0, 1.0)
-    beta_2 = trial.suggest_float("beta_2", 0.0, 1.0)
+    # learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
+    # beta_1 = trial.suggest_float("beta_1", 0.0, 1.0)
+    # beta_2 = trial.suggest_float("beta_2", 0.0, 1.0)
 
-    optimizer = AdaBeliefOptimizer(learning_rate, beta_1=beta_1, beta_2=beta_2, clip_gradients=True)
+    optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.5, clip_gradients=True)
 
     model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, trial=trial)
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
@@ -97,7 +97,7 @@ def train(train_dir, trial: optuna.Trial, dataset: Dataset, model: Model, ckpt, 
                         tf.summary.histogram(var.name, var, step=int(ckpt.step))
 
         if int(ckpt.step) % 1000 == 0:
-            metrics = evaluate_metrics(dataset, validation_data, model, steps=100, initial=(int(ckpt.step) == 0))
+            metrics = evaluate_metrics(dataset, validation_data, model, steps=150)
             total_accuracy = metrics[0].get_values(reset_state=False)[1].numpy()
 
             for metric in metrics:
@@ -147,7 +147,7 @@ if __name__ == '__main__':
         storage=storage,
         load_if_exists=True,
         sampler=optuna.samplers.TPESampler(),
-        pruner=optuna.pruners.HyperbandPruner(min_resource=Config.train_steps // 4, max_resource=Config.train_steps),
+        pruner=optuna.pruners.HyperbandPruner(min_resource=Config.train_steps // 3, max_resource=Config.train_steps),
         direction="maximize")
 
     study.set_user_attr("model", Config.model)
