@@ -49,9 +49,9 @@ def objective_fn(trial):
 
 
 def prepare_model(trial: optuna.Trial, train_dir):
-    learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-3)
-    beta_1 = trial.suggest_float("beta_1", 0, 1)
-    beta_2 = trial.suggest_float("beta_2", 0, 1)
+    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
+    beta_1 = trial.suggest_float("beta_1", 0.0, 1.0)
+    beta_2 = trial.suggest_float("beta_2", 0.0, 1.0)
 
     optimizer = AdaBeliefOptimizer(learning_rate, beta_1=beta_1, beta_2=beta_2, clip_gradients=True)
 
@@ -147,7 +147,7 @@ if __name__ == '__main__':
         storage=storage,
         load_if_exists=True,
         sampler=optuna.samplers.TPESampler(),
-        pruner=optuna.pruners.HyperbandPruner(),
+        pruner=optuna.pruners.HyperbandPruner(min_resource=Config.train_steps // 4, max_resource=Config.train_steps),
         direction="maximize")
 
     study.set_user_attr("model", Config.model)
@@ -155,6 +155,9 @@ if __name__ == '__main__':
     study.set_user_attr("train_steps", Config.train_steps)
 
     study.optimize(objective_fn, n_trials=100)
+
+    fig = optuna.visualization.plot_param_importances(study)
+    fig.write_image(f"{runs_folder}/importance.png")
 
     pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
     complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
