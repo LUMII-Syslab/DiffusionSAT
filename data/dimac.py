@@ -29,9 +29,6 @@ class DIMACDataset(Dataset):
         self.min_vars = min_vars
         self.max_vars = max_vars
 
-        self.dimacs_dir_name = "dimacs"
-        self.data_dir_name = "data"
-
     @abstractmethod
     def train_generator(self) -> tuple:
         """ Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
@@ -72,38 +69,38 @@ class DIMACDataset(Dataset):
         return self.fetch_dataset(self.test_generator, mode="test")
 
     def fetch_dataset(self, generator: callable, mode: str):
-        data_folder = self.data_dir / (mode + f"_{self.max_nodes_per_batch}_{self.min_vars}_{self.max_vars}")
+        dimacs_folder = self.data_dir / "dimacs" / f"{mode}_{self.min_vars}_{self.max_vars}"
+        tfrecords_folder = self.data_dir / "tf_records" / f"{mode}_{self.max_nodes_per_batch}_{self.min_vars}_{self.max_vars}"
 
-        if self.force_data_gen and data_folder.exists():
-            shutil.rmtree(data_folder)
+        if self.force_data_gen and tfrecords_folder.exists():
+            shutil.rmtree(tfrecords_folder)
 
-        if not data_folder.exists():
-            self.write_dimacs_to_file(data_folder, generator)
-            self.dimac_to_data(data_folder)
+        if not dimacs_folder.exists():
+            self.write_dimacs_to_file(dimacs_folder, generator)
 
-        data = self.read_dataset(data_folder)
+        if not tfrecords_folder.exists():
+            self.dimac_to_data(dimacs_folder, tfrecords_folder)
+
+        data = self.read_dataset(tfrecords_folder)
         return self.prepare_dataset(data)
 
     def read_dataset(self, data_folder):
-        data_folder = data_folder / self.data_dir_name
         data_files = [str(d) for d in data_folder.glob("*.tfrecord")]
         data = tf.data.TFRecordDataset(data_files, "GZIP", num_parallel_reads=8)
         data = data.map(self.feature_from_file, tf.data.experimental.AUTOTUNE)
         return data
 
     def write_dimacs_to_file(self, data_folder: Path, data_generator: callable):
-        output_folder = data_folder / self.dimacs_dir_name
+        if self.force_data_gen and data_folder.exists():
+            shutil.rmtree(data_folder)
 
-        if self.force_data_gen and output_folder.exists():
-            shutil.rmtree(output_folder)
-
-        if output_folder.exists():
+        if data_folder.exists():
             print("Not recreating data, as folder already exists!")
             return
         else:
-            output_folder.mkdir(parents=True)
+            data_folder.mkdir(parents=True)
 
-        print(f"Generating DIMACS data in '{output_folder}' directory!")
+        print(f"Generating DIMACS data in '{data_folder}' directory!")
         for idx, (n_vars, clauses, *solution) in enumerate(data_generator()):
 
             solution = solution[0] if solution else get_sat_model(clauses)
@@ -115,7 +112,7 @@ class DIMACDataset(Dataset):
             file += [f"p cnf {n_vars} {len(clauses)}"]
             file += [f"{' '.join(c)} 0" for c in clauses]
 
-            out_filename = output_folder / f"sat_{n_vars}_{len(clauses)}_{idx}.dimacs"
+            out_filename = data_folder / f"sat_{n_vars}_{len(clauses)}_{idx}.dimacs"
             with open(out_filename, 'w') as f:
                 f.write('\n'.join(file))
 
@@ -137,10 +134,8 @@ class DIMACDataset(Dataset):
     def shift_clause(self, clauses, offset):
         return [[self.shift_variable(x, offset) for x in c] for c in clauses]
 
-    def dimac_to_data(self, folder: Path):
-        dimacs = folder / self.dimacs_dir_name
-
-        files = [d for d in dimacs.glob("*.dimacs")]
+    def dimac_to_data(self, dimacs_dir: Path, tfrecord_dir: Path):
+        files = [d for d in dimacs_dir.glob("*.dimacs")]
         formula_size = [self.__read_dimacs_details(f) for f in files]
 
         # TODO: Doesn't match our node count as we use variables instead of literals
@@ -151,15 +146,13 @@ class DIMACDataset(Dataset):
         batches = self.__batch_files(files)
 
         options = tf.io.TFRecordOptions(compression_type="GZIP", compression_level=9)
+        print(f"Converting DIMACS data from '{dimacs_dir}' into '{tfrecord_dir}'!")
 
-        data_folder = folder / self.data_dir_name
-        print(f"Converting DIMACS data from '{dimacs}' into '{data_folder}'!")
-
-        if not data_folder.exists():
-            data_folder.mkdir(parents=True)
+        if not tfrecord_dir.exists():
+            tfrecord_dir.mkdir(parents=True)
 
         dataset_id = 0
-        dataset_filename = data_folder / f"data_{dataset_id}.tfrecord"
+        dataset_filename = tfrecord_dir / f"data_{dataset_id}.tfrecord"
         batches_in_file = 200
         tfwriter = tf.io.TFRecordWriter(str(dataset_filename), options)
 
@@ -171,10 +164,10 @@ class DIMACDataset(Dataset):
                 tfwriter.flush()
                 tfwriter.close()
                 dataset_id += 1
-                dataset_filename = data_folder / f"data_{dataset_id}.tfrecord"
+                dataset_filename = tfrecord_dir / f"data_{dataset_id}.tfrecord"
                 tfwriter = tf.io.TFRecordWriter(str(dataset_filename), options)
 
-        print(f"Created {len(batches)} data batches in {data_folder}...\n")
+        print(f"Created {len(batches)} data batches in {tfrecord_dir}...\n")
 
     def prepare_example(self, batch):
         batched_clauses = []
