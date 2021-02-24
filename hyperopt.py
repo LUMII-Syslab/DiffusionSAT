@@ -147,7 +147,7 @@ if __name__ == '__main__':
         storage=storage,
         load_if_exists=True,
         sampler=optuna.samplers.TPESampler(),
-        pruner=optuna.pruners.HyperbandPruner(min_resource=Config.train_steps // 3, max_resource=Config.train_steps),
+        pruner=optuna.pruners.HyperbandPruner(min_resource=Config.train_steps // 4, max_resource=Config.train_steps),
         direction="maximize")
 
     study.set_user_attr("model", Config.model)
@@ -155,6 +155,15 @@ if __name__ == '__main__':
     study.set_user_attr("train_steps", Config.train_steps)
 
     study.optimize(objective_fn, n_trials=100)
+
+    fig = optuna.visualization.plot_optimization_history(study)
+    fig.write_image(f"{runs_folder}/history.png")
+
+    fig = optuna.visualization.plot_slice(study)
+    fig.write_image(f"{runs_folder}/slice.png")
+
+    fig = optuna.visualization.plot_edf(study)
+    fig.write_image(f"{runs_folder}/edf.png")
 
     fig = optuna.visualization.plot_param_importances(study)
     fig.write_image(f"{runs_folder}/importance.png")
