@@ -55,8 +55,11 @@ def prepare_model(trial: optuna.Trial, train_dir):
 
     optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.5, clip_gradients=True)
 
+    batch_size = trial.suggest_categorical("batch_size", [5000, 10000, 15000, 20000])
+
     model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, trial=trial)
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                     max_nodes_per_batch=batch_size,
                                                      force_data_gen=Config.force_data_gen,
                                                      input_mode=Config.input_mode)
 
