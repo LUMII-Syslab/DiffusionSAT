@@ -3,7 +3,7 @@ import random
 import networkx as nx
 import numpy as np
 from cnfgen import RandomKCNF, CliqueFormula, DominatingSet, GraphColoringFormula
-from pysat.solvers import Cadical
+from pysat.solvers import Cadical, Glucose4
 
 from data.k_sat import KSAT
 from utils.sat import run_external_solver, build_dimacs_file
@@ -38,7 +38,14 @@ class SAT_3(KSAT):
                 iclauses = [F._compress_clause(x) for x in clauses]
 
                 dimacs = build_dimacs_file(iclauses, n_vars)
-                is_sat, solution = run_external_solver(dimacs)
+
+                if n_vars > 200:
+                    is_sat, solution = run_external_solver(dimacs)
+                else:
+                    with Glucose4(bootstrap_with=iclauses) as solver:
+                        is_sat = solver.solve()
+                        solution = None
+
                 if is_sat:
                     break
 
