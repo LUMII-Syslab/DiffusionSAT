@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 from pysat.formula import CNF
 from pysat.solvers import Glucose4
+from statistics import median_high, mean
 
 from metrics.base import Metric
 
@@ -98,6 +99,46 @@ class SATAccuracyTF(Metric):
         formula_sat = tf.math.segment_min(clauses_sat, graph_mask)
 
         return formula_sat
+
+
+class StepStatistics(Metric):
+
+    def __init__(self) -> None:
+        self.step_accumulator = []
+
+    def update_state(self, model_output, step_data):
+        steps = model_output["steps_taken"]
+        self.step_accumulator.append(int(steps.numpy()) + 1)
+
+    def log_in_tensorboard(self, step: int = None, reset_state=True):
+        mean_steps, median_steps = self.get_values(reset_state)
+
+        with tf.name_scope("steps"):
+            tf.summary.scalar("mean_steps", mean_steps, step=step)
+            tf.summary.scalar("median_steps", median_steps, step=step)
+
+    def log_in_stdout(self, step: int = None, reset_state=True):
+        mean_steps, median_steps = self.get_values(reset_state)
+        print(f"Mean steps taken: {mean_steps:.2f}")
+        print(f"Median steps taken: {median_steps:.2f}")
+
+    def log_in_file(self, file: str, prepend_str: str = None, step: int = None, reset_state=True):
+        mean_steps, median_steps = self.get_values(reset_state)
+        lines = [prepend_str + '\n'] if prepend_str else []
+        lines.append(f"Mean steps taken: {mean_steps:.4f}\n")
+        lines.append(f"Median steps taken: {median_steps:.4f}\n")
+
+        file_path = Path(file)
+        with file_path.open("a") as file:
+            file.writelines(lines)
+
+    def reset_state(self):
+        self.step_accumulator = []
+
+    def get_values(self, reset_state=False):
+        mean_steps = mean(self.step_accumulator)
+        median_steps = median_high(self.step_accumulator)
+        return mean_steps, median_steps
 
 
 class SATAccuracy(Metric):

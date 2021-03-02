@@ -91,10 +91,10 @@ class QuerySAT(Model):
             tf.summary.scalar("last_layer_loss", last_layer_loss)
             # log_as_histogram("step_losses", step_losses.stack())
 
-            tf.summary.scalar("steps_taken", step)
+            # tf.summary.scalar("steps_taken", step)
             tf.summary.scalar("supervised_loss", supervised_loss)
 
-        return last_logits, unsupervised_loss + supervised_loss
+        return last_logits, unsupervised_loss + supervised_loss, step
 
     def loop(self, adj_matrix, clause_state, clauses_graph, labels, rounds, training, variables, variables_graph):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
@@ -121,8 +121,8 @@ class QuerySAT(Model):
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
             with tf.GradientTape() as grad_tape:
-                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])],
-                               axis=-1)  # add some randomness to avoid zero collapse in normalization
+                # add some randomness to avoid zero collapse in normalization
+                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
                 query = self.variables_query(v1)
                 clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
                 step_loss = tf.reduce_sum(clauses_loss)
@@ -224,12 +224,13 @@ class QuerySAT(Model):
                                   ])
     def train_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
         with tf.GradientTape() as tape:
-            _, loss = self.call(adj_matrix, clauses_graph, variables_graph, training=True, labels=solutions.flat_values)
+            _, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=True, labels=solutions.flat_values)
             train_vars = self.trainable_variables
             gradients = tape.gradient(loss, train_vars)
             self.optimizer.apply_gradients(zip(gradients, train_vars))
 
         return {
+            "steps_taken": step,
             "loss": loss,
             "gradients": gradients
         }
@@ -240,9 +241,10 @@ class QuerySAT(Model):
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
                                   ])
     def predict_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
-        predictions, loss = self.call(adj_matrix, clauses_graph, variables_graph, training=False)
+        predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False)
 
         return {
+            "steps_taken": step,
             "loss": loss,
             "prediction": tf.squeeze(predictions, axis=-1)
         }
