@@ -66,7 +66,7 @@ class SATAccuracyTF(Metric):
             equal_variables = tf.equal(predictions, step_data["solutions"].flat_values)
             equal_variables = tf.cast(equal_variables, tf.float32)
             correct = tf.reduce_sum(equal_variables)
-            acc = correct / tf.cast(tf.shape(lc_adj_matrix)[0], tf.float32)
+            acc = correct / tf.cast(tf.shape(lc_adj_matrix)[0] // 2, tf.float32)
         else:
             acc = -1
 
