@@ -81,7 +81,7 @@ class Clique(KSAT):
             p = 3 ** (1 / 3) / (n_vertices * (2 - 3 * n_vertices + n_vertices ** 2)) ** (1 / 3)
 
             it = 0
-            while (True):
+            while True:
                 it += 1
                 G = nx.generators.erdos_renyi_graph(n_vertices, p)
 
@@ -89,10 +89,11 @@ class Clique(KSAT):
                 n_vars = len(list(F.variables()))
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
-                with Cadical(bootstrap_with=iclauses) as solver:
+                with Glucose4(bootstrap_with=iclauses) as solver:
                     is_sat = solver.solve()
 
-                if is_sat: break
+                if is_sat:
+                    break
             yield n_vars, iclauses
 
 
@@ -122,7 +123,7 @@ class DomSet(KSAT):
             domset_size = (n_vertices + 2) // 3
 
             it = 0
-            while (True):
+            while True:
                 it += 1
                 G = nx.generators.erdos_renyi_graph(n_vertices, p)
 
@@ -130,10 +131,11 @@ class DomSet(KSAT):
                 n_vars = len(list(F.variables()))
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
-                with Cadical(bootstrap_with=iclauses) as solver:
+                with Glucose4(bootstrap_with=iclauses) as solver:
                     is_sat = solver.solve()
 
-                if is_sat: break
+                if is_sat:
+                    break
             # print(n_vertices, n_vars, len(iclauses), it)
 
             yield n_vars, iclauses
@@ -170,7 +172,7 @@ class KColor(KSAT):
                 n_colors = 3
 
             it = 0
-            while (True):
+            while True:
                 it += 1
                 G = nx.generators.erdos_renyi_graph(n_vertices, p)
 
@@ -178,8 +180,10 @@ class KColor(KSAT):
                 n_vars = len(list(F.variables()))
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
-                with Cadical(bootstrap_with=iclauses) as solver:
+                with Glucose4(bootstrap_with=iclauses) as solver:
                     is_sat = solver.solve()
 
-                if is_sat: break
+                if is_sat:
+                    break
+
             yield n_vars, iclauses
