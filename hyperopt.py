@@ -13,6 +13,7 @@ from metrics.base import EmptyMetric
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
+import numpy as np
 
 
 def prepare_checkpoints(train_dir, model, optimizer):
@@ -21,6 +22,11 @@ def prepare_checkpoints(train_dir, model, optimizer):
     ckpt.restore(manager.latest_checkpoint).expect_partial()
 
     return ckpt, manager
+
+
+def running_mean(x, N):
+    x = np.pad(x, (N // 2, N - 1 - N // 2), mode='edge')
+    return np.convolve(x, np.ones((N,)) / N, mode='valid')
 
 
 def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False) -> list:
@@ -55,7 +61,8 @@ def prepare_model(trial: optuna.Trial, train_dir):
 
     optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.5, clip_gradients=True)
 
-    batch_size = trial.suggest_categorical("batch_size", [5000, 10000, 15000, 20000])
+    # batch_size = trial.suggest_categorical("batch_size", [5000, 10000, 15000, 20000])
+    batch_size = 10000
 
     model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, trial=trial)
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
@@ -76,7 +83,7 @@ def train(train_dir, trial: optuna.Trial, dataset: Dataset, model: Model, ckpt, 
     validation_data = dataset.validation_data()
     train_data = dataset.train_data()
 
-    last_accuracy = -1
+    accuracies = []
 
     for step_data in itertools.islice(train_data, Config.train_steps + 1):
         tf.summary.experimental.set_step(ckpt.step)
@@ -107,8 +114,9 @@ def train(train_dir, trial: optuna.Trial, dataset: Dataset, model: Model, ckpt, 
                 metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
                 metric.log_in_stdout(step=int(ckpt.step))
 
-            trial.report(total_accuracy, int(ckpt.step))
-            last_accuracy = total_accuracy
+            accuracies.append(total_accuracy)
+            trial_accuracy = running_mean(accuracies, 10)[-1]
+            trial.report(trial_accuracy, int(ckpt.step))
 
             # Handle pruning based on the intermediate value.
             if trial.should_prune():
@@ -123,7 +131,7 @@ def train(train_dir, trial: optuna.Trial, dataset: Dataset, model: Model, ckpt, 
 
         ckpt.step.assign_add(1)
 
-    return last_accuracy
+    return running_mean(accuracies, 10)[-1]
 
 
 def create_if_doesnt_exist(folder: str):
@@ -138,7 +146,7 @@ if __name__ == '__main__':
 
     create_if_doesnt_exist(Config.hyperopt_dir)
 
-    study_name = str(uuid.uuid1())
+    study_name = "ac314fc4-7ab5-11eb-8b57-0242ac110005"
     storage = f"sqlite:///{Config.hyperopt_dir}/np_solvers.db"
     runs_folder = Config.hyperopt_dir + "/" + study_name
     Config.train_dir = runs_folder
@@ -149,8 +157,8 @@ if __name__ == '__main__':
         study_name=study_name,
         storage=storage,
         load_if_exists=True,
-        sampler=optuna.samplers.TPESampler(),
-        pruner=optuna.pruners.HyperbandPruner(min_resource=Config.train_steps // 4, max_resource=Config.train_steps),
+        sampler=optuna.samplers.TPESampler(multivariate=True),
+        pruner=optuna.pruners.HyperbandPruner(min_resource=5000, max_resource=Config.train_steps),
         direction="maximize")
 
     study.set_user_attr("model", Config.model)
