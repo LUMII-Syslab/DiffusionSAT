@@ -103,7 +103,7 @@ class DIMACDataset(Dataset):
         print(f"Generating DIMACS data in '{data_folder}' directory!")
         for idx, (n_vars, clauses, *solution) in enumerate(data_generator()):
 
-            solution = solution[0] if solution else get_sat_model(clauses)
+            solution = solution[0] if solution and solution[0] else get_sat_model(clauses)
             solution = [int(x > 0) for x in solution]
             solution = elements_to_str(solution)
 
