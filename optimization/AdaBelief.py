@@ -142,7 +142,7 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
         self._set_hyper("decay", self._initial_decay)
         self._set_hyper("weight_decay", weight_decay)
         self._set_hyper("sma_threshold", sma_threshold)
-        self._set_hyper("total_steps", int(total_steps))
+        self._set_hyper("total_steps", float(total_steps))
         self._set_hyper("warmup_proportion", warmup_proportion)
         self._set_hyper("min_lr", min_lr)
         self.epsilon = epsilon or tf.keras.backend.epsilon()
@@ -192,7 +192,7 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
         beta_2_power = tf.pow(beta_2_t, local_step)
 
         if self._initial_total_steps > 0:
-            total_steps = self._get_hyper("total_steps", var_dtype)
+            total_steps = int(self._get_hyper("total_steps", var_dtype))
             warmup_steps = total_steps * self._get_hyper("warmup_proportion", var_dtype)
             min_lr = self._get_hyper("min_lr", var_dtype)
             decay_steps = tf.maximum(total_steps - warmup_steps, 1)
@@ -269,7 +269,7 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
         v = self.get_slot(var, "v")
 
         if self._initial_total_steps > 0:
-            total_steps = self._get_hyper("total_steps", var_dtype)
+            total_steps = int(self._get_hyper("total_steps", var_dtype))
             warmup_steps = total_steps * self._get_hyper("warmup_proportion", var_dtype)
             min_lr = self._get_hyper("min_lr", var_dtype)
             decay_steps = tf.maximum(total_steps - warmup_steps, 1)
