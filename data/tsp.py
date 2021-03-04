@@ -20,6 +20,9 @@ class EuclideanTSP(Dataset):
         self.train_batch_size = 16
         self.beam_width = 128
 
+        self.min_test_node_count = 16
+        self.max_test_node_count = 16
+
         self.force_data_gen = force_data_gen
         self.data_dir = Path(data_dir) / self.__class__.__name__
 
@@ -27,10 +30,10 @@ class EuclideanTSP(Dataset):
         return self.fetch_dataset("train", self.min_node_count, self.max_node_count, self.train_data_size, self.train_batch_size)
 
     def validation_data(self) -> tf.data.Dataset:
-        return self.fetch_dataset("validation", self.min_node_count, self.max_node_count, dataset_size=1000, batch_size=1)
+        return self.fetch_dataset("validation", self.min_test_node_count, self.max_test_node_count, dataset_size=1000, batch_size=1)
 
     def test_data(self) -> tf.data.Dataset:
-        return self.fetch_dataset("test", self.min_node_count, self.max_node_count, dataset_size=10000, batch_size=32)
+        return self.fetch_dataset("test", self.min_test_node_count, self.max_test_node_count, dataset_size=10000, batch_size=32)
 
     def fetch_dataset(self, mode, min_node_count, max_node_count, dataset_size, batch_size):
         """" Reads dataset from file; creates the file if it does not exist."""

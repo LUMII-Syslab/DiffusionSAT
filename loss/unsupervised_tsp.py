@@ -72,7 +72,7 @@ def tsp_unsupervised_loss(predictions, adjacency_matrix, noise=0, log_in_tb=Fals
         tf.summary.scalar("cost/subtours", cost_subtours)
 
     # scale to return values in reasonable range
-    return cost_length * 5 + cost_incoming + cost_outgoing + cost_subtours * 0.05
+    return (cost_length * 5 + cost_incoming + cost_outgoing + cost_subtours * 0.05) / tf.cast(padded_size, dtype=tf.float32)
 
 
 def sample_logistic(shape, eps=1e-20):

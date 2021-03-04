@@ -35,11 +35,11 @@ class MLP(Model):
         self.normalizer = normalizer
 
     @tf.function
-    def call(self, inputs, training=None, graph_mask=None):
+    def call(self, inputs, training=None):
         current = inputs
         for layer in self.dense_layers:
             if layer == self.normalizer:
-                current = layer(current, training=training, graph_mask = graph_mask)
+                current = layer(current, training=training)
             else:
                 current = layer(current, training=training)
         return current

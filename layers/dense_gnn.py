@@ -50,8 +50,8 @@ class DenseGNN(tf.keras.layers.Layer):
         outgoing_state = self.outgoing_edge_mlp(inputs * mask, training=training)
 
         # vertex state is formed as sum over its incoming and outgoing edge data
-        incoming_state = tf.reduce_sum(incoming_state, axis=1) / sqrt_n
-        outgoing_state = tf.reduce_sum(outgoing_state, axis=2) / sqrt_n
+        incoming_state = tf.reduce_sum(incoming_state * mask, axis=1) / sqrt_n
+        outgoing_state = tf.reduce_sum(outgoing_state * mask, axis=2) / sqrt_n
         vertex_state = tf.concat([incoming_state, outgoing_state], axis=-1)
 
         # the new value for each edge is calculated from its in- and out-vertex data and the previous edge state
