@@ -6,6 +6,7 @@ from registry.registry import ModelRegistry, DatasetRegistry
 class Config:
     """Data and placement config: """
     train_dir = '/host-dir/np-solver'
+    hyperopt_dir = '/host-dir/optuna'
     data_dir = '/host-dir/data'
     force_data_gen = False
 

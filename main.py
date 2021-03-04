@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
+from pysat.solvers import Glucose4
 from tensorboard.plugins.hparams import api as hp
 from tensorflow.keras import Model
 
@@ -14,7 +15,6 @@ from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
 from utils.parameters_log import HP_TRAINABLE_PARAMS, HP_TASK
-from pysat.solvers import Cadical
 
 
 def main():
@@ -113,9 +113,10 @@ def evaluate_classic_solver(data: tf.data.Dataset, steps: int = None):
     total_time = 0
     for step_data in iterator:
         clauses = step_data["clauses"].numpy().tolist()
-        with Cadical(bootstrap_with=clauses, use_timer=True) as solver:
+        with Glucose4(bootstrap_with=clauses, use_timer=True) as solver:
             _ = solver.solve()
-            total_time = solver.time()
+            _ = solver.get_model()
+            total_time += solver.time()
 
     return total_time / steps
 
@@ -192,7 +193,7 @@ def evaluate_round_generalization(dataset, optimizer):
         test_metrics = evaluate_metrics(dataset, test_data, model, steps=steps)
         elapsed_time = time.time() - start_time
 
-        message = f"Results for model with test_rounds={test_rounds} and elapsed_time={elapsed_time/steps:.3f}:"
+        message = f"Results for model with test_rounds={test_rounds} and elapsed_time={elapsed_time / steps:.3f}:"
         for metric in test_metrics:
             metric.log_in_file(str(results_file), prepend_str=message)
 

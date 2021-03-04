@@ -3,17 +3,19 @@ import random
 import networkx as nx
 import numpy as np
 from cnfgen import RandomKCNF, CliqueFormula, DominatingSet, GraphColoringFormula
-from pysat.solvers import Cadical
+from pysat.solvers import Cadical, Glucose4
 
 from data.k_sat import KSAT
+from utils.sat import run_external_solver, build_dimacs_file
+
 
 class SAT_3(KSAT):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
 
-    def __init__(self, data_dir, min_vars=5, max_vars=40, force_data_gen=False, **kwargs) -> None:
+    def __init__(self, data_dir, min_vars=5, max_vars=205, force_data_gen=False, **kwargs) -> None:
         super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 100000
+        self.train_size = 1000000
         self.test_size = 5000
         self.min_vars = min_vars
         self.max_vars = max_vars
@@ -28,17 +30,26 @@ class SAT_3(KSAT):
         for _ in range(size):
             n_vars = random.randint(self.min_vars, self.max_vars)
             n_clauses = 4.258 * n_vars + 58.26 * np.power(n_vars, -2 / 3.)
+            n_clauses = int(n_clauses)
 
             while True:
                 F = RandomKCNF(3, n_vars, n_clauses)
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
-                with Cadical(bootstrap_with=iclauses) as solver:
-                    is_sat = solver.solve()
 
-                if is_sat: break
+                dimacs = build_dimacs_file(iclauses, n_vars)
 
-            yield n_vars, iclauses
+                if n_vars > 200:
+                    is_sat, solution = run_external_solver(dimacs)
+                else:
+                    with Glucose4(bootstrap_with=iclauses) as solver:
+                        is_sat = solver.solve()
+                        solution = None
+
+                if is_sat:
+                    break
+
+            yield n_vars, iclauses, solution
 
 
 class Clique(KSAT):
@@ -70,7 +81,7 @@ class Clique(KSAT):
             p = 3 ** (1 / 3) / (n_vertices * (2 - 3 * n_vertices + n_vertices ** 2)) ** (1 / 3)
 
             it = 0
-            while (True):
+            while True:
                 it += 1
                 G = nx.generators.erdos_renyi_graph(n_vertices, p)
 
@@ -78,10 +89,11 @@ class Clique(KSAT):
                 n_vars = len(list(F.variables()))
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
-                with Cadical(bootstrap_with=iclauses) as solver:
+                with Glucose4(bootstrap_with=iclauses) as solver:
                     is_sat = solver.solve()
 
-                if is_sat: break
+                if is_sat:
+                    break
             yield n_vars, iclauses
 
 
@@ -111,7 +123,7 @@ class DomSet(KSAT):
             domset_size = (n_vertices + 2) // 3
 
             it = 0
-            while (True):
+            while True:
                 it += 1
                 G = nx.generators.erdos_renyi_graph(n_vertices, p)
 
@@ -119,10 +131,11 @@ class DomSet(KSAT):
                 n_vars = len(list(F.variables()))
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
-                with Cadical(bootstrap_with=iclauses) as solver:
+                with Glucose4(bootstrap_with=iclauses) as solver:
                     is_sat = solver.solve()
 
-                if is_sat: break
+                if is_sat:
+                    break
             # print(n_vertices, n_vars, len(iclauses), it)
 
             yield n_vars, iclauses
@@ -159,7 +172,7 @@ class KColor(KSAT):
                 n_colors = 3
 
             it = 0
-            while (True):
+            while True:
                 it += 1
                 G = nx.generators.erdos_renyi_graph(n_vertices, p)
 
@@ -167,8 +180,10 @@ class KColor(KSAT):
                 n_vars = len(list(F.variables()))
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
-                with Cadical(bootstrap_with=iclauses) as solver:
+                with Glucose4(bootstrap_with=iclauses) as solver:
                     is_sat = solver.solve()
 
-                if is_sat: break
+                if is_sat:
+                    break
+
             yield n_vars, iclauses

@@ -53,6 +53,9 @@ class TSPInitialMetrics(Metric):
         self.mean_input_beam.reset_states()
         self.mean_input_random.reset_states()
 
+    def get_values(self, reset_state=True):
+        self.__get_scores()
+
     def __get_scores(self):
         return (self.mean_input_greedy.result(),
                 self.mean_input_beam.result(),
@@ -145,6 +148,9 @@ class TSPMetrics(Metric):
         self.mean_model_greedy.reset_states()
         self.mean_model_beam.reset_states()
         self.mean_model_beam_sph.reset_states()
+
+    def get_values(self, reset_state=True):
+        return self.__get_scores()
 
     def __get_scores(self):
         return (self.mean_model_greedy.result(),
