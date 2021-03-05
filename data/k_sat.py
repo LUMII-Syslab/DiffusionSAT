@@ -27,12 +27,12 @@ class KSAT(DIMACDataset):
         self.p_geo = 0.4
 
     def train_generator(self) -> tuple:
-        return self.__generator(self.train_size)
+        return self._generator(self.train_size)
 
     def test_generator(self) -> tuple:
-        return self.__generator(self.test_size)
+        return self._generator(self.test_size)
 
-    def __generator(self, size) -> tuple:
+    def _generator(self, size) -> tuple:
         for _ in range(size):
             n_vars = random.randint(self.min_vars, self.max_vars)
 

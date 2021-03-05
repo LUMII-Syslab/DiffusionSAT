@@ -3,7 +3,7 @@ import random
 import networkx as nx
 import numpy as np
 from cnfgen import RandomKCNF, CliqueFormula, DominatingSet, GraphColoringFormula
-from pysat.solvers import Cadical, Glucose4
+from pysat.solvers import Glucose4
 
 from data.k_sat import KSAT
 from utils.sat import run_external_solver, build_dimacs_file
@@ -15,18 +15,18 @@ class SAT_3(KSAT):
 
     def __init__(self, data_dir, min_vars=5, max_vars=205, force_data_gen=False, **kwargs) -> None:
         super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 1000000
+        self.train_size = 100000
         self.test_size = 5000
         self.min_vars = min_vars
         self.max_vars = max_vars
 
     def train_generator(self) -> tuple:
-        return self.__generator(self.train_size)
+        return self._generator(self.train_size)
 
     def test_generator(self) -> tuple:
-        return self.__generator(self.test_size)
+        return self._generator(self.test_size)
 
-    def __generator(self, size) -> tuple:
+    def _generator(self, size) -> tuple:
         for _ in range(size):
             n_vars = random.randint(self.min_vars, self.max_vars)
             n_clauses = 4.258 * n_vars + 58.26 * np.power(n_vars, -2 / 3.)
@@ -67,12 +67,12 @@ class Clique(KSAT):
         self.clique_size = 3
 
     def train_generator(self) -> tuple:
-        return self.__generator(self.train_size)
+        return self._generator(self.train_size)
 
     def test_generator(self) -> tuple:
-        return self.__generator(self.test_size)
+        return self._generator(self.test_size)
 
-    def __generator(self, size) -> tuple:
+    def _generator(self, size) -> tuple:
         for _ in range(size):
             n_vertices = random.randint(self.min_vertices, self.max_vertices)
             # generate a random graph with such sparsity that a triangle is expected with probability 0.5.
@@ -111,12 +111,12 @@ class DomSet(KSAT):
         self.max_vertices = max_vertices
 
     def train_generator(self) -> tuple:
-        return self.__generator(self.train_size)
+        return self._generator(self.train_size)
 
     def test_generator(self) -> tuple:
-        return self.__generator(self.test_size)
+        return self._generator(self.test_size)
 
-    def __generator(self, size) -> tuple:
+    def _generator(self, size) -> tuple:
         for _ in range(size):
             n_vertices = random.randint(self.min_vertices, self.max_vertices)
             p = 0.2
@@ -151,19 +151,20 @@ class KColor(KSAT):
     """
 
     def __init__(self, data_dir, min_vertices=5, max_vertices=20, force_data_gen=False, **kwargs) -> None:
-        super(KColor, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices, force_data_gen=force_data_gen, **kwargs)
+        super(KColor, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
+                                     force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000
         self.test_size = 5000
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
 
     def train_generator(self) -> tuple:
-        return self.__generator(self.train_size)
+        return self._generator(self.train_size)
 
     def test_generator(self) -> tuple:
-        return self.__generator(self.test_size)
+        return self._generator(self.test_size)
 
-    def __generator(self, size) -> tuple:
+    def _generator(self, size) -> tuple:
         for _ in range(size):
             n_vertices = random.randint(self.min_vertices, self.max_vertices)
             p = 0.5
@@ -187,3 +188,24 @@ class KColor(KSAT):
                     break
 
             yield n_vars, iclauses
+
+
+class MixGraphSAT(KSAT):
+    def __init__(self, data_dir, min_vertices=5, max_vertices=20, force_data_gen=False, **kwargs) -> None:
+        super(MixGraphSAT, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices, force_data_gen=force_data_gen, **kwargs)
+        self.train_size = 10000
+        self.test_size = 5000
+        self.datasets = [Clique(data_dir, min_vertices, max_vertices),
+                         DomSet(data_dir, min_vertices, max_vertices),
+                         KColor(data_dir, min_vertices, max_vertices)]
+
+    def train_generator(self) -> tuple:
+        return self._generator(self.train_size)
+
+    def test_generator(self) -> tuple:
+        return self._generator(self.test_size)
+
+    def _generator(self, size) -> tuple:
+        for _ in range(size):
+            dataset = random.choice(self.datasets)  # type: KSAT
+            return dataset._generator(1)

@@ -75,12 +75,12 @@ class SHAGen(KSAT):
         self.max_attempts = 100
 
     def train_generator(self) -> tuple:
-        return self.__generator(self.train_size)
+        return self._generator(self.train_size)
 
     def test_generator(self) -> tuple:
-        return self.__generator(self.test_size)
+        return self._generator(self.test_size)
 
-    def __generator(self, size) -> tuple:
+    def _generator(self, size) -> tuple:
         samplesSoFar = 0
 
         while samplesSoFar < size:

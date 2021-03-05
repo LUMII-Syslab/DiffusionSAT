@@ -30,12 +30,12 @@ class PrimesGen(KSAT):
         self.max_attempts = 100  # how many times we need to check the number of variables to be within the given range before we stop the generator
 
     def train_generator(self) -> tuple:
-        return self.__generator(self.train_size)
+        return self._generator(self.train_size)
 
     def test_generator(self) -> tuple:
-        return self.__generator(self.test_size)
+        return self._generator(self.test_size)
 
-    def __generator(self, size) -> tuple:
+    def _generator(self, size) -> tuple:
 
         file_list = glob.glob(PrimesGen.FETCHED_DATA_DIR + "/*.dimacs")
         # print("LIST", PrimesGen.FETCHED_DATA_DIR + "/*.dimacs", fileList)
