@@ -38,6 +38,15 @@ class GradientAccumulatorWrapper(tf.keras.optimizers.Optimizer, metaclass=abc.AB
     def set_weights(self, weights):
         self._optimizer.set_weights(weights)
 
+    def apply_gradients(self, grads_and_vars, name=None):
+        op = super(GradientAccumulatorWrapper, self).apply_gradients(grads_and_vars, name)
+
+        aggregation_steps = self._get_hyper("aggregation_steps")
+        if (self.iterations - 1) % int(aggregation_steps) == 0:
+            self._optimizer._iterations.assign_add(1)
+
+        return op
+
     def _resource_apply_dense(self, grad, handle, apply_state):
         aggregation_steps = self._get_hyper("aggregation_steps")
 
