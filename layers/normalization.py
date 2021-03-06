@@ -11,8 +11,8 @@ class LayerNormalization(tf.keras.layers.Layer):
         super(LayerNormalization, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        num_units = input_shape.as_list()[-1]
         if self.subtract_mean:
+            num_units = input_shape.as_list()[-1]
             self.bias = self.add_weight("bias", [num_units], initializer=tf.zeros_initializer)
 
     def call(self, inputs, **kwargs):
@@ -67,3 +67,57 @@ class PairNorm(tf.keras.layers.Layer):
         variance = tf.reduce_mean(tf.square(inputs), axis=1, keepdims=True)
 
         return inputs * tf.math.rsqrt(variance + self.epsilon) # +self.bias
+
+class VariablesNeighborNorm(tf.keras.layers.Layer):
+    """ Normalize variables by subtracting neighbor mean and then normalize by features axis
+    """
+
+    def __init__(self, epsilon=1e-6, **kwargs):
+        self.epsilon = epsilon
+        super(VariablesNeighborNorm, self).__init__(**kwargs)
+
+
+    def call(self, variables, adj_matrix: tf.SparseTensor = None, **kwargs):
+        """
+        :param inputs: input tensor variables
+        """
+        # subtract neighbor mean
+        literals = tf.concat([variables, variables], axis=0)
+        literals1 = tf.concat([literals, tf.ones([tf.shape(literals)[0], 1])], axis=1) #todo: it is possible to precompute degree
+        clauses_val = tf.sparse.sparse_dense_matmul(adj_matrix, literals1)
+        lit_new = tf.sparse.sparse_dense_matmul(adj_matrix, clauses_val, adjoint_a=True)
+        lit1, lit2 = tf.split(lit_new, 2, axis=0)
+        var_new_deg = lit1 + lit2
+        var_new = var_new_deg[:, :-1]
+        deg = var_new_deg[:, -1:]
+        mean = var_new / tf.maximum(deg, 2)  # 2 is to avoid degenerate case with a single unit clause
+        variables -= mean                    # todo: better treatment of self references
+
+        variance = tf.reduce_mean(tf.square(variables), axis=1, keepdims=True)
+
+        return variables * tf.math.rsqrt(variance + self.epsilon)
+
+class ClausesNeighborNorm(tf.keras.layers.Layer):
+    """ Normalize clauses by subtracting neighbor mean and then normalize by features axis
+    """
+
+    def __init__(self, epsilon=1e-6, **kwargs):
+        self.epsilon = epsilon
+        super(ClausesNeighborNorm, self).__init__(**kwargs)
+
+
+    def call(self, clauses, cl_adj_matrix: tf.SparseTensor = None, **kwargs):
+        """
+        :param inputs: input tensor variables
+        """
+        # subtract neighbor mean
+        clauses1 = tf.concat([clauses, tf.ones([tf.shape(clauses)[0], 1])], axis=1) #todo: it is possible to precompute degree
+        lit_val = tf.sparse.sparse_dense_matmul(cl_adj_matrix, clauses1)
+        clauses_new_deg = tf.sparse.sparse_dense_matmul(cl_adj_matrix, lit_val, adjoint_a=True)
+        clause_new = clauses_new_deg[:, :-1]
+        deg = clauses_new_deg[:, -1:]
+        mean = clause_new / tf.maximum(deg, 2) # todo: better treatment of self references
+        clauses -= mean
+
+        variance = tf.reduce_mean(tf.square(clauses), axis=1, keepdims=True)
+        return clauses * tf.math.rsqrt(variance + self.epsilon)
