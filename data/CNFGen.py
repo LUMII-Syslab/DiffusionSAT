@@ -193,7 +193,7 @@ class KColor(KSAT):
 class MixGraphSAT(KSAT):
     def __init__(self, data_dir, min_vertices=5, max_vertices=20, force_data_gen=False, **kwargs) -> None:
         super(MixGraphSAT, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices, force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 10000
+        self.train_size = 20000
         self.test_size = 5000
         self.datasets = [Clique(data_dir, min_vertices, max_vertices),
                          DomSet(data_dir, min_vertices, max_vertices),
@@ -208,4 +208,4 @@ class MixGraphSAT(KSAT):
     def _generator(self, size) -> tuple:
         for _ in range(size):
             dataset = random.choice(self.datasets)  # type: KSAT
-            return dataset._generator(1)
+            yield from dataset._generator(1)
