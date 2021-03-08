@@ -1,11 +1,11 @@
 from abc import abstractmethod
 
-from data.CNFGen import KColor, MixGraphSAT
-from data.CNFGen import SAT_3, Clique, DomSet
+from data.CNFGen import SAT_3, Clique, DomSet, KColor
 from data.PrimesGen import PrimesGen
 from data.SHAGen import SHAGen
 from data.SHAGen2019 import SHAGen2019
 from data.k_sat import KSAT
+from data.mixed_sat import MixGraphSAT
 from data.tsp import EuclideanTSP
 from data.tsp_asymmetric import AsymmetricTSP
 from model.attention_sat import AttentionSAT
