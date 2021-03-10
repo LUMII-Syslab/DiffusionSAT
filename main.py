@@ -37,7 +37,7 @@ def main():
         train(dataset, model, ckpt, manager)
 
     if Config.evaluate:
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model, print_progress=(Config.task == 'euclidean_tsp'))
         for metric in test_metrics:
             if Config.task == 'euclidean_tsp':
                 metric.log_in_tensorboard(reset_state=False, scope="TSP_test_metrics")
@@ -236,16 +236,18 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                         tf.summary.histogram(var.name, var, step=int(ckpt.step))
 
         if int(ckpt.step) % 1000 == 0:
-            metrics = evaluate_metrics(dataset, validation_data, model, steps=100, initial=(int(ckpt.step) == 0))
+            n_eval_steps = 100
+            if Config.task == 'euclidean_tsp' or Config.task == 'asymmetric_tsp':  # TODO: Make it similar to metrics
+                n_eval_steps = 1
+                iterator = itertools.islice(validation_data, 1)
+                for visualization_step_data in iterator:
+                    model_input = dataset.filter_model_inputs(visualization_step_data)
+                    model.log_visualizations(**model_input)
+
+            metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps, initial=(int(ckpt.step) == 0))
             for metric in metrics:
                 metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
                 metric.log_in_stdout(step=int(ckpt.step))
-
-            if Config.task == 'euclidean_tsp' or Config.task == 'asymmetric_tsp':  # TODO: Make it similar to metrics
-                iterator = itertools.islice(validation_data, 1)
-                for step_data in iterator:
-                    model_input = dataset.filter_model_inputs(step_data)
-                    model.log_visualizations(**model_input)
 
             hparams = model.get_config()
             hparams[HP_TASK] = dataset.__class__.__name__
@@ -275,12 +277,16 @@ def prepare_checkpoints(model, optimizer):
     return ckpt, manager
 
 
-def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False) -> list:
+def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False, print_progress=False) -> list:
     metrics = dataset.metrics(initial)
     iterator = itertools.islice(data, steps) if steps else data
 
     empty = True
+    counter = 0
     for step_data in iterator:
+        if print_progress and counter % 10 == 0:
+            print("Testing batch", counter)
+        counter += 1
         model_input = dataset.filter_model_inputs(step_data)
         output = model.predict_step(**model_input)
         for metric in metrics:

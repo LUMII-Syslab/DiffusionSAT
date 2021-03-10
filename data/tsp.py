@@ -20,6 +20,11 @@ class EuclideanTSP(Dataset):
         self.train_batch_size = 16
         self.beam_width = 128
 
+        self.validation_data_size = 10000
+        self.validation_batch_size = 100
+
+        self.test_data_size = 10000
+        self.test_batch_size = 100
         self.min_test_node_count = 16
         self.max_test_node_count = 16
 
@@ -30,16 +35,17 @@ class EuclideanTSP(Dataset):
         return self.fetch_dataset("train", self.min_node_count, self.max_node_count, self.train_data_size, self.train_batch_size)
 
     def validation_data(self) -> tf.data.Dataset:
-        return self.fetch_dataset("validation", self.min_test_node_count, self.max_test_node_count, dataset_size=1000, batch_size=1)
+        return self.fetch_dataset("validation", self.min_test_node_count, self.max_test_node_count, self.validation_data_size, self.validation_batch_size)
 
     def test_data(self) -> tf.data.Dataset:
-        return self.fetch_dataset("test", self.min_test_node_count, self.max_test_node_count, dataset_size=10000, batch_size=32)
+        return self.fetch_dataset("test", self.min_test_node_count, self.max_test_node_count, self.test_data_size, self.test_batch_size)
 
     def fetch_dataset(self, mode, min_node_count, max_node_count, dataset_size, batch_size):
         """" Reads dataset from file; creates the file if it does not exist."""
         data_folder = self.data_dir / f"{mode}_{min_node_count}_{max_node_count}_{dataset_size//1000}K_{batch_size}"
         data_folder_str = str(data_folder.resolve())  # converts path to a string
-        print(f"Fetching TSP {mode} dataset")
+        print(f"Fetching TSP {mode} dataset (size={dataset_size//1000}K)")
+        if mode == "test": print(f"Number of test batches: {math.ceil(dataset_size/batch_size)}")
 
         if self.force_data_gen and data_folder.exists():
             shutil.rmtree(data_folder)

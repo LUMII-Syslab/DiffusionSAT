@@ -90,13 +90,16 @@ class TSPMatrixSE(tf.keras.Model):
         }
 
     def log_visualizations(self, adj_matrix, coords, labels):
-        padded_size = tf.shape(adj_matrix)[1]
-        mask = tf.cast(tf.not_equal(labels, PADDING_VALUE), tf.float32) * inverse_identity(padded_size)
-        predictions, _, _ = self.call(adj_matrix, training=False, mask=mask)
-        node_count = get_unpadded_size(coords[0])
+        adj_matrix_first = adj_matrix[:1]
+        coords_first = coords[:1]
+        labels_first = labels[:1]
+        padded_size = tf.shape(adj_matrix_first)[1]
+        mask = tf.cast(tf.not_equal(labels_first, PADDING_VALUE), tf.float32) * inverse_identity(padded_size)
+        predictions, _, _ = self.call(adj_matrix_first, training=False, mask=mask)
+        node_count = get_unpadded_size(coords_first[0])
         prediction = remove_padding(predictions[0, :, :, 0], unpadded_size=node_count)
-        coord = remove_padding(coords[0].numpy(), unpadded_size=node_count)
-        label = remove_padding(labels[0].numpy(), unpadded_size=node_count)
+        coord = remove_padding(coords_first[0].numpy(), unpadded_size=node_count)
+        label = remove_padding(labels_first[0].numpy(), unpadded_size=node_count)
         figure = self.draw_predictions_and_optimal_path(tf.sigmoid(prediction).numpy(), coord, label)
         tf.summary.image("graph", tf.cast(plot_to_image(figure), tf.float32) / 255.0)
 
