@@ -74,8 +74,11 @@ class ANF(Dataset):
         return data
 
     def read_dataset(self, data_folder):
-        element_spec = (tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                        tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32))
+        element_spec = (tf.TensorSpec(shape=[None], dtype=tf.int32),
+                        tf.TensorSpec(shape=[None], dtype=tf.int32),
+                        tf.TensorSpec(shape=[None], dtype=tf.int32),
+                        tf.TensorSpec(shape=(), dtype=tf.int64),
+                        tf.TensorSpec(shape=(), dtype=tf.int64))
         data = tf.data.experimental.load(data_folder, element_spec)
         return data
 
@@ -122,12 +125,18 @@ class ANF(Dataset):
             for idx, batch in enumerate(batches):
                 if idx%100==0: print("created ",idx,"batches")
                 n_vars, clauses = self.prepare_example(batch)
-                matrix1 = self.clauses2sparse(n_vars, clauses, 0)
-                matrix2 = self.clauses2sparse(n_vars, clauses, 1)
-                yield matrix1, matrix2
+                ands_index1 = []
+                ands_index2 = []
+                clauses_index = []
+                for clause_id, c in enumerate(clauses):
+                    for v_pair in c:
+                        ands_index1.append(v_pair[0])
+                        ands_index2.append(v_pair[1])
+                        clauses_index.append(clause_id)
+                yield ands_index1, ands_index2, clauses_index, n_vars, len(clauses)
 
-        dataset = tf.data.Dataset.from_generator(gen, output_types = ((tf.int64, tf.int64),(tf.int64, tf.int64)))
-        dataset = dataset.map(lambda t1, t2: (self.create_adjacency_matrix(t1[0], t1[1]),self.create_adjacency_matrix(t2[0], t2[1]))) #workaround
+        dataset = tf.data.Dataset.from_generator(gen, output_types = (tf.int32, tf.int32, tf.int32, tf.int64, tf.int64))
+        #dataset = dataset.map(lambda t1, t2: (self.create_adjacency_matrix(t1[0], t1[1]),self.create_adjacency_matrix(t2[0], t2[1]))) #workaround
         tf.data.experimental.save(dataset, tfrecord_dir)
 
         print(f"Created {len(batches)} data batches in {tfrecord_dir}...\n")
@@ -273,10 +282,15 @@ class ANF(Dataset):
         return n_vars, clauses
 
     def filter_model_inputs(self, step_data) -> dict:
-        return step_data
+
+        return {"ands_index1":step_data[0],
+                "ands_index2":step_data[1],
+                "clauses_index":step_data[2],
+                "n_vars":step_data[3],
+                "n_clauses":step_data[4]}
 
     def metrics(self, initial=False) -> list:
-        pass
+        return []
 
 
 

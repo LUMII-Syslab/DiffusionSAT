@@ -1,0 +1,148 @@
+import tensorflow as tf
+
+def real_and(x,y):
+    val = (1-x)*(1-y)/4
+    return 1-2*val
+
+def anf_loss(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_index:tf.Tensor, n_clauses):
+    """"
+    ands_index1 mapping from vars to first and value of clauses
+    ands_index2 mapping from vars to second and value of clauses
+    clauses_index monotonic map from and_vals to clauses
+    """
+    one = -tf.ones_like(logits[0:1,:])  # zero is represented as+1, one as -1
+    values = tf.tanh(logits)
+    values = tf.concat([one, values], axis=0)
+    ands1 = tf.gather(values, ands_index1, axis=0, validate_indices=True)
+    ands2 = tf.gather(values, ands_index2, axis=0, validate_indices=True)
+    and_val = real_and(ands1, ands2)
+    clause_value = segment_prod(and_val, clauses_index)
+    # if tf.math.is_nan(tf.reduce_sum(clause_value)):
+    #     print("sum",tf.reduce_sum(clause_value))
+    #
+    # if tf.math.is_nan(tf.reduce_mean(clause_value)):
+    #     print(clause_value)
+    return clause_value
+
+def anf_loss_xx(cplx_logits: tf.Tensor, adj_matrix1: tf.SparseTensor, adj_matrix2: tf.SparseTensor):
+
+    #cplx_logits =
+    real_part, im_part = tf.split(cplx_logits, 2, axis=-1)
+    real_part = tf.concat([tf.ones_like(real_part[0,:]),real_part], axis=0)# add cplx-zero at index 0
+    im_part = tf.concat([tf.zeros_like(im_part[0, :]), im_part], axis=0)  # add cplx-zero at index 0
+
+    val1 = tf.gather(cplx_logits, adj_matrix1.indices[:, 0])
+    val2 = tf.gather(cplx_logits, adj_matrix2.indices[:, 0])
+    val = cplx_and(val1, val2)
+    lit_val = tf.math.unsorted_segment_prod(val, adj_matrix.indices[:, 0], adj_matrix.dense_shape[0])
+
+
+    clauses_val1 = tf.sparse.sparse_dense_matmul(adj_matrix, literals)
+    clauses_val = tf.exp(-clauses_val * power)
+    units = tf.concat([q, k], axis=-1)
+    weights = tf.sigmoid(self.unit_mlp(units))
+    # lit_val = tf.math.segment_sum(units, adj_matrix.indices[:,1]) # are indices sorted?
+    lit_val = tf.math.unsorted_segment_sum(k * weights, adj_matrix.indices[:, 0], adj_matrix.dense_shape[0])
+
+    return clauses_val
+
+# @tf.custom_gradient
+# def segment_prod(data:tf.Tensor, segment_ids:tf.Tensor, depth=0):
+#     if depth>3:
+#         result = tf.math.segment_prod(data, segment_ids)
+#     else:
+#        result = segment_prod(data, segment_ids, depth+1)
+#     #result = tf.cond(depth>3,lambda: tf.math.segment_prod(data, segment_ids),lambda:segment_prod(data, segment_ids, depth+1))
+#     def _SegmentProdGrad(grad):
+#         """Gradient for SegmentProd.
+#         The gradient can be expressed for each segment by dividing the segment's
+#         product by each element of the segment input tensor, but this approach can't
+#         deal with zeros in the input.
+#         Unlike reduce_prod we can't use cumsum here as individual segments may have
+#         a different number of elements. Therefore we consider three cases:
+#         1) A segment input contains no zeros and we can safely divide by the input
+#            tensor.
+#         2) A segment contains exactly one zero. Then the gradient of each input of
+#            the segment is zero except for the 0-input, there the gradient is
+#            the product of the remaining segment entries.
+#         3) A segment contains at least two zeros. The gradient is zero for all
+#            segment inputs.
+#         """
+#         is_zero = tf.math.equal(data, 0)
+#         num_zeros = tf.math.segment_sum(
+#             tf.cast(is_zero, dtype=tf.int32), segment_ids)
+#         # handle case 3 and set the gradient to 0 for segments with more than one
+#         # 0 as input
+#         grad = tf.where(
+#             tf.math.greater(num_zeros, 1), tf.zeros_like(grad), grad)
+#         # replace all zeros with ones and compute the segment_prod
+#         non_zero_data = tf.where(is_zero, tf.ones_like(data), data)
+#         non_zero_prod = segment_prod(non_zero_data, segment_ids,0)
+#         gathered_prod = tf.gather(result, segment_ids)
+#         gathered_non_zero_prod = tf.gather(non_zero_prod, segment_ids)
+#         prod_divided_by_el = gathered_prod / non_zero_data
+#         # Now fetch the individual results for segments containing 0 and those that
+#         # don't.
+#         partial_derivative = tf.where(is_zero, gathered_non_zero_prod,
+#                                                 prod_divided_by_el)
+#         gathered_grad = tf.gather(grad, segment_ids)
+#         return gathered_grad * partial_derivative, None, None
+#
+#     return result, _SegmentProdGrad
+
+from tensorflow.python.framework import function
+from tensorflow.python.framework import ops
+
+#@function.Defun(func_name="slog_grad")
+@ops.RegisterGradient("SegmentProd")
+def _SegmentProdGrad(op, grad):
+    """Gradient for SegmentProd.
+    The gradient can be expressed for each segment by dividing the segment's
+    product by each element of the segment input tensor, but this approach can't
+    deal with zeros in the input.
+    Unlike reduce_prod we can't use cumsum here as individual segments may have
+    a different number of elements. Therefore we consider three cases:
+    1) A segment input contains no zeros and we can safely divide by the input
+       tensor.
+    2) A segment contains exactly one zero. Then the gradient of each input of
+       the segment is zero except for the 0-input, there the gradient is
+       the product of the remaining segment entries.
+    3) A segment contains at least two zeros. The gradient is zero for all
+       segment inputs.
+    """
+    data = op.inputs[0]
+    segment_ids = op.inputs[1]
+    result = op.outputs[0]
+    is_zero = tf.math.equal(data, 0)
+    num_zeros = tf.math.segment_sum(
+        tf.cast(is_zero, dtype=tf.int32), segment_ids)
+    # handle case 3 and set the gradient to 0 for segments with more than one
+    # 0 as input
+    grad = tf.where(
+        tf.math.greater(num_zeros, 1), tf.zeros_like(grad), grad)
+    # replace all zeros with ones and compute the segment_prod
+    non_zero_data = tf.where(is_zero, tf.ones_like(data), data)
+    non_zero_prod = segment_prod(non_zero_data, segment_ids)
+    gathered_prod = tf.gather(result, segment_ids)
+    gathered_non_zero_prod = tf.gather(non_zero_prod, segment_ids)
+    prod_divided_by_el = gathered_prod / (tf.abs(non_zero_data)+1e-6)*tf.sign(non_zero_data)
+    # Now fetch the individual results for segments containing 0 and those that
+    # don't.
+    partial_derivative = tf.where(is_zero, gathered_non_zero_prod,
+                                  prod_divided_by_el)
+    gathered_grad = tf.gather(grad, segment_ids)
+    return gathered_grad * partial_derivative, None
+
+
+# @function.Defun(func_name="slog_grad")
+# def slog_grad(x, grad):
+#     return grad / (tf.abs(x) + 1)
+
+
+# def slog_shape(x_op):
+#     return [x_op.inputs[0].get_shape()]
+
+
+#@function.Defun(grad_func=_SegmentProdGrad)
+def segment_prod(data, segment_ids):
+    return tf.math.segment_prod(data, segment_ids)
