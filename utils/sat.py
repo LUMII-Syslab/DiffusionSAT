@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Tuple
 
 from utils.iterable import elements_to_str
+import tensorflow as tf
 
 
 def remove_unused_vars(nvars, clauses):
@@ -107,3 +108,12 @@ def run_external_solver(input_dimacs: str, solver_exe: str = "binary/treengeling
         solution = []
 
     return is_sat, solution
+
+
+def is_batch_sat(predictions: tf.Tensor, adj_matrix: tf.SparseTensor):
+    variables = tf.round(tf.sigmoid(predictions))
+    literals = tf.concat([variables, 1 - variables], axis=0)
+    clauses_sat = tf.sparse.sparse_dense_matmul(adj_matrix, literals)
+    clauses_sat = tf.clip_by_value(clauses_sat, 0, 1)
+
+    return tf.reduce_min(clauses_sat)
