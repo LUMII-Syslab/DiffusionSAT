@@ -14,7 +14,7 @@ import platform
 
 class ANF(Dataset):
     def __init__(self, data_dir, force_data_gen, **kwargs) -> None:
-        self.train_size = 100
+        self.train_size = 1000
         self.test_size = 100
         self.validation_size = 100
 
@@ -219,7 +219,7 @@ class ANF(Dataset):
             except:
                 out = ""  # an unsatisfiable formula or an execution error
             # print(cmd)
-            print(cmd,"["+out+"]") # -- debug
+            #print(cmd,"["+out+"]") # -- debug
 
             # Searching for the "CNF: <nvars> var" substring;
             j1 = out.find("ANF:")
@@ -229,8 +229,9 @@ class ANF(Dataset):
             if j1 >= 0 and j2 >= 0:
                 nvars = int(out[j1 + 4:j2].strip())
                 nequations = int(out[j2 + 10:j3].strip())
-                print(nvars, nequations)
+                #print(nvars, nequations)
             else:
+                print(cmd, "[" + out + "]")
                 raise Exception("error generating ANF")
 
             yield self.TMP_FILE_NAME, nvars, nequations
