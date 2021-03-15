@@ -7,6 +7,7 @@ from layers.normalization import PairNorm
 from loss.sat import softplus_loss_adj, softplus_mixed_loss_adj
 from model.mlp import MLP
 from utils.parameters_log import *
+from utils.sat import is_batch_sat
 
 
 class QuerySAT(Model):
@@ -20,7 +21,7 @@ class QuerySAT(Model):
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
-        self.use_message_passing = False
+        self.use_message_passing = True
         self.skip_first_rounds = 0
         self.prediction_tries = 1
 
@@ -183,8 +184,8 @@ class QuerySAT(Model):
             # n_unsat_clauses = unsat_clause_count(logits, clauses)
             # if n_unsat_clauses == 0:
 
-            is_batch_sat = self.is_batch_sat(logits, cl_adj_matrix)
-            if is_batch_sat == 1:
+            is_sat = is_batch_sat(logits, cl_adj_matrix)
+            if is_sat == 1:
                 if not self.supervised:
                     # now we know the answer, we can use it for supervised training
                     labels_got = tf.round(tf.sigmoid(logits))
@@ -208,15 +209,6 @@ class QuerySAT(Model):
 
         unsupervised_loss = tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32)
         return last_logits, step, unsupervised_loss, supervised_loss, clause_state, variables
-
-    @staticmethod
-    def is_batch_sat(predictions: tf.Tensor, adj_matrix: tf.SparseTensor):
-        variables = tf.round(tf.sigmoid(predictions))
-        literals = tf.concat([variables, 1 - variables], axis=0)
-        clauses_sat = tf.sparse.sparse_dense_matmul(adj_matrix, literals)
-        clauses_sat = tf.clip_by_value(clauses_sat, 0, 1)
-
-        return tf.reduce_min(clauses_sat)
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
