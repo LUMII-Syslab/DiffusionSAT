@@ -2,9 +2,9 @@ import subprocess
 from pathlib import Path
 from typing import Tuple
 
-from utils.iterable import elements_to_str
 import tensorflow as tf
-import time
+
+from utils.iterable import elements_to_str
 
 
 def remove_unused_vars(nvars, clauses):
@@ -121,35 +121,38 @@ def is_batch_sat(predictions: tf.Tensor, adj_matrix: tf.SparseTensor):
 
 
 def walksat(input_dimacs: str,
-            solver_exe: str = "../binary/walksat_linux",
-            tmp_file="/tmp/tmp_dimacs.dimacs"
+            solver_exe: str = "binary/walksat_linux",
             ) -> Tuple[bool, list, float]:
     """
+    WalkSAT v56 (https://gitlab.com/HenryKautz/Walksat)
+
     :param input_dimacs: Correctly formatted DIMACS file as string
-    :param solver_exe: Absolute or relative path to solver executable [supports treengeling, lingeling, plingling]
-    :param tmp_file: Where to save temporary file
-    :return: returns True if formula is satisfiable and False otherwise, and solutions in form [1,2,-3, ...]
+    :param solver_exe: Absolute or relative path to solver executable
+    :return: returns True if formula is satisfiable and False otherwise, solutions in form [1,2,-3, ...] and time
     """
     exe_path = Path(solver_exe).resolve()
-    dimacs_file = Path(tmp_file)
+    output = subprocess.run([str(exe_path), "-solcnf"], input=input_dimacs,
+                            stdout=subprocess.PIPE, universal_newlines=True)
 
-    if dimacs_file.exists():
-        dimacs_file.unlink()
-
-    with dimacs_file.open("w") as f:
-        f.write(input_dimacs)
-
-    start_time = time.time()
-    output = subprocess.run([str(exe_path), tmp_file], stdout=subprocess.PIPE, universal_newlines=True)
-    elapsed_time = time.time() - start_time
+    if output.returncode != 0:
+        raise RuntimeError("WalkSAT: Unexpected return code ", output.returncode)
 
     result = output.stdout.strip()
-    if result:
-        result = result.split(" ")
+    result = result.split("\n")
 
-    if output.returncode != 0 or not result:
-        return False, [], elapsed_time
+    time_elapsed = [x for x in result if x.startswith("total elapsed seconds")][0]
+    time_elapsed = time_elapsed.strip().split(" = ")[-1]
+    time_elapsed = float(time_elapsed)
 
-    result = [int(x) for x in result]
+    sat = [x for x in result if x == "ASSIGNMENT FOUND"]
+    if len(sat) > 1:
+        raise RuntimeError("Only one ASSIGNMENT FOUND should be present in output")
+    sat = bool(sat)
 
-    return True, result, elapsed_time
+    if not sat:
+        return sat, [], time_elapsed
+
+    solution = [x.strip().split(" ") for x in result if x.startswith("v ")]
+    solution = [int(x[-1]) for x in solution]
+
+    return sat, solution, time_elapsed
