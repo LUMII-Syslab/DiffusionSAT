@@ -11,6 +11,9 @@ from data.SHAGen2019 import random_binary_string
 from data.dataset import Dataset
 import platform
 
+from metrics.anf_metrics import ANFAccuracyTF
+from metrics.sat_metrics import StepStatistics
+
 
 class ANF(Dataset):
     def __init__(self, data_dir, force_data_gen, **kwargs) -> None:
@@ -78,7 +81,8 @@ class ANF(Dataset):
                         tf.TensorSpec(shape=[None], dtype=tf.int32),
                         tf.TensorSpec(shape=[None], dtype=tf.int32),
                         tf.TensorSpec(shape=(), dtype=tf.int64),
-                        tf.TensorSpec(shape=(), dtype=tf.int64))
+                        tf.TensorSpec(shape=(), dtype=tf.int64),
+                        tf.TensorSpec(shape=[None], dtype=tf.int32))
         data = tf.data.experimental.load(data_folder, element_spec)
         return data
 
@@ -125,6 +129,9 @@ class ANF(Dataset):
             for idx, batch in enumerate(batches):
                 if idx%100==0: print("created ",idx,"batches")
                 n_vars, clauses = self.prepare_example(batch)
+                is_sat, solution = self.run_external_solver(batch)
+                if len(solution) != n_vars: raise Exception("error in solving")
+                if not is_sat: raise Exception("should be satisfiable")
                 ands_index1 = []
                 ands_index2 = []
                 clauses_index = []
@@ -133,9 +140,9 @@ class ANF(Dataset):
                         ands_index1.append(v_pair[0])
                         ands_index2.append(v_pair[1])
                         clauses_index.append(clause_id)
-                yield ands_index1, ands_index2, clauses_index, n_vars, len(clauses)
+                yield ands_index1, ands_index2, clauses_index, n_vars, len(clauses), solution
 
-        dataset = tf.data.Dataset.from_generator(gen, output_types = (tf.int32, tf.int32, tf.int32, tf.int64, tf.int64))
+        dataset = tf.data.Dataset.from_generator(gen, output_types = (tf.int32, tf.int32, tf.int32, tf.int64, tf.int64, tf.int32))
         #dataset = dataset.map(lambda t1, t2: (self.create_adjacency_matrix(t1[0], t1[1]),self.create_adjacency_matrix(t2[0], t2[1]))) #workaround
         tf.data.experimental.save(dataset, tfrecord_dir)
 
@@ -288,10 +295,40 @@ class ANF(Dataset):
                 "ands_index2":step_data[1],
                 "clauses_index":step_data[2],
                 "n_vars":step_data[3],
-                "n_clauses":step_data[4]}
+                "n_clauses":step_data[4],
+                "solution":step_data[5]}
+
+    def run_external_solver(self, batch, solver_exe: str = "binary/bosphorus-linux64"):
+        """
+        :param solver_exe: Absolute or relative path to solver executable
+        :return: returns True if formula is satisfiable and False otherwise, and solutions in form [1,2,-3, ...]
+        """
+        exe_path = Path(solver_exe).resolve()
+        #"--anfread --xl 0 --sat 0 --el 0 --anfwrite t1"
+        input_str = "--anfread "+str(batch[0])+ " --xl 0 --sat 0 --el 0 --solve" #todo: batching
+        output = subprocess.run([str(exe_path)]+input_str.split(" "), stdout=subprocess.PIPE, universal_newlines=True)
+
+        satisfiable = [line for line in output.stdout.split("\n") if line.startswith("s ")]
+        if len(satisfiable) > 1:
+            raise ValueError("More than one satisifiability line returned!")
+
+        is_sat = satisfiable[0].split()[-1]
+        if is_sat != "ANF-SATISFIABLE" and is_sat != "UNSATISFIABLE":
+            raise ValueError("Unexpected satisfiability value!")
+
+        is_sat = is_sat == "ANF-SATISFIABLE"
+
+        if is_sat:
+            variables = [line[1:].strip() for line in output.stdout.split("\n") if line.startswith("v ")]
+            var_list = variables[0].split()
+            solution = [1 if "1+" in s else 0 for s in var_list[1:]] #assumes increasing var order
+        else:
+            solution = []
+
+        return is_sat, solution
 
     def metrics(self, initial=False) -> list:
-        return []
+        return [ANFAccuracyTF(),StepStatistics()]
 
 
 

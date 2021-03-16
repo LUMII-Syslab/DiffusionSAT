@@ -13,8 +13,8 @@ class ANFSAT(Model):
 
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
-                 vote_layers=3, train_rounds=16, test_rounds=16,
-                 query_maps=64, supervised=False, trial: optuna.Trial = None, **kwargs):
+                 vote_layers=3, train_rounds=16, test_rounds=32,
+                 query_maps=64, supervised=True, trial: optuna.Trial = None, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
         self.train_rounds = train_rounds
@@ -72,6 +72,7 @@ class ANFSAT(Model):
             tf.summary.histogram("logits", last_logits)
             per_clause_loss = anf_loss(last_logits, ands_index1, ands_index2, clauses_index, n_clauses)
             tf.summary.histogram("clauses", per_clause_loss)
+            tf.summary.scalar("last_layer_loss", tf.reduce_sum(tf.square(1-per_clause_loss)))
 
 
         return last_logits, unsupervised_loss + supervised_loss, step
@@ -176,12 +177,13 @@ class ANFSAT(Model):
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
                                   tf.TensorSpec(shape=(), dtype=tf.int64),
-                                  tf.TensorSpec(shape=(), dtype=tf.int64)])
-    def train_step(self, ands_index1,ands_index2,clauses_index,n_vars, n_clauses):
+                                  tf.TensorSpec(shape=(), dtype=tf.int64),
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32)])
+    def train_step(self, ands_index1,ands_index2,clauses_index,n_vars, n_clauses, solution):
         with tf.GradientTape() as tape:
             _, loss, step = self.call(ands_index1 = ands_index1,ands_index2 = ands_index2,
                                       clauses_index = clauses_index,
-                                      n_vars=n_vars, n_clauses=n_clauses, training=True, labels=None)
+                                      n_vars=n_vars, n_clauses=n_clauses, training=True, labels=solution)
             train_vars = self.trainable_variables
             gradients = tape.gradient(loss, train_vars)
             # for g in gradients:
@@ -199,8 +201,9 @@ class ANFSAT(Model):
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
                                   tf.TensorSpec(shape=(), dtype=tf.int64),
-                                  tf.TensorSpec(shape=(), dtype=tf.int64)])
-    def predict_step(self, ands_index1,ands_index2,clauses_index,n_vars, n_clauses):
+                                  tf.TensorSpec(shape=(), dtype=tf.int64),
+                                  tf.TensorSpec(shape=[None], dtype=tf.int32)])
+    def predict_step(self, ands_index1,ands_index2,clauses_index,n_vars, n_clauses, solution):
         predictions, loss, step = self.call(ands_index1 = ands_index1,ands_index2 = ands_index2,
                                       clauses_index = clauses_index,
                                       n_vars=n_vars, n_clauses=n_clauses, training=False, labels=None)
