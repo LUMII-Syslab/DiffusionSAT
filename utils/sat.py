@@ -4,6 +4,7 @@ from typing import Tuple
 
 from utils.iterable import elements_to_str
 import tensorflow as tf
+import time
 
 
 def remove_unused_vars(nvars, clauses):
@@ -117,3 +118,38 @@ def is_batch_sat(predictions: tf.Tensor, adj_matrix: tf.SparseTensor):
     clauses_sat = tf.clip_by_value(clauses_sat, 0, 1)
 
     return tf.reduce_min(clauses_sat)
+
+
+def walksat(input_dimacs: str,
+            solver_exe: str = "../binary/walksat_linux",
+            tmp_file="/tmp/tmp_dimacs.dimacs"
+            ) -> Tuple[bool, list, float]:
+    """
+    :param input_dimacs: Correctly formatted DIMACS file as string
+    :param solver_exe: Absolute or relative path to solver executable [supports treengeling, lingeling, plingling]
+    :param tmp_file: Where to save temporary file
+    :return: returns True if formula is satisfiable and False otherwise, and solutions in form [1,2,-3, ...]
+    """
+    exe_path = Path(solver_exe).resolve()
+    dimacs_file = Path(tmp_file)
+
+    if dimacs_file.exists():
+        dimacs_file.unlink()
+
+    with dimacs_file.open("w") as f:
+        f.write(input_dimacs)
+
+    start_time = time.time()
+    output = subprocess.run([str(exe_path), tmp_file], stdout=subprocess.PIPE, universal_newlines=True)
+    elapsed_time = time.time() - start_time
+
+    result = output.stdout.strip()
+    if result:
+        result = result.split(" ")
+
+    if output.returncode != 0 or not result:
+        return False, [], elapsed_time
+
+    result = [int(x) for x in result]
+
+    return True, result, elapsed_time
