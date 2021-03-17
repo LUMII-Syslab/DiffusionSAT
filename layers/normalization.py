@@ -49,12 +49,14 @@ class PairNorm(tf.keras.layers.Layer):
         mask = graph.indices[:, 0] if graph is not None else None
 
         # input size: cells x feature_maps
-        if self.subtract_mean and graph is not None:  # subtracting mean may not be necessary: https://arxiv.org/abs/1910.07467
-            mean = tf.sparse.sparse_dense_matmul(graph, inputs)
-            # mean = tf.math.unsorted_segment_mean(inputs, graph_mask, tf.reduce_max(graph_mask) + 1)
-            # mean = tf.math.segment_mean(inputs, graph_mask)
+        if self.subtract_mean:  # subtracting mean may not be necessary: https://arxiv.org/abs/1910.07467
+            if graph is not None:
+                mean = tf.sparse.sparse_dense_matmul(graph, inputs)
+                inputs -= tf.gather(mean, mask)
+            else: # assume one graph per batch
+                mean = tf.reduce_mean(inputs, axis=0, keepdims=True)
+                inputs -= mean
 
-            inputs -= tf.gather(mean, mask)
             # inputs += self.bias
 
         # input size: cells x feature_maps

@@ -16,7 +16,13 @@ def anf_loss(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clau
     ands1 = tf.gather(values, ands_index1, axis=0, validate_indices=True)
     ands2 = tf.gather(values, ands_index2, axis=0, validate_indices=True)
     and_val = real_and(ands1, ands2)
-    clause_value = segment_prod(and_val, clauses_index)
+    #clause_value = segment_prod(and_val, clauses_index)
+    log_val = tf.math.log(tf.abs(and_val)+1e-6)
+    signs = (1-tf.cast(tf.sign(and_val), tf.int32))//2
+    sum_logs = tf.math.segment_sum(log_val, clauses_index)
+    sum_signs = tf.math.segment_sum(signs, clauses_index)
+    sum_signs = tf.cast(1-2*(sum_signs % 2), tf.float32)
+    clause_value = tf.exp(sum_logs)*sum_signs
     # if tf.math.is_nan(tf.reduce_sum(clause_value)):
     #     print("sum",tf.reduce_sum(clause_value))
     #

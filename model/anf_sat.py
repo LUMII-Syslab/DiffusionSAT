@@ -3,7 +3,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 
-from layers.normalization import PairNorm
+from layers.normalization import PairNorm, LayerNormalization
 from loss.anf import anf_loss
 from model.mlp import MLP
 from utils.parameters_log import *
@@ -13,7 +13,7 @@ class ANFSAT(Model):
 
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
-                 vote_layers=3, train_rounds=16, test_rounds=32,
+                 vote_layers=3, train_rounds=32, test_rounds=64,
                  query_maps=64, supervised=True, trial: optuna.Trial = None, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
@@ -37,13 +37,14 @@ class ANFSAT(Model):
         clauses_scale = trial.suggest_discrete_uniform("clauses_scale", 0.2, 2., 0.2) if trial else 2
         query_scale = trial.suggest_discrete_uniform("query_scale", 0.2, 2., 0.2) if trial else 3
 
-        self.variables_norm = PairNorm(subtract_mean=False)
-        self.clauses_norm = PairNorm(subtract_mean=False)
+        self.variables_norm = PairNorm(subtract_mean=True)
+        self.clauses_norm = PairNorm(subtract_mean=True)
 
         self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate", do_layer_norm=False)
         self.variables_output = MLP(output_layers, int(feature_maps * output_scale), 1, name="variables_output", do_layer_norm=False)
         self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query", do_layer_norm=False)
-        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
+        #self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
+        self.grad_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="grad_update", do_layer_norm=False)
 
         self.lit_mlp = MLP(msg_layers, query_maps * 4, query_maps * 2, name="lit_query", do_layer_norm=False)
 
@@ -68,9 +69,10 @@ class ANFSAT(Model):
                                                                                                    training,
                                                                                                    variables,
                                                                                                    n_clauses)
+        if not self.supervised: last_logits=-last_logits # meaning of logits is reversed in unsupervised
         if training:
-            tf.summary.histogram("logits", last_logits)
-            per_clause_loss = anf_loss(last_logits, ands_index1, ands_index2, clauses_index, n_clauses)
+            tf.summary.histogram("logits", -last_logits)
+            per_clause_loss = anf_loss(-last_logits, ands_index1, ands_index2, clauses_index, n_clauses)
             tf.summary.histogram("clauses", per_clause_loss)
             tf.summary.scalar("last_layer_loss", tf.reduce_sum(tf.square(1-per_clause_loss)))
 
@@ -81,6 +83,7 @@ class ANFSAT(Model):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         n_vars = tf.shape(variables)[0]
         last_logits = tf.zeros([n_vars, 1])
+        v_grad = tf.zeros([n_vars, self.query_maps])
 
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
@@ -89,12 +92,19 @@ class ANFSAT(Model):
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
                 query = self.variables_query(v1)
                 clauses_loss = anf_loss(query, ands_index1, ands_index2, clauses_index, n_clauses)
+                clauses_loss = self.grad_mlp(clauses_loss)
+                # clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
+                # clause_data = self.clause_mlp(clause_unit, training=training)
+                #
+                # transformed_loss = clause_data[:, 0:self.query_maps]
+                # new_clause_value = clause_data[:, self.query_maps:]
+                # new_clause_value = self.clauses_norm(new_clause_value, training=training) * 0.25
+                # clause_state = new_clause_value + 0.1 * clause_state
+
                 step_loss = tf.reduce_sum(clauses_loss)
 
             variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
-            # print('v',tf.reduce_max(variables), tf.reduce_min(variables))
-            # print(tf.reduce_max(variables_grad), tf.reduce_min(variables_grad))
-            # print('l',tf.reduce_max(step_loss), tf.reduce_min(step_loss))
+            v_grad = variables_grad
 
             # calculate new clause state
             #clauses_loss *= 4
@@ -162,10 +172,10 @@ class ANFSAT(Model):
             variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
             clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
 
-        # if training:
+        if training:
         #     tf.summary.histogram("query_msg", q_msg)
         #     tf.summary.histogram("clause_msg", cl_msg)
-        #     tf.summary.histogram("var_grad", v_grad)
+             tf.summary.histogram("var_grad", v_grad)
         #     tf.summary.histogram("var_loss_msg", var_loss_msg)
         #     tf.summary.histogram("query", query)
 
