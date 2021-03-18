@@ -77,12 +77,14 @@ class ANF(Dataset):
         return data
 
     def read_dataset(self, data_folder):
-        element_spec = (tf.TensorSpec(shape=[None], dtype=tf.int32),
-                        tf.TensorSpec(shape=[None], dtype=tf.int32),
-                        tf.TensorSpec(shape=[None], dtype=tf.int32),
-                        tf.TensorSpec(shape=(), dtype=tf.int64),
-                        tf.TensorSpec(shape=(), dtype=tf.int64),
-                        tf.TensorSpec(shape=[None], dtype=tf.int32))
+        element_spec = (tf.TensorSpec(shape=[None], dtype=tf.int32),#ands_index1
+                        tf.TensorSpec(shape=[None], dtype=tf.int32),#ands_index2
+                        tf.TensorSpec(shape=(), dtype=tf.int64), #n_vars
+                        tf.TensorSpec(shape=(), dtype=tf.int64),# n_clauses
+                        tf.TensorSpec(shape=(), dtype=tf.int64),  # n_ands
+                        tf.TensorSpec(shape=[None], dtype=tf.int32),#solution
+                        tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32)) # (vars, ands)-clauses matrix
+
         data = tf.data.experimental.load(data_folder, element_spec)
         return data
 
@@ -98,16 +100,6 @@ class ANF(Dataset):
 
         print(f"Generating DIMACS data in '{data_folder}' directory!")
         for idx, (fname, n_vars, n_equations) in enumerate(data_generator):
-
-            # solution = solution[0] if solution and solution[0] else get_sat_model(clauses)
-            # solution = [int(x > 0) for x in solution]
-            # solution = elements_to_str(solution)
-            #
-            # clauses = [elements_to_str(c) for c in clauses]
-            # file = [f"c sol " + " ".join(solution)]
-            # file += [f"p cnf {n_vars} {len(clauses)}"]
-            # file += [f"{' '.join(c)} 0" for c in clauses]
-
             out_filename = data_folder / f"sat_{n_vars}_{n_equations}_{idx}.anf"
             shutil.move(fname, out_filename)
 
@@ -134,23 +126,35 @@ class ANF(Dataset):
                 if not is_sat: raise Exception("should be satisfiable")
                 ands_index1 = []
                 ands_index2 = []
-                clauses_index = []
+                #clauses_index = []
+                new_clauses = []
                 for clause_id, c in enumerate(clauses):
+                    new_clause = []
                     for v_pair in c:
-                        ands_index1.append(v_pair[0])
-                        ands_index2.append(v_pair[1])
-                        clauses_index.append(clause_id)
-                yield ands_index1, ands_index2, clauses_index, n_vars, len(clauses), solution
+                        if len(v_pair) == 1: new_clause.append(v_pair[0])
+                        else:
+                            new_clause.append(n_vars+1+len(ands_index1))# ands are appended to single vars. account +1 for zero index
+                            ands_index1.append(v_pair[0])
+                            ands_index2.append(v_pair[1])
+                    new_clauses.append(new_clause)
+                n_ands = len(ands_index1)
+                clauses_indices, clauses_shape = self.clauses2sparse(n_vars+len(ands_index1), new_clauses)
+                yield ands_index1, ands_index2, n_vars, len(clauses), n_ands, solution, clauses_indices, clauses_shape
 
-        dataset = tf.data.Dataset.from_generator(gen, output_types = (tf.int32, tf.int32, tf.int32, tf.int64, tf.int64, tf.int32))
-        #dataset = dataset.map(lambda t1, t2: (self.create_adjacency_matrix(t1[0], t1[1]),self.create_adjacency_matrix(t2[0], t2[1]))) #workaround
+        dataset = tf.data.Dataset.from_generator(gen, output_types = (tf.int32, tf.int32, tf.int64, tf.int64, tf.int64, tf.int32, tf.int64, tf.int64))
+        dataset = dataset.map(lambda t1, t2, t3, t4, t5, t6, t7, t8: (t1, t2, t3, t4, t5, t6, self.create_adjacency_matrix(t7, t8))) #workaround
         tf.data.experimental.save(dataset, tfrecord_dir)
 
         print(f"Created {len(batches)} data batches in {tfrecord_dir}...\n")
 
-    def clauses2sparse(self, var_count, clauses, last_dim):
+    # def clauses2sparse(self, var_count, clauses, last_dim):
+    #     shape = self.create_shape(var_count+1, len(clauses))# var_count does not include zero-th var, so need +1
+    #     indices = [[v[last_dim], idx] for idx, c in enumerate(clauses) for v in c]
+    #     return indices, shape
+
+    def clauses2sparse(self, var_count, clauses):
         shape = self.create_shape(var_count+1, len(clauses))# var_count does not include zero-th var, so need +1
-        indices = [[v[last_dim], idx] for idx, c in enumerate(clauses) for v in c]
+        indices = [[v, idx] for idx, c in enumerate(clauses) for v in c]
         return indices, shape
 
     @staticmethod
@@ -278,9 +282,10 @@ class ANF(Dataset):
                         mulsplit = [x.strip() for x in mul_item.split('*')]
                         n_lits += len(mulsplit)
                         mul_list=[self.var_id(v) for v in mulsplit]
-                        if len(mul_list)==1:mul_list.append(0) # add an extra one
+                        #if len(mul_list)==1:mul_list.append(0) # add an extra one
                         if len(mul_list)>2 or len(mul_list)==0: raise Exception("limitation: only two ands are allowed")
-                        n_vars = max(n_vars, mul_list[0], mul_list[1])
+                        n_vars = max(n_vars, mul_list[0])
+                        if len(mul_list)==2: n_vars = max(n_vars, mul_list[1])
                         c.append(mul_list)
                     clauses.append(c)
 
@@ -290,13 +295,13 @@ class ANF(Dataset):
         return n_vars, clauses
 
     def filter_model_inputs(self, step_data) -> dict:
-
         return {"ands_index1":step_data[0],
                 "ands_index2":step_data[1],
-                "clauses_index":step_data[2],
-                "n_vars":step_data[3],
-                "n_clauses":step_data[4],
-                "solution":step_data[5]}
+                "n_vars":step_data[2],
+                "n_clauses":step_data[3],
+                "n_ands": step_data[4],
+                "solution":step_data[5],
+                "clauses_adj":step_data[6]}
 
     def run_external_solver(self, batch, solver_exe: str = "binary/bosphorus-linux64"):
         """

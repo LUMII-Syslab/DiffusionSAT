@@ -4,7 +4,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 
 from layers.normalization import PairNorm, LayerNormalization
-from loss.anf import anf_loss, anf_value_cplx
+from loss.anf import anf_loss, anf_value_cplx, anf_value_cplx_adj
 from model.mlp import MLP
 from utils.parameters_log import *
 
@@ -57,12 +57,12 @@ class ANFSAT(Model):
         onehot -= 1 / n_features
         return onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
 
-    def call(self, ands_index1:tf.Tensor,ands_index2:tf.Tensor=None,clauses_index:tf.Tensor=None,n_vars=0, n_clauses=0, training=None, labels=None):
+    def call(self, ands_index1:tf.Tensor,ands_index2:tf.Tensor=None,clauses_adj:tf.SparseTensor=None,n_vars=0, n_clauses=0, training=None, labels=None):
         variables = self.zero_state(n_vars, self.feature_maps)
         clause_state = self.zero_state(n_clauses, self.feature_maps)
         rounds = self.train_rounds if training else self.test_rounds
 
-        last_logits, step, unsupervised_loss, supervised_loss, clause_state, variables = self.loop(ands_index1,ands_index2,clauses_index,
+        last_logits, step, unsupervised_loss, supervised_loss, clause_state, variables = self.loop(ands_index1,ands_index2,clauses_adj,
                                                                                                    clause_state,
                                                                                                    labels,
                                                                                                    rounds,
@@ -72,14 +72,14 @@ class ANFSAT(Model):
         if not self.supervised: last_logits=-last_logits # meaning of logits is reversed in unsupervised
         if training:
             tf.summary.histogram("logits", -last_logits)
-            per_clause_loss = anf_loss(-last_logits, ands_index1, ands_index2, clauses_index, n_clauses)
-            tf.summary.histogram("clauses", per_clause_loss)
-            tf.summary.scalar("last_layer_loss", tf.reduce_sum(tf.square(1-per_clause_loss)))
+            #per_clause_loss = anf_loss(-last_logits, ands_index1, ands_index2, clauses_adj, n_clauses)
+            #tf.summary.histogram("clauses", per_clause_loss)
+            #tf.summary.scalar("last_layer_loss", tf.reduce_sum(tf.square(1-per_clause_loss)))
 
 
         return last_logits, unsupervised_loss + supervised_loss, step
 
-    def loop(self, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_index:tf.Tensor, clause_state, labels, rounds, training, variables, n_clauses):
+    def loop(self, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_adj:tf.SparseTensor, clause_state, labels, rounds, training, variables, n_clauses):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         n_vars = tf.shape(variables)[0]
         last_logits = tf.zeros([n_vars, 1])
@@ -94,7 +94,7 @@ class ANFSAT(Model):
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
                 query = self.variables_query(v1)
                 #clauses_loss = anf_loss(query, ands_index1, ands_index2, clauses_index, n_clauses)
-                clauses_real, clauses_im = anf_value_cplx(query, ands_index1, ands_index2, clauses_index, n_clauses)
+                clauses_real, clauses_im = anf_value_cplx_adj(query, ands_index1, ands_index2, clauses_adj)
                 #clauses_loss = self.grad_mlp(clauses_loss)
                 # clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
                 # clause_data = self.clause_mlp(clause_unit, training=training)
@@ -188,17 +188,17 @@ class ANFSAT(Model):
         unsupervised_loss = tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32)
         return last_logits, step, unsupervised_loss, 0.0, clause_state, variables
 
-
     @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.TensorSpec(shape=(), dtype=tf.int64),
+                                  tf.TensorSpec(shape=(), dtype=tf.int64),
+                                  tf.TensorSpec(shape=(), dtype=tf.int64),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
-                                  tf.TensorSpec(shape=(), dtype=tf.int64),
-                                  tf.TensorSpec(shape=(), dtype=tf.int64),
-                                  tf.TensorSpec(shape=[None], dtype=tf.int32)])
-    def train_step(self, ands_index1,ands_index2,clauses_index,n_vars, n_clauses, solution):
+                                  tf.SparseTensorSpec(shape = [None, None], dtype = tf.float32)])
+    def train_step(self, ands_index1,ands_index2,n_vars, n_clauses, n_ands, solution, clauses_adj):
         with tf.GradientTape() as tape:
             _, loss, step = self.call(ands_index1 = ands_index1,ands_index2 = ands_index2,
-                                      clauses_index = clauses_index,
+                                      clauses_adj = clauses_adj,
                                       n_vars=n_vars, n_clauses=n_clauses, training=True, labels=solution)
             train_vars = self.trainable_variables
             gradients = tape.gradient(loss, train_vars)
@@ -215,13 +215,14 @@ class ANFSAT(Model):
 
     @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.int32),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.TensorSpec(shape=(), dtype=tf.int64),
+                                  tf.TensorSpec(shape=(), dtype=tf.int64),
+                                  tf.TensorSpec(shape=(), dtype=tf.int64),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
-                                  tf.TensorSpec(shape=(), dtype=tf.int64),
-                                  tf.TensorSpec(shape=(), dtype=tf.int64),
-                                  tf.TensorSpec(shape=[None], dtype=tf.int32)])
-    def predict_step(self, ands_index1,ands_index2,clauses_index,n_vars, n_clauses, solution):
+                                  tf.SparseTensorSpec(shape = [None, None], dtype = tf.float32)])
+    def predict_step(self, ands_index1,ands_index2,n_vars, n_clauses, n_ands, solution, clauses_adj):
         predictions, loss, step = self.call(ands_index1 = ands_index1,ands_index2 = ands_index2,
-                                      clauses_index = clauses_index,
+                                      clauses_adj = clauses_adj,
                                       n_vars=n_vars, n_clauses=n_clauses, training=False, labels=None)
 
         return {
