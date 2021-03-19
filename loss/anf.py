@@ -93,7 +93,7 @@ def anf_value_cplx_adj(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.T
     sum_len = tf.sparse.sparse_dense_matmul(clauses_adj, log_len, adjoint_a=True)
     clause_real = tf.exp(sum_len)*tf.math.cos(sum_angles)
     clause_im = tf.exp(sum_len) * tf.math.sin(sum_angles)
-    return clause_real, clause_im, and_real0, and_im0
+    return clause_real, clause_im, ands1, ands2
 
 def anf_loss_cplx(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_index:tf.Tensor, n_clauses):
     clause_real, clause_im = anf_value_cplx(logits, ands_index1, ands_index2, clauses_index, n_clauses)

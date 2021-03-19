@@ -20,7 +20,7 @@ class ANFSAT(Model):
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
-        self.use_message_passing = False
+        self.use_message_passing = True
         self.skip_first_rounds = 0
         self.prediction_tries = 1
 
@@ -46,12 +46,15 @@ class ANFSAT(Model):
         self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
         self.grad_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="grad_update", do_layer_norm=False)
         self.ands_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="ands_update", do_layer_norm=False)
+        self.var2ands_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="var2ands_mlp", do_layer_norm=False)
+        self.var2clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="var2clause_mlp", do_layer_norm=False)
 
         #self.lit_mlp = MLP(msg_layers, query_maps * 4, query_maps * 2, name="lit_query", do_layer_norm=False)
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
         self.vote_layers = vote_layers
+        self.zero_var = self.add_weight("zero_var", [1,query_maps], initializer=tf.constant_initializer(0.02))
 
     def zero_state(self, n_units, n_features, stddev=0.25):
         onehot = tf.one_hot(tf.zeros([n_units], dtype=tf.int64), n_features)
@@ -86,6 +89,7 @@ class ANFSAT(Model):
         last_logits = tf.zeros([n_vars, 1])
         v_grad = tf.zeros([n_vars, self.query_maps])
         query_msg = tf.zeros([n_vars, self.query_maps])
+        cl_msg = tf.zeros([n_clauses, self.query_maps])
         query_value = tf.zeros([n_vars, self.query_maps])
 
         for step in tf.range(rounds):
@@ -95,15 +99,8 @@ class ANFSAT(Model):
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
                 query = self.variables_query(v1)
                 #clauses_loss = anf_loss(query, ands_index1, ands_index2, clauses_index, n_clauses)
-                clauses_real, clauses_im, _,_ = anf_value_cplx_adj(query, ands_index1, ands_index2, clauses_adj)
+                clauses_real, clauses_im, clause_ands1,clause_ands2 = anf_value_cplx_adj(query, ands_index1, ands_index2, clauses_adj)
                 #clauses_loss = self.grad_mlp(clauses_loss)
-                # clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
-                # clause_data = self.clause_mlp(clause_unit, training=training)
-                #
-                # transformed_loss = clause_data[:, 0:self.query_maps]
-                # new_clause_value = clause_data[:, self.query_maps:]
-                # new_clause_value = self.clauses_norm(new_clause_value, training=training) * 0.25
-                # clause_state = new_clause_value + 0.1 * clause_state
 
                 #step_loss = tf.reduce_sum(1-clauses_loss)
                 step_loss = tf.reduce_sum(1 - clauses_real)#+tf.reduce_sum(tf.abs(clauses_im))
@@ -115,17 +112,19 @@ class ANFSAT(Model):
 
             # calculate new clause state
             #clauses_loss *= 4
+            ands1 = tf.gather(variables, ands_index1-1, axis=0) #get variables corresponding to and1
+            ands2 = tf.gather(variables, ands_index2-1, axis=0) #get variables corresponding to and2
 
-            # if self.use_message_passing:
-            #     var_msg = self.lit_mlp(variables, training=training)
-            #     lit1, lit2 = tf.split(var_msg, 2, axis=1)
-            #     literals = tf.concat([lit1, lit2], axis=0)
-            #     clause_messages = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals)
-            #     clause_messages *= rev_degree_weight
-            #     cl_msg = clause_messages
-            #     clause_unit = tf.concat([clause_state, clause_messages, clauses_loss], axis=-1)
-            # else:
-            clause_unit = tf.concat([clause_state, query_msg], axis=-1)
+            if self.use_message_passing:
+                ands_data = self.var2ands_mlp(tf.concat([ands1, ands2], axis=-1), training=training)
+                var_data = self.var2clause_mlp(variables, training=training)
+                var_data = tf.concat([self.zero_var, var_data, ands_data], axis=0)
+                clause_messages = tf.sparse.sparse_dense_matmul(clauses_adj, var_data, adjoint_a=True)
+                #clause_messages *= rev_degree_weight
+                cl_msg = clause_messages
+                clause_unit = tf.concat([clause_state, clause_messages, query_msg], axis=-1)
+            else:
+                clause_unit = tf.concat([clause_state, query_msg], axis=-1)
             clause_data = self.clause_mlp(clause_unit, training=training)
 
             loss_to_vars = clause_data[:, 0:self.query_maps]
@@ -136,8 +135,6 @@ class ANFSAT(Model):
             # Aggregate loss over edges
             variables_ands_loss = tf.sparse.sparse_dense_matmul(clauses_adj, loss_to_vars) # sum over vars and and_data
             variables_loss = variables_ands_loss[1:n_vars+1,:] #take variable part
-            ands1 = tf.gather(variables, ands_index1-1, axis=0) #get variables corresponding to and1
-            ands2 = tf.gather(variables, ands_index2-1, axis=0) #get variables corresponding to and2
             ands_data = tf.concat([ands1, ands2, variables_ands_loss[n_vars+1:,:]], axis=-1) #concat anded variables and clause values corespond to ands
             ands_value = self.ands_mlp(ands_data) #apply mlp to and data
 
@@ -191,7 +188,7 @@ class ANFSAT(Model):
 
         if training:
              tf.summary.histogram("query_msg", query_msg)
-        #     tf.summary.histogram("clause_msg", cl_msg)
+             tf.summary.histogram("clause_msg", cl_msg)
              tf.summary.histogram("var_grad", v_grad)
         #     tf.summary.histogram("var_loss_msg", var_loss_msg)
              tf.summary.histogram("query", query_value)
