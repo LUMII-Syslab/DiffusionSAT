@@ -78,22 +78,22 @@ def anf_value_cplx_adj(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.T
     """
     n_maps = tf.shape(logits)[-1]//2
     one = tf.concat([-tf.ones([1,n_maps]), tf.zeros([1,n_maps])], axis=-1)  # zero is represented as +1+0j, one as -1+0j
-    #values = tf.tanh(logits)
-    values = normalize(logits)
+    values = tf.tanh(logits)
+    #values = normalize(logits)
     values = tf.concat([one, values], axis=0)
     ands1 = tf.gather(values, ands_index1, axis=0)
     ands2 = tf.gather(values, ands_index2, axis=0)
-    and_real, and_im = cplx_and(ands1, ands2)
+    and_real0, and_im0 = cplx_and(ands1, ands2)
     val_real, val_im = tf.split(values, 2, axis=-1)
-    and_real = tf.concat([val_real, and_real], axis=0)
-    and_im = tf.concat([val_im, and_im], axis=0)
+    and_real = tf.concat([val_real, and_real0], axis=0)
+    and_im = tf.concat([val_im, and_im0], axis=0)
     angle = tf.math.atan2(and_im, and_real)
     log_len = 0.5*tf.math.log(tf.square(and_real)+tf.square(and_im)+1e-16)
     sum_angles = tf.sparse.sparse_dense_matmul(clauses_adj,angle, adjoint_a=True)
     sum_len = tf.sparse.sparse_dense_matmul(clauses_adj, log_len, adjoint_a=True)
     clause_real = tf.exp(sum_len)*tf.math.cos(sum_angles)
     clause_im = tf.exp(sum_len) * tf.math.sin(sum_angles)
-    return clause_real, clause_im
+    return clause_real, clause_im, and_real0, and_im0
 
 def anf_loss_cplx(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_index:tf.Tensor, n_clauses):
     clause_real, clause_im = anf_value_cplx(logits, ands_index1, ands_index2, clauses_index, n_clauses)
