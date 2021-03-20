@@ -122,10 +122,7 @@ class ANF(Dataset):
         def gen():
             for idx, batch in enumerate(batches):
                 if idx%100==0: print("created ",idx,"batches")
-                n_vars, clauses = self.prepare_example(batch)
-                is_sat, solution = self.run_external_solver(batch)
-                if len(solution) != n_vars: raise Exception("error in solving")
-                if not is_sat: raise Exception("should be satisfiable")
+                n_vars, clauses, solution = self.prepare_example(batch)
                 ands_index1 = []
                 ands_index2 = []
                 #clauses_index = []
@@ -184,7 +181,17 @@ class ANF(Dataset):
         total_vars = 0
         batched_clauses = None
         for file in batch: #TODO: batching
-            n_vars, clauses = self.read_anf(file)
+            n_vars, clauses, var_id_map = self.read_anf(file)
+            is_sat, solution = self.run_external_solver(batch)
+            if len(solution) < n_vars: raise Exception("error in solving")
+            if not is_sat: raise Exception("should be satisfiable")
+            if self.ANF_simplify:
+                solution_new = np.zeros(n_vars)-1
+                for ind, x in enumerate(solution):
+                    if ind+1 in var_id_map:
+                        solution_new[var_id_map[ind+1]-1] = x
+                solution = solution_new
+
             #solution = elements_to_int(lines[0].strip().split()[2:])
 
             # clauses = [elements_to_int(line.strip().split()[:-1]) for line in lines[2:]]
@@ -198,7 +205,7 @@ class ANF(Dataset):
             # offset += var_count
             batched_clauses = clauses
             total_vars = n_vars
-        return total_vars, batched_clauses
+        return total_vars, batched_clauses, solution
 
     def __generator(self, size) -> tuple:
         samplesSoFar = 0
@@ -249,18 +256,25 @@ class ANF(Dataset):
                 #raise Exception("error generating ANF")
 
             if self.ANF_simplify:
-                nequations, out_name = self.run_external_simplify(self.TMP_FILE_NAME, self.TMP_FILE_NAME1)
+                nvars, nequations, out_name = self.run_external_simplify(self.TMP_FILE_NAME, self.TMP_FILE_NAME1)
 
             if nequations == 0: continue
             yield out_name, nvars, nequations
             samplesSoFar += 1
 
-    def var_id(self, var_name):
+    def var_id(self, var_name, var_id_map):
         if var_name=='1': return 0 # zero id is reserved for constant 1
         if var_name[0] != 'x': raise Exception("invalid var name ", var_name[0])
         var_id = int(var_name[1:].strip("()"))
         if var_id <= 0: raise Exception("invalid var nr")
-        return var_id
+        if not self.ANF_simplify:
+            return var_id
+        else:
+            # renumber variables to remove unused ones
+            if var_id in var_id_map: return var_id_map[var_id]
+            new_var_id = len(var_id_map)+1# variable numbers start from 1
+            var_id_map[var_id] = new_var_id
+            return new_var_id
 
 
     def read_anf(self,fileName):
@@ -272,6 +286,7 @@ class ANF(Dataset):
         :return:
         """
         n_lits = 0
+        var_id_map = {} #mapping id_in_file -> new_id
         text_file = open(fileName, "r")
         lines = text_file.readlines()
         clauses = []
@@ -280,6 +295,7 @@ class ANF(Dataset):
         for clause_id in range(len(lines)):
             line = lines[clause_id]
             line = line.strip()
+            if self.ANF_simplify and line.startswith("c Fixed values"):break #skip fixed values and equivalences, they should have been simplified
             if len(line)>0 and line[0] != 'c':
                 items = [x.strip() for x in line.split('+')]
                 if len(items)>= 1:
@@ -289,7 +305,7 @@ class ANF(Dataset):
                         mul_item = items[i]
                         mulsplit = [x.strip() for x in mul_item.split('*')]
                         n_lits += len(mulsplit)
-                        mul_list=[self.var_id(v) for v in mulsplit]
+                        mul_list=[self.var_id(v, var_id_map) for v in mulsplit]
                         #if len(mul_list)==1:mul_list.append(0) # add an extra one
                         if len(mul_list)>2 or len(mul_list)==0: raise Exception("limitation: only two ands are allowed")
                         n_vars = max(n_vars, mul_list[0])
@@ -300,7 +316,7 @@ class ANF(Dataset):
         #print("max and length=",maxsize,"n_lits=", n_lits, "n_ands=",n_ands, "unique_ands=", len(ands_set))
 
         text_file.close()
-        return n_vars, clauses
+        return n_vars, clauses, var_id_map
 
     def filter_model_inputs(self, step_data) -> dict:
         return {"ands_index1":step_data[0],
@@ -360,9 +376,16 @@ class ANF(Dataset):
         if len(num_equations) == 0:
             print(num_equations)
             raise ValueError("invalid simplification output")
-        # c Num total vars: 2370
         n_equations = int(num_equations[-1].split()[-1])
-        return n_equations, out_filename
+
+        num_vars = [line for line in output.stdout.split("\n") if line.startswith("c Num free vars:")]
+        if len(num_vars) == 0:
+            print(num_vars)
+            raise ValueError("invalid simplification output")
+
+        n_vars = int(num_vars[-1].split()[-1])-1
+
+        return n_vars, n_equations, out_filename
 
     def metrics(self, initial=False) -> list:
         return [ANFAccuracyTF(),StepStatistics()]
