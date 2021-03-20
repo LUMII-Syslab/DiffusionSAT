@@ -21,6 +21,7 @@ class ANFSAT(Model):
         self.test_rounds = test_rounds
         self.optimizer = optimizer
         self.use_message_passing = True
+        self.use_query = False
         self.skip_first_rounds = 0
         self.prediction_tries = 1
 
@@ -86,6 +87,11 @@ class ANFSAT(Model):
     def loop(self, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_adj:tf.SparseTensor, clause_state, labels, rounds, training, variables, n_clauses):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         n_vars = tf.shape(variables)[0]
+        var_degree = tf.reshape(tf.sparse.reduce_sum(clauses_adj, axis=1), [-1, 1])
+        degree_weight = tf.math.rsqrt(tf.maximum(var_degree, 1))
+        clause_degree = tf.reshape(tf.sparse.reduce_sum(clauses_adj, axis=0), [-1, 1])
+        clause_degree_weight = tf.math.rsqrt(tf.maximum(clause_degree, 1))
+
         last_logits = tf.zeros([n_vars, 1])
         v_grad = tf.zeros([n_vars, self.query_maps])
         query_msg = tf.zeros([n_vars, self.query_maps])
@@ -94,21 +100,20 @@ class ANFSAT(Model):
 
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
-            with tf.GradientTape() as grad_tape:
-                # add some randomness to avoid zero collapse in normalization
-                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
-                query = self.variables_query(v1)
-                #clauses_loss = anf_loss(query, ands_index1, ands_index2, clauses_index, n_clauses)
-                clauses_real, clauses_im, clause_ands1,clause_ands2 = anf_value_cplx_adj(query, ands_index1, ands_index2, clauses_adj)
-                #clauses_loss = self.grad_mlp(clauses_loss)
-
-                #step_loss = tf.reduce_sum(1-clauses_loss)
-                step_loss = tf.reduce_sum(1 - clauses_real)#+tf.reduce_sum(tf.abs(clauses_im))
+            if self.use_query:
+                with tf.GradientTape() as grad_tape:
+                    # add some randomness to avoid zero collapse in normalization
+                    v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
+                    query = self.variables_query(v1)
+                    clauses_real, clauses_im, clause_ands1,clause_ands2 = anf_value_cplx_adj(query, ands_index1, ands_index2, clauses_adj)
+                    query_value = query
+                    query_msg = tf.concat([clauses_real, clauses_im], axis=-1)
+                    #clauses_loss = self.grad_mlp(clauses_loss)
+                    #step_loss = tf.reduce_sum(1-clauses_loss)
+                    #step_loss = tf.reduce_sum(1 - clauses_real)#+tf.reduce_sum(tf.abs(clauses_im))
 
             #variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
             #v_grad = variables_grad
-            query_value = query
-            query_msg = tf.concat([clauses_real, clauses_im], axis=-1)
 
             # calculate new clause state
             #clauses_loss *= 4
@@ -120,9 +125,12 @@ class ANFSAT(Model):
                 var_data = self.var2clause_mlp(variables, training=training)
                 var_data = tf.concat([self.zero_var, var_data, ands_data], axis=0)
                 clause_messages = tf.sparse.sparse_dense_matmul(clauses_adj, var_data, adjoint_a=True)
-                #clause_messages *= rev_degree_weight
+                clause_messages *= clause_degree_weight
                 cl_msg = clause_messages
-                clause_unit = tf.concat([clause_state, clause_messages, query_msg], axis=-1)
+                if self.use_query:
+                    clause_unit = tf.concat([clause_state, clause_messages, query_msg], axis=-1)
+                else:
+                    clause_unit = tf.concat([clause_state, clause_messages], axis=-1)
             else:
                 clause_unit = tf.concat([clause_state, query_msg], axis=-1)
             clause_data = self.clause_mlp(clause_unit, training=training)
@@ -134,6 +142,7 @@ class ANFSAT(Model):
 
             # Aggregate loss over edges
             variables_ands_loss = tf.sparse.sparse_dense_matmul(clauses_adj, loss_to_vars) # sum over vars and and_data
+            variables_ands_loss *= degree_weight
             variables_loss = variables_ands_loss[1:n_vars+1,:] #take variable part
             ands_data = tf.concat([ands1, ands2, variables_ands_loss[n_vars+1:,:]], axis=-1) #concat anded variables and clause values corespond to ands
             ands_value = self.ands_mlp(ands_data) #apply mlp to and data

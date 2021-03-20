@@ -28,6 +28,7 @@ class ANF(Dataset):
 
         self.max_nodes_per_batch = 15000
         self.shuffle_size = 200
+        self.ANF_simplify = True
 
         self.force_data_gen = force_data_gen
         self.data_dir = Path(data_dir) / self.__class__.__name__
@@ -42,7 +43,8 @@ class ANF(Dataset):
             if not os.path.exists(self.CGEN_EXECUTABLE):
                 self.CGEN_EXECUTABLE = "./data/cgen_mac"
 
-        self.TMP_FILE_NAME = "data.tmp"
+        self.TMP_FILE_NAME = "data.anf"
+        self.TMP_FILE_NAME1 = "data1.anf"
 
     def train_data(self) -> tf.data.Dataset:
         data = self.fetch_dataset(self.__generator(self.train_size), mode="train")
@@ -221,8 +223,8 @@ class ANF(Dataset):
                 sha_rounds) + " " + self.TMP_FILE_NAME
 
             # Launching the process and reading its output
-            if os.path.exists(self.TMP_FILE_NAME):
-                os.remove(self.TMP_FILE_NAME)
+            if os.path.exists(self.TMP_FILE_NAME): os.remove(self.TMP_FILE_NAME)
+            if os.path.exists(self.TMP_FILE_NAME1): os.remove(self.TMP_FILE_NAME1)
 
             try:
                 out = subprocess.check_output(
@@ -242,15 +244,20 @@ class ANF(Dataset):
                 nequations = int(out[j2 + 10:j3].strip())
                 #print(nvars, nequations)
             else:
-                print(cmd, "[" + out + "]")
-                raise Exception("error generating ANF")
+                print("error:",cmd, "[" + out + "]")
+                continue
+                #raise Exception("error generating ANF")
 
-            yield self.TMP_FILE_NAME, nvars, nequations
+            if self.ANF_simplify:
+                nequations, out_name = self.run_external_simplify(self.TMP_FILE_NAME, self.TMP_FILE_NAME1)
+
+            if nequations == 0: continue
+            yield out_name, nvars, nequations
             samplesSoFar += 1
 
     def var_id(self, var_name):
         if var_name=='1': return 0 # zero id is reserved for constant 1
-        if var_name[0] != 'x': raise Exception("invalid var name")
+        if var_name[0] != 'x': raise Exception("invalid var name ", var_name[0])
         var_id = int(var_name[1:].strip("()"))
         if var_id <= 0: raise Exception("invalid var nr")
         return var_id
@@ -272,7 +279,8 @@ class ANF(Dataset):
 
         for clause_id in range(len(lines)):
             line = lines[clause_id]
-            if line[0] != 'c':
+            line = line.strip()
+            if len(line)>0 and line[0] != 'c':
                 items = [x.strip() for x in line.split('+')]
                 if len(items)>= 1:
                     n = len(items)
@@ -331,6 +339,30 @@ class ANF(Dataset):
             solution = []
 
         return is_sat, solution
+
+    def run_external_simplify(self, filename,out_filename, solver_exe: str = "binary/bosphorus-linux64"):
+        """
+        :param solver_exe: Absolute or relative path to solver executable
+        :return: returns True if formula is satisfiable and False otherwise, and solutions in form [1,2,-3, ...]
+        """
+        exe_path = Path(solver_exe).resolve()
+        #"--anfread --xl 0 --sat 0 --el 0 --anfwrite t1"
+        input_str = "--anfread "+filename + " --xl 0 --sat 0 --el 0 --anfwrite " + out_filename
+        output = subprocess.run([str(exe_path)]+input_str.split(" "), stdout=subprocess.PIPE, universal_newlines=True)
+
+        satisfiable = [line for line in output.stdout.split("\n") if line.startswith("c Simplifying finished.")]
+        if len(satisfiable) == 0:
+            print(output)
+            raise Exception("error running simplification")
+
+        # c Num equations: 0
+        num_equations = [line for line in output.stdout.split("\n") if line.startswith("c Num equations:")]
+        if len(num_equations) == 0:
+            print(num_equations)
+            raise ValueError("invalid simplification output")
+        # c Num total vars: 2370
+        n_equations = int(num_equations[-1].split()[-1])
+        return n_equations, out_filename
 
     def metrics(self, initial=False) -> list:
         return [ANFAccuracyTF(),StepStatistics()]
