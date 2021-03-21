@@ -17,9 +17,9 @@ from metrics.sat_metrics import StepStatistics
 
 class ANF(Dataset):
     def __init__(self, data_dir, force_data_gen, **kwargs) -> None:
-        self.train_size = 1000
-        self.test_size = 100
-        self.validation_size = 100
+        self.train_size = 10000
+        self.test_size = 1000
+        self.validation_size = 1000
 
         self.sha_rounds_from = 17
         self.sha_rounds_to = 17
@@ -115,14 +115,14 @@ class ANF(Dataset):
         node_count = [n + m for (n, m) in formula_size]
 
         # Put formulas with similar size in same batch
-        #files = sorted(zip(node_count, files))
-        #batches = self.__batch_files(files)
-        batches = [[f] for f in files]#TODO: batching
+        files = sorted(zip(node_count, files))
+        batches = self.__batch_files(files)
+        #batches = [[f] for f in files]#TODO: batching
 
         def gen():
             for idx, batch in enumerate(batches):
                 if idx%100==0: print("created ",idx,"batches")
-                n_vars, clauses, solution = self.prepare_example(batch)
+                n_vars, clauses, solution = self.prepare_batch(batch)
                 ands_index1 = []
                 ands_index2 = []
                 #clauses_index = []
@@ -145,11 +145,6 @@ class ANF(Dataset):
         tf.data.experimental.save(dataset, tfrecord_dir)
 
         print(f"Created {len(batches)} data batches in {tfrecord_dir}...\n")
-
-    # def clauses2sparse(self, var_count, clauses, last_dim):
-    #     shape = self.create_shape(var_count+1, len(clauses))# var_count does not include zero-th var, so need +1
-    #     indices = [[v[last_dim], idx] for idx, c in enumerate(clauses) for v in c]
-    #     return indices, shape
 
     def clauses2sparse(self, var_count, clauses):
         shape = self.create_shape(var_count+1, len(clauses))# var_count does not include zero-th var, so need +1
@@ -177,35 +172,69 @@ class ANF(Dataset):
         n_equations = values[-2]
         return int(n_vars), int(n_equations)
 
-    def prepare_example(self, batch):
+    def prepare_batch(self, batch):
         total_vars = 0
-        batched_clauses = None
-        for file in batch: #TODO: batching
-            n_vars, clauses, var_id_map = self.read_anf(file)
-            is_sat, solution = self.run_external_solver(batch)
-            if len(solution) < n_vars: raise Exception("error in solving")
-            if not is_sat: raise Exception("should be satisfiable")
-            if self.ANF_simplify:
-                solution_new = np.zeros(n_vars)-1
-                for ind, x in enumerate(solution):
-                    if ind+1 in var_id_map:
-                        solution_new[var_id_map[ind+1]-1] = x
-                solution = solution_new
-
-            #solution = elements_to_int(lines[0].strip().split()[2:])
-
-            # clauses = [elements_to_int(line.strip().split()[:-1]) for line in lines[2:]]
-            #
+        batched_clauses = []
+        solutions = []
+        for file in batch:
+            n_vars, clauses, solution = self.prepare_example(file)
             # clauses_in_formula.append(clauses_count)
             # original_clauses.append(clauses)
             # variable_count.append(var_count)
             # solutions.append(solution)
-            # batched_clauses.extend(self.shift_clause(clauses, offset))
+            batched_clauses.extend(self.shift_clause(clauses, total_vars))
             # cells_in_formula.append(sum([len(c) for c in clauses]))
-            # offset += var_count
-            batched_clauses = clauses
-            total_vars = n_vars
-        return total_vars, batched_clauses, solution
+            solutions.extend(solution)
+            total_vars += n_vars
+        return total_vars, batched_clauses, solutions
+
+    @staticmethod
+    def shift_variable(x, offset):
+        return x + offset if x != 0 else 0
+
+    def shift_clause(self, clauses, offset):
+        return [[[self.shift_variable(x, offset) for x in xa] for xa in c] for c in clauses]
+
+    def __batch_files(self, files):
+        files_size = len(files)
+        # filter formulas that will not fit in any batch
+        files = [(node_count, filename) for node_count, filename in files if node_count <= self.max_nodes_per_batch]
+
+        dif = files_size - len(files)
+        if dif > 0:
+            print(f"\n\n WARNING: {dif} formulas was not included in dataset as they exceeded max node count! \n\n")
+
+        batches = []
+        current_batch = []
+        nodes_in_batch = 0
+
+        for nodes_cnt, filename in files:
+            if nodes_cnt + nodes_in_batch <= self.max_nodes_per_batch:
+                current_batch.append(filename)
+                nodes_in_batch += nodes_cnt
+            else:
+                batches.append(current_batch)
+                current_batch = []
+                nodes_in_batch = 0
+
+        if current_batch:
+            batches.append(current_batch)
+
+        random.shuffle(batches)
+        return batches
+
+    def prepare_example(self, filename):
+        n_vars, clauses, var_id_map = self.read_anf(filename)
+        is_sat, solution = self.run_external_solver(filename)
+        if len(solution) < n_vars: raise Exception("error in solving")
+        if not is_sat: raise Exception("should be satisfiable")
+        if self.ANF_simplify:
+            solution_new = np.zeros(n_vars)-1
+            for ind, x in enumerate(solution):
+                if ind+1 in var_id_map:
+                    solution_new[var_id_map[ind+1]-1] = x
+            solution = solution_new
+        return n_vars, clauses, solution
 
     def __generator(self, size) -> tuple:
         samplesSoFar = 0
@@ -327,14 +356,14 @@ class ANF(Dataset):
                 "solution":step_data[5],
                 "clauses_adj":step_data[6]}
 
-    def run_external_solver(self, batch, solver_exe: str = "binary/bosphorus-linux64"):
+    def run_external_solver(self, filename, solver_exe: str = "binary/bosphorus-linux64"):
         """
         :param solver_exe: Absolute or relative path to solver executable
         :return: returns True if formula is satisfiable and False otherwise, and solutions in form [1,2,-3, ...]
         """
         exe_path = Path(solver_exe).resolve()
         #"--anfread --xl 0 --sat 0 --el 0 --anfwrite t1"
-        input_str = "--anfread "+str(batch[0])+ " --xl 0 --sat 0 --el 0 --solve" #todo: batching
+        input_str = "--anfread "+str(filename)+ " --xl 0 --sat 0 --el 0 --solve" #todo: batching
         output = subprocess.run([str(exe_path)]+input_str.split(" "), stdout=subprocess.PIPE, universal_newlines=True)
 
         satisfiable = [line for line in output.stdout.split("\n") if line.startswith("s ")]
