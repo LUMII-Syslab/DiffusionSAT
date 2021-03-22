@@ -21,7 +21,7 @@ class ANFSAT(Model):
         self.test_rounds = test_rounds
         self.optimizer = optimizer
         self.use_message_passing = True
-        self.use_query = False
+        self.use_query = True
         self.skip_first_rounds = 0
         self.prediction_tries = 1
 
@@ -62,7 +62,7 @@ class ANFSAT(Model):
         onehot -= 1 / n_features
         return onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
 
-    def call(self, ands_index1:tf.Tensor,ands_index2:tf.Tensor=None,clauses_adj:tf.SparseTensor=None,n_vars=0, n_clauses=0, training=None, labels=None):
+    def call(self, ands_index1:tf.Tensor,ands_index2:tf.Tensor=None,clauses_adj:tf.SparseTensor=None,n_vars=0, n_clauses=0, training=None, labels=None,clauses_graph=None, variables_graph=None):
         variables = self.zero_state(n_vars, self.feature_maps)
         clause_state = self.zero_state(n_clauses, self.feature_maps)
         rounds = self.train_rounds if training else self.test_rounds
@@ -73,7 +73,9 @@ class ANFSAT(Model):
                                                                                                    rounds,
                                                                                                    training,
                                                                                                    variables,
-                                                                                                   n_clauses)
+                                                                                                   n_clauses,
+                                                                                                   clauses_graph,
+                                                                                                   variables_graph)
         if not self.supervised: last_logits=-last_logits # meaning of logits is reversed in unsupervised
         if training:
             tf.summary.histogram("logits", -last_logits)
@@ -84,13 +86,16 @@ class ANFSAT(Model):
 
         return last_logits, unsupervised_loss + supervised_loss, step
 
-    def loop(self, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_adj:tf.SparseTensor, clause_state, labels, rounds, training, variables, n_clauses):
+    def loop(self, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_adj:tf.SparseTensor, clause_state, labels, rounds, training, variables, n_clauses,clauses_graph, variables_graph):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         n_vars = tf.shape(variables)[0]
         var_degree = tf.reshape(tf.sparse.reduce_sum(clauses_adj, axis=1), [-1, 1])
         degree_weight = tf.math.rsqrt(tf.maximum(var_degree, 1))
         clause_degree = tf.reshape(tf.sparse.reduce_sum(clauses_adj, axis=0), [-1, 1])
         clause_degree_weight = tf.math.rsqrt(tf.maximum(clause_degree, 1))
+
+        variables_graph_norm = variables_graph / tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True)
+        clauses_graph_norm = clauses_graph / tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True)
 
         last_logits = tf.zeros([n_vars, 1])
         v_grad = tf.zeros([n_vars, self.query_maps])
@@ -108,12 +113,9 @@ class ANFSAT(Model):
                     clauses_real, clauses_im, clause_ands1,clause_ands2 = anf_value_cplx_adj(query, ands_index1, ands_index2, clauses_adj)
                     query_value = query
                     query_msg = tf.concat([clauses_real, clauses_im], axis=-1)
-                    #clauses_loss = self.grad_mlp(clauses_loss)
-                    #step_loss = tf.reduce_sum(1-clauses_loss)
-                    #step_loss = tf.reduce_sum(1 - clauses_real)#+tf.reduce_sum(tf.abs(clauses_im))
-
-            #variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
-            #v_grad = variables_grad
+                    #step_loss = tf.reduce_sum(1 - clauses_real)
+                #variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
+                #v_grad = variables_grad
 
             # calculate new clause state
             #clauses_loss *= 4
@@ -137,7 +139,7 @@ class ANFSAT(Model):
 
             loss_to_vars = clause_data[:, 0:self.query_maps]
             new_clause_value = clause_data[:, self.query_maps:]
-            new_clause_value = self.clauses_norm(new_clause_value, training=training) * 0.25
+            new_clause_value = self.clauses_norm(new_clause_value, clauses_graph_norm, training=training) * 0.25
             clause_state = new_clause_value + 0.1 * clause_state
 
             # Aggregate loss over edges
@@ -153,10 +155,9 @@ class ANFSAT(Model):
             #variables_loss *= degree_weight
 
             # calculate new variable state
-            #unit = tf.concat([variables_grad, variables, variables_loss], axis=-1)
             unit = tf.concat([variables, variables_loss], axis=-1)
             new_variables = self.update_gate(unit)
-            new_variables = self.variables_norm(new_variables, training=training) * 0.25
+            new_variables = self.variables_norm(new_variables, variables_graph_norm, training=training) * 0.25
             variables = new_variables + 0.1 * variables
 
             # calculate logits and loss
@@ -211,12 +212,14 @@ class ANFSAT(Model):
                                   tf.TensorSpec(shape=(), dtype=tf.int64),
                                   tf.TensorSpec(shape=(), dtype=tf.int64),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
+                                  tf.SparseTensorSpec(shape = [None, None], dtype = tf.float32),
+                                  tf.SparseTensorSpec(shape = [None, None], dtype = tf.float32),
                                   tf.SparseTensorSpec(shape = [None, None], dtype = tf.float32)])
-    def train_step(self, ands_index1,ands_index2,n_vars, n_clauses, n_ands, solution, clauses_adj):
+    def train_step(self, ands_index1,ands_index2,n_vars, n_clauses, n_ands, solution, clauses_adj,clauses_graph, variables_graph):
         with tf.GradientTape() as tape:
             _, loss, step = self.call(ands_index1 = ands_index1,ands_index2 = ands_index2,
                                       clauses_adj = clauses_adj,
-                                      n_vars=n_vars, n_clauses=n_clauses, training=True, labels=solution)
+                                      n_vars=n_vars, n_clauses=n_clauses, training=True, labels=solution, clauses_graph=clauses_graph, variables_graph=variables_graph)
             train_vars = self.trainable_variables
             gradients = tape.gradient(loss, train_vars)
             # for g in gradients:
@@ -236,11 +239,13 @@ class ANFSAT(Model):
                                   tf.TensorSpec(shape=(), dtype=tf.int64),
                                   tf.TensorSpec(shape=(), dtype=tf.int64),
                                   tf.TensorSpec(shape=[None], dtype=tf.int32),
-                                  tf.SparseTensorSpec(shape = [None, None], dtype = tf.float32)])
-    def predict_step(self, ands_index1,ands_index2,n_vars, n_clauses, n_ands, solution, clauses_adj):
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32)])
+    def predict_step(self, ands_index1,ands_index2,n_vars, n_clauses, n_ands, solution, clauses_adj,clauses_graph, variables_graph):
         predictions, loss, step = self.call(ands_index1 = ands_index1,ands_index2 = ands_index2,
                                       clauses_adj = clauses_adj,
-                                      n_vars=n_vars, n_clauses=n_clauses, training=False, labels=None)
+                                      n_vars=n_vars, n_clauses=n_clauses, training=False, labels=None, clauses_graph=clauses_graph, variables_graph=variables_graph)
 
         return {
             "steps_taken": step,

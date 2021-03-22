@@ -17,7 +17,7 @@ from metrics.sat_metrics import StepStatistics
 
 class ANF(Dataset):
     def __init__(self, data_dir, force_data_gen, **kwargs) -> None:
-        self.train_size = 10000
+        self.train_size = 50000
         self.test_size = 1000
         self.validation_size = 1000
 
@@ -26,7 +26,7 @@ class ANF(Dataset):
         self.bits_from = 2
         self.bits_to = 20
 
-        self.max_nodes_per_batch = 15000
+        self.max_nodes_per_batch = 10000
         self.shuffle_size = 200
         self.ANF_simplify = True
 
@@ -85,7 +85,9 @@ class ANF(Dataset):
                         tf.TensorSpec(shape=(), dtype=tf.int64),# n_clauses
                         tf.TensorSpec(shape=(), dtype=tf.int64),  # n_ands
                         tf.TensorSpec(shape=[None], dtype=tf.int32),#solution
-                        tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32)) # (vars, ands)-clauses matrix
+                        tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32), # (vars, ands)-clauses matrix
+                        tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32), # variables-graph
+                        tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32)) # clauses-graph
 
         data = tf.data.experimental.load(data_folder, element_spec)
         return data
@@ -122,7 +124,7 @@ class ANF(Dataset):
         def gen():
             for idx, batch in enumerate(batches):
                 if idx%100==0: print("created ",idx,"batches")
-                n_vars, clauses, solution = self.prepare_batch(batch)
+                n_vars, clauses, solution, variable_count, clause_count = self.prepare_batch(batch)
                 ands_index1 = []
                 ands_index2 = []
                 #clauses_index = []
@@ -138,13 +140,54 @@ class ANF(Dataset):
                     new_clauses.append(new_clause)
                 n_ands = len(ands_index1)
                 clauses_indices, clauses_shape = self.clauses2sparse(n_vars+len(ands_index1), new_clauses)
-                yield ands_index1, ands_index2, n_vars, len(clauses), n_ands, solution, clauses_indices, clauses_shape
+                # graph_count = tf.shape(variable_count)
+                # graph_id = tf.range(0, graph_count[0])
+                # variables_mask = tf.repeat(graph_id, variable_count)
+                # clauses_mask = tf.repeat(graph_id, clause_count)
+                #
+                # clauses_enum = tf.range(0, var_shape[1], dtype=tf.int32)
+                # c_g_indices = tf.stack([clauses_mask, clauses_enum], axis=1)
+                # c_g_indices = tf.cast(c_g_indices, tf.int64)
+                # clauses_graph_adj = self.create_adjacency_matrix(c_g_indices,
+                #                                                  self.create_shape(tf.cast(graph_count[0], tf.int64),
+                #                                                                    var_shape[1]))
+                #
+                # variables_enum = tf.range(0, var_shape[0], dtype=tf.int32)
+                # v_g_indices = tf.stack([variables_mask, variables_enum], axis=1)
+                # v_g_indices = tf.cast(v_g_indices, tf.int64)
+                # variables_graph_adj = self.create_adjacency_matrix(v_g_indices,
+                #                                                    self.create_shape(tf.cast(graph_count[0], tf.int64),
+                #                                                                      var_shape[0]))
 
-        dataset = tf.data.Dataset.from_generator(gen, output_types = (tf.int32, tf.int32, tf.int64, tf.int64, tf.int64, tf.int32, tf.int64, tf.int64))
-        dataset = dataset.map(lambda t1, t2, t3, t4, t5, t6, t7, t8: (t1, t2, t3, t4, t5, t6, self.create_adjacency_matrix(t7, t8))) #workaround
+                yield ands_index1, ands_index2, n_vars, len(clauses), n_ands, solution, clauses_indices, clauses_shape, variable_count, clause_count
+
+        dataset = tf.data.Dataset.from_generator(gen, output_types = (tf.int32, tf.int32, tf.int64, tf.int64, tf.int64, tf.int32, tf.int64, tf.int64, tf.int32, tf.int32))
+        dataset = dataset.map(lambda ands_index1, ands_index2, n_vars, n_clauses, n_ands, solution, clauses_indices, clauses_shape, variable_count, clause_count:
+                              (ands_index1, ands_index2, n_vars, n_clauses, n_ands, solution,
+                               self.create_adjacency_matrix(clauses_indices, clauses_shape), self.create_graph_matrix(variable_count, n_vars),self.create_graph_matrix(clause_count, n_clauses))) #workaround since generator cannot return sparse data
         tf.data.experimental.save(dataset, tfrecord_dir)
 
         print(f"Created {len(batches)} data batches in {tfrecord_dir}...\n")
+
+    def create_graph_matrix(self, variable_count_in_graph, n_vars):
+        graph_count = tf.shape(variable_count_in_graph)
+        graph_id = tf.range(0, graph_count[0])
+        variables_mask = tf.repeat(graph_id, variable_count_in_graph)
+        # clauses_mask = tf.repeat(graph_id, clause_count)
+        #
+        # clauses_enum = tf.range(0, var_shape[1], dtype=tf.int32)
+        # c_g_indices = tf.stack([clauses_mask, clauses_enum], axis=1)
+        # c_g_indices = tf.cast(c_g_indices, tf.int64)
+        # clauses_graph_adj = self.create_adjacency_matrix(c_g_indices,
+        #                                                  self.create_shape(tf.cast(graph_count[0], tf.int64),
+        #                                                                    var_shape[1]))
+
+        variables_enum = tf.range(0, n_vars, dtype=tf.int32)
+        v_g_indices = tf.stack([variables_mask, variables_enum], axis=1)
+        v_g_indices = tf.cast(v_g_indices, tf.int64)
+        variables_graph_adj = self.create_adjacency_matrix(v_g_indices,
+                                                           self.create_shape(tf.cast(graph_count[0], tf.int64), n_vars))
+        return variables_graph_adj
 
     def clauses2sparse(self, var_count, clauses):
         shape = self.create_shape(var_count+1, len(clauses))# var_count does not include zero-th var, so need +1
@@ -176,6 +219,8 @@ class ANF(Dataset):
         total_vars = 0
         batched_clauses = []
         solutions = []
+        variable_count = []
+        clause_count = []
         for file in batch:
             n_vars, clauses, solution = self.prepare_example(file)
             # clauses_in_formula.append(clauses_count)
@@ -186,7 +231,9 @@ class ANF(Dataset):
             # cells_in_formula.append(sum([len(c) for c in clauses]))
             solutions.extend(solution)
             total_vars += n_vars
-        return total_vars, batched_clauses, solutions
+            variable_count.append(n_vars)
+            clause_count.append(len(clauses))
+        return total_vars, batched_clauses, solutions, variable_count, clause_count
 
     @staticmethod
     def shift_variable(x, offset):
@@ -354,7 +401,9 @@ class ANF(Dataset):
                 "n_clauses":step_data[3],
                 "n_ands": step_data[4],
                 "solution":step_data[5],
-                "clauses_adj":step_data[6]}
+                "clauses_adj":step_data[6],
+                "variables_graph":step_data[7],
+                "clauses_graph":step_data[8]}
 
     def run_external_solver(self, filename, solver_exe: str = "binary/bosphorus-linux64"):
         """

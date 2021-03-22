@@ -54,10 +54,13 @@ class ANFAccuracyTF(Metric):
         predictions = tf.round(tf.sigmoid(predictions))
         predictions = tf.cast(predictions, tf.int32)
         solutions = step_data[5]
+        variables_graph =  step_data[7]
 
         equal_variables = tf.equal(predictions, solutions)
         equal_variables = tf.cast(equal_variables, tf.float32)
+        error = 1-equal_variables
         acc = tf.reduce_mean(equal_variables)
-        total_acc = tf.reduce_min(equal_variables)# todo batching
+        per_graph_error = tf.minimum(tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(error,axis=-1)), 1.0)
+        total_acc = 1-tf.reduce_mean(per_graph_error)
 
         return acc, total_acc
