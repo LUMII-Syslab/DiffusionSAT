@@ -10,7 +10,7 @@ from utils.sat import is_batch_sat
 
 
 class SimpleNeuroSAT(Model):
-    def __init__(self, optimizer, test_rounds=256, train_rounds=32, **kwargs):
+    def __init__(self, optimizer, test_rounds=64, train_rounds=32, **kwargs):
         super(SimpleNeuroSAT, self).__init__(**kwargs)
         self.optimizer = optimizer
 
@@ -87,7 +87,7 @@ class SimpleNeuroSAT(Model):
             L = normalize(L, axis=self.norm_axis, eps=self.norm_eps)
             L = tf.debugging.check_numerics(L, message="L after norm")
 
-            logits = self.V_score(L)  # (n_vars, 1)
+            logits = self.V_score(query)  # (n_vars, 1)
 
             is_sat = is_batch_sat(logits, cl_adj_matrix)
             if is_sat == 1:
