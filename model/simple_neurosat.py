@@ -59,7 +59,7 @@ class SimpleNeuroSAT(Model):
         rounds = self.train_rounds if training else self.test_rounds
         logits = tf.zeros([n_vars, 1])
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
-        round_query = tf.zeros([n_vars, 128])
+        query = tf.zeros([n_vars, 128])
 
         for steps in tf.range(rounds):
             lit1, lit2 = tf.split(L, 2, axis=1)
@@ -69,7 +69,6 @@ class SimpleNeuroSAT(Model):
             # with tf.GradientTape() as grad_tape:
             #     v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
             query = self.variables_query(L)
-            round_query = tf.round(tf.sigmoid(query))
             clauses_loss = softplus_loss_adj(logits, cl_adj_matrix)
             # step_loss = tf.reduce_sum(clauses_loss)
 
@@ -87,7 +86,7 @@ class SimpleNeuroSAT(Model):
             L = normalize(L, axis=self.norm_axis, eps=self.norm_eps)
             L = tf.debugging.check_numerics(L, message="L after norm")
 
-            logits = self.V_score(query)  # (n_vars, 1)
+            logits = self.V_score(L)  # (n_vars, 1)
 
             is_sat = is_batch_sat(logits, cl_adj_matrix)
             if is_sat == 1:
@@ -101,7 +100,14 @@ class SimpleNeuroSAT(Model):
             C = tf.stop_gradient(C) * 0.2 + C * 0.8
 
         current_labels = tf.round(tf.sigmoid(logits))
+        round_query = tf.round(tf.sigmoid(query))
         query_logits_match = tf.cast(tf.equal(current_labels, round_query), tf.float32)
+
+        query_not_matching_values = tf.sigmoid(query) * (1-query_logits_match)
+        not_matching_mean = tf.reduce_mean(query_not_matching_values)
+        not_matching_min = tf.reduce_min(query_not_matching_values)
+        not_matching_max = tf.reduce_max(query_not_matching_values)
+
         query_logits_match = tf.reduce_sum(query_logits_match, axis=0) / tf.cast(n_vars, tf.float32)
         query_logits_match = tf.reduce_mean(query_logits_match)
 
@@ -114,6 +120,9 @@ class SimpleNeuroSAT(Model):
         with tf.name_scope("query_stats"):
             tf.summary.scalar("query_logits_match", query_logits_match)
             tf.summary.scalar("sat_clauses", sat_clauses)
+            tf.summary.scalar("not_matching_mean", not_matching_mean)
+            tf.summary.scalar("not_matching_min", not_matching_min)
+            tf.summary.scalar("not_matching_max", not_matching_max)
 
         return logits, loss / tf.cast(rounds, tf.float32) + supervised_loss, steps
 
