@@ -7,6 +7,7 @@ from loss.sat import softplus_mixed_loss_adj, softplus_loss_adj
 from model.mlp import MLP
 from utils.parameters_log import *
 from utils.sat import is_batch_sat
+import tensorflow_probability as tfp
 
 
 class SimpleNeuroSAT(Model):
@@ -99,32 +100,47 @@ class SimpleNeuroSAT(Model):
             L = tf.stop_gradient(L) * 0.2 + L * 0.8
             C = tf.stop_gradient(C) * 0.2 + C * 0.8
 
+            if training and steps == 0:
+                self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, "0")
+
+            if training and steps == 16:
+                self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, "16")
+
+        if training:
+            self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query)
+
+        return logits, loss / tf.cast(rounds, tf.float32) + supervised_loss, steps
+
+    def query_stats(self, adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, step: str = "last"):
         current_labels = tf.round(tf.sigmoid(logits))
         round_query = tf.round(tf.sigmoid(query))
         query_logits_match = tf.cast(tf.equal(current_labels, round_query), tf.float32)
 
-        query_not_matching_values = tf.sigmoid(query) * (1-query_logits_match)
-        not_matching_mean = tf.reduce_mean(query_not_matching_values)
-        not_matching_min = tf.reduce_min(query_not_matching_values)
-        not_matching_max = tf.reduce_max(query_not_matching_values)
+        lit_in_n_clauses = tf.sparse.reduce_sum(adj_matrix, axis=-1)
+        lit1, lit2 = tf.split(lit_in_n_clauses, 2, axis=0)
+        vars_count = lit1 + lit2
+        in_n_clauses_matched = tf.reduce_mean(tf.expand_dims(vars_count, axis=-1) * query_logits_match)
+        in_n_clauses_not_matched = tf.reduce_mean(tf.expand_dims(vars_count, axis=-1) * (1 - query_logits_match))
 
+        query_not_matching_values = tf.sigmoid(query) * (1 - query_logits_match)
+        not_matching_mean = tf.reduce_mean(query_not_matching_values)
+        not_matching_median = tfp.stats.percentile(query_not_matching_values, 50.0, interpolation='midpoint')
         query_logits_match = tf.reduce_sum(query_logits_match, axis=0) / tf.cast(n_vars, tf.float32)
         query_logits_match = tf.reduce_mean(query_logits_match)
 
-        lit = tf.concat([round_query, 1-round_query], axis=0)
+        lit = tf.concat([round_query, 1 - round_query], axis=0)
         sat_clauses = tf.sparse.sparse_dense_matmul(cl_adj_matrix, lit)
         sat_clauses = tf.clip_by_value(sat_clauses, 0, 1)
         sat_clauses = tf.reduce_sum(sat_clauses, axis=0) / tf.cast(n_clauses, tf.float32)
         sat_clauses = tf.reduce_mean(sat_clauses)
 
-        with tf.name_scope("query_stats"):
+        with tf.name_scope(f"query_stats_{step}"):
             tf.summary.scalar("query_logits_match", query_logits_match)
             tf.summary.scalar("sat_clauses", sat_clauses)
+            tf.summary.scalar("vars_in_clauses_matched", in_n_clauses_matched)
+            tf.summary.scalar("vars_in_clauses_not_matched", in_n_clauses_not_matched)
             tf.summary.scalar("not_matching_mean", not_matching_mean)
-            tf.summary.scalar("not_matching_min", not_matching_min)
-            tf.summary.scalar("not_matching_max", not_matching_max)
-
-        return logits, loss / tf.cast(rounds, tf.float32) + supervised_loss, steps
+            tf.summary.scalar("not_matching_median", not_matching_median)
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
