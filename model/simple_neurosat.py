@@ -69,7 +69,7 @@ class SimpleNeuroSAT(Model):
             # with tf.GradientTape() as grad_tape:
             #     v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
             query = self.variables_query(L)
-            clauses_loss = softplus_loss_adj(logits, cl_adj_matrix)
+            clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
             # step_loss = tf.reduce_sum(clauses_loss)
 
             # variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query)) * self.G_scale
