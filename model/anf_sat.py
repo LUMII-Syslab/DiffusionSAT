@@ -4,7 +4,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 
 from layers.normalization import PairNorm, LayerNormalization
-from loss.anf import anf_loss, anf_value_cplx, anf_value_cplx_adj
+from loss.anf import anf_value_cplx_adj, anf_value_real
 from model.mlp import MLP
 from utils.parameters_log import *
 
@@ -41,14 +41,14 @@ class ANFSAT(Model):
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
 
-        self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate", do_layer_norm=False)
-        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), 1, name="variables_output", do_layer_norm=False)
-        self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query", do_layer_norm=False)
-        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
-        self.grad_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="grad_update", do_layer_norm=False)
-        self.ands_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="ands_update", do_layer_norm=False)
-        self.var2ands_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="var2ands_mlp", do_layer_norm=False)
-        self.var2clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="var2clause_mlp", do_layer_norm=False)
+        self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate")
+        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), 1, name="variables_output")
+        self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query")
+        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update")
+        self.grad_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="grad_update")
+        self.ands_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="ands_update")
+        self.var2ands_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="var2ands_mlp")
+        self.var2clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="var2clause_mlp")
 
         #self.lit_mlp = MLP(msg_layers, query_maps * 4, query_maps * 2, name="lit_query", do_layer_norm=False)
 
@@ -76,12 +76,10 @@ class ANFSAT(Model):
                                                                                                    n_clauses,
                                                                                                    clauses_graph,
                                                                                                    variables_graph)
-        if not self.supervised: last_logits=-last_logits # meaning of logits is reversed in unsupervised
         if training:
-            tf.summary.histogram("logits", -last_logits)
-            #per_clause_loss = anf_loss(-last_logits, ands_index1, ands_index2, clauses_adj, n_clauses)
-            #tf.summary.histogram("clauses", per_clause_loss)
-            #tf.summary.scalar("last_layer_loss", tf.reduce_sum(tf.square(1-per_clause_loss)))
+            per_clause_loss, _, _ = anf_value_real(-last_logits, ands_index1, ands_index2, clauses_adj)
+            tf.summary.histogram("clauses", per_clause_loss)
+            tf.summary.scalar("last_layer_loss", tf.reduce_sum(tf.square(1-per_clause_loss)))
 
 
         return last_logits, unsupervised_loss + supervised_loss, step
@@ -110,9 +108,11 @@ class ANFSAT(Model):
                     # add some randomness to avoid zero collapse in normalization
                     v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
                     query = self.variables_query(v1)
-                    clauses_real, clauses_im, clause_ands1,clause_ands2 = anf_value_cplx_adj(query, ands_index1, ands_index2, clauses_adj)
                     query_value = query
+                    clauses_real, clauses_im, clause_ands1,clause_ands2 = anf_value_cplx_adj(query, ands_index1, ands_index2, clauses_adj)
                     query_msg = tf.concat([clauses_real, clauses_im], axis=-1)
+                    # clauses_real, clause_ands1, clause_ands2 = anf_value_real(query, ands_index1, ands_index2, clauses_adj)
+                    # query_msg = clauses_real
                     #step_loss = tf.reduce_sum(1 - clauses_real)
                 #variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
                 #v_grad = variables_grad
@@ -170,10 +170,12 @@ class ANFSAT(Model):
                 else:
                     logit_loss = 0.
             else:
-                per_clause_loss = anf_loss(logits, ands_index1, ands_index2, clauses_index, n_clauses)
-                #per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
-                #logit_loss = tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
-                logit_loss = tf.reduce_sum(tf.square(1-per_clause_loss))
+                clauses_real, _, _, _ = anf_value_cplx_adj(-logits, ands_index1, ands_index2, clauses_adj, use_norm=True)
+                per_clause_loss = tf.square(1-clauses_real)
+                per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
+                logit_loss = tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
+                #logit_loss = tf.reduce_mean(per_clause_loss)
+                #logit_loss = (0*logit_loss1+logit_loss2)/tf.cast(n_vars, tf.float32)
 
             step_losses = step_losses.write(step, logit_loss)
 
@@ -200,6 +202,7 @@ class ANFSAT(Model):
              tf.summary.histogram("query_msg", query_msg)
              tf.summary.histogram("clause_msg", cl_msg)
              tf.summary.histogram("var_grad", v_grad)
+             tf.summary.histogram("logits", last_logits)
         #     tf.summary.histogram("var_loss_msg", var_loss_msg)
              tf.summary.histogram("query", query_value)
 

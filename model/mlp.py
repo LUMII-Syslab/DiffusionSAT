@@ -14,7 +14,8 @@ class MLP(Model):
                  out_nmap, activation=tf.nn.leaky_relu,
                  out_activation = None, out_bias = None,
                  do_layer_norm = False, norm_axis = 0,
-                 normalizer = None, **kwargs):
+                 normalizer = None,
+                 dropout_rate = 0.0, **kwargs):
 
         super().__init__(**kwargs)
 
@@ -28,7 +29,7 @@ class MLP(Model):
                 if i == 0: self.dense_layers.append(normalizer)
                 if activation is not None: self.dense_layers.append(Lambda(lambda x: activation(x)))
 
-        #self.dense_layers.append(tf.keras.layers.Dropout(rate=0.05))
+        if dropout_rate>0: self.dense_layers.append(tf.keras.layers.Dropout(rate=dropout_rate))
         bias = 'zeros'
         if out_bias is not None: bias = tf.constant_initializer(out_bias)
         self.dense_layers.append(Dense(out_nmap, activation=out_activation, bias_initializer=bias))

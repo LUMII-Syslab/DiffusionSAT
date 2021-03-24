@@ -4,31 +4,28 @@ def real_and(x,y):
     val = (1-x)*(1-y)/4
     return 1-2*val
 
-def anf_loss(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_index:tf.Tensor, n_clauses):
+def anf_value_real(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_adj:tf.SparseTensor):
     """"
     ands_index1 mapping from vars to first and value of clauses
     ands_index2 mapping from vars to second and value of clauses
     clauses_index monotonic map from and_vals to clauses
     """
-    one = -tf.ones_like(logits[0:1,:])  # zero is represented as+1, one as -1
+    n_maps = tf.shape(logits)[-1]
+    one = -tf.ones([1,n_maps])  # zero is represented as+1, one as -1
     values = tf.tanh(logits)
     values = tf.concat([one, values], axis=0)
     ands1 = tf.gather(values, ands_index1, axis=0)
     ands2 = tf.gather(values, ands_index2, axis=0)
     and_val = real_and(ands1, ands2)
-    #clause_value = segment_prod(and_val, clauses_index)
-    log_val = tf.math.log(tf.abs(and_val)+1e-6)
-    signs = (1-tf.cast(tf.sign(and_val), tf.int32))//2
-    sum_logs = tf.math.segment_sum(log_val, clauses_index)
-    sum_signs = tf.math.segment_sum(signs, clauses_index)
-    sum_signs = tf.cast(1-2*(sum_signs % 2), tf.float32)
+    values_ands = tf.concat([values, and_val], axis=0)
+    log_val = tf.math.log(tf.abs(values_ands)+1e-16)
+    signs = (1-tf.sign(values_ands))/2
+    sum_logs = tf.sparse.sparse_dense_matmul(clauses_adj,log_val, adjoint_a=True)
+    sum_signs = tf.sparse.sparse_dense_matmul(clauses_adj, signs, adjoint_a=True)
+    #sum_signs = tf.cast(1-2*(tf.cast(sum_signs, tf.int32) % 2), tf.float32)
+    sum_signs = 1-2*tf.math.floormod(sum_signs, 2)
     clause_value = tf.exp(sum_logs)*sum_signs
-    # if tf.math.is_nan(tf.reduce_sum(clause_value)):
-    #     print("sum",tf.reduce_sum(clause_value))
-    #
-    # if tf.math.is_nan(tf.reduce_mean(clause_value)):
-    #     print(clause_value)
-    return clause_value
+    return clause_value, ands1, ands2
 
 def normalize(x):
     x_real, x_im = tf.split(x, 2, axis=-1)
@@ -48,29 +45,29 @@ def cplx_and(a, b):
     return 1 - 2 * re, -2 * im
 
 
-def anf_value_cplx(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_index:tf.Tensor, n_clauses):
-    """"
-    ands_index1 mapping from vars to first and value of clauses
-    ands_index2 mapping from vars to second and value of clauses
-    clauses_index monotonic map from and_vals to clauses
-    """
-    n_maps = tf.shape(logits)[-1]//2
-    one = tf.concat([-tf.ones([1,n_maps]), tf.zeros([1,n_maps])], axis=-1)  # zero is represented as +1+0j, one as -1+0j
-    #values = tf.tanh(logits)
-    values = normalize(logits)
-    values = tf.concat([one, values], axis=0)
-    ands1 = tf.gather(values, ands_index1, axis=0)
-    ands2 = tf.gather(values, ands_index2, axis=0)
-    and_real, and_im = cplx_and(ands1, ands2)
-    angle = tf.math.atan2(and_im, and_real)
-    log_len = 0.5*tf.math.log(tf.square(and_real)+tf.square(and_im)+1e-16)
-    sum_angles = tf.math.segment_sum(angle, clauses_index)
-    sum_len = tf.math.segment_sum(log_len, clauses_index)
-    clause_real = tf.exp(sum_len)*tf.math.cos(sum_angles)
-    clause_im = tf.exp(sum_len) * tf.math.sin(sum_angles)
-    return clause_real, clause_im
+# def anf_value_cplx(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_index:tf.Tensor):
+#     """"
+#     ands_index1 mapping from vars to first and value of clauses
+#     ands_index2 mapping from vars to second and value of clauses
+#     clauses_index monotonic map from and_vals to clauses
+#     """
+#     n_maps = tf.shape(logits)[-1]//2
+#     one = tf.concat([-tf.ones([1,n_maps]), tf.zeros([1,n_maps])], axis=-1)  # zero is represented as +1+0j, one as -1+0j
+#     #values = tf.tanh(logits)
+#     values = normalize(logits)
+#     values = tf.concat([one, values], axis=0)
+#     ands1 = tf.gather(values, ands_index1, axis=0)
+#     ands2 = tf.gather(values, ands_index2, axis=0)
+#     and_real, and_im = cplx_and(ands1, ands2)
+#     angle = tf.math.atan2(and_im, and_real)
+#     log_len = 0.5*tf.math.log(tf.square(and_real)+tf.square(and_im)+1e-16)
+#     sum_angles = tf.math.segment_sum(angle, clauses_index)
+#     sum_len = tf.math.segment_sum(log_len, clauses_index)
+#     clause_real = tf.exp(sum_len)*tf.math.cos(sum_angles)
+#     clause_im = tf.exp(sum_len) * tf.math.sin(sum_angles)
+#     return clause_real, clause_im
 
-def anf_value_cplx_adj(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_adj:tf.SparseTensor):
+def anf_value_cplx_adj(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.Tensor,clauses_adj:tf.SparseTensor, use_norm=False):
     """"
     ands_index1 mapping from vars to first and value of clauses
     ands_index2 mapping from vars to second and value of clauses
@@ -79,7 +76,7 @@ def anf_value_cplx_adj(logits: tf.Tensor, ands_index1:tf.Tensor,ands_index2:tf.T
     n_maps = tf.shape(logits)[-1]//2
     one = tf.concat([-tf.ones([1,n_maps]), tf.zeros([1,n_maps])], axis=-1)  # zero is represented as +1+0j, one as -1+0j
     values = tf.tanh(logits)
-    #values = normalize(logits)
+    if use_norm: values = normalize(values)
     values = tf.concat([one, values], axis=0)
     ands1 = tf.gather(values, ands_index1, axis=0)
     ands2 = tf.gather(values, ands_index2, axis=0)
