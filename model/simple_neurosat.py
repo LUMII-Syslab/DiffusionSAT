@@ -3,10 +3,11 @@ import math
 import tensorflow as tf
 from tensorflow.keras.models import Model
 
-from loss.sat import softplus_mixed_loss_adj
+from loss.sat import softplus_mixed_loss_adj, softplus_loss_adj
 from model.mlp import MLP
 from utils.parameters_log import *
 from utils.sat import is_batch_sat
+import tensorflow_probability as tfp
 
 
 class SimpleNeuroSAT(Model):
@@ -33,7 +34,10 @@ class SimpleNeuroSAT(Model):
 
         self.LC_scale = self.add_weight(name="LC_scale", shape=[], initializer=tf.constant_initializer(0.1))
         self.CL_scale = self.add_weight(name="CL_scale", shape=[], initializer=tf.constant_initializer(0.1))
+        self.G_scale = self.add_weight(name="G_scale", shape=[], initializer=tf.constant_initializer(0.1))
 
+        self.variables_query = MLP(self.n_update_layers + 1, self.feature_maps, self.feature_maps,
+                                   name="variables_query", do_layer_norm=False)
         self.V_score = MLP(self.n_score_layers + 1, 2 * self.feature_maps, 1, activation=tf.nn.relu6, name="V_score")
 
         self.self_supervised = False
@@ -44,7 +48,7 @@ class SimpleNeuroSAT(Model):
         n_vars = n_lits // 2
         n_clauses = shape[1]
 
-        L = tf.ones(shape=[2 * n_vars, self.feature_maps], dtype=tf.float32) * self.L_init_scale
+        L = tf.ones(shape=[n_vars, self.feature_maps], dtype=tf.float32) * self.L_init_scale
         C = tf.ones(shape=[n_clauses, self.feature_maps], dtype=tf.float32) * self.C_init_scale
 
         loss = 0.
@@ -54,45 +58,89 @@ class SimpleNeuroSAT(Model):
             return tf.concat([lits[n_vars:, :], lits[0:n_vars, :]], axis=0)
 
         rounds = self.train_rounds if training else self.test_rounds
-        last_logits = tf.zeros([n_vars, 1])
-
+        logits = tf.zeros([n_vars, 1])
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
+        query = tf.zeros([n_vars, 128])
 
         for steps in tf.range(rounds):
-            LC_msgs = tf.sparse.sparse_dense_matmul(cl_adj_matrix, L) * self.LC_scale
-            C = self.C_updates(tf.concat([C, LC_msgs], axis=-1))
+            lit1, lit2 = tf.split(L, 2, axis=1)
+            literals = tf.concat([lit1, lit2], axis=0)
+            LC_msgs = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals) * self.LC_scale
+
+            # with tf.GradientTape() as grad_tape:
+            #     v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
+            query = self.variables_query(L)
+            clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
+            # step_loss = tf.reduce_sum(clauses_loss)
+
+            # variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query)) * self.G_scale
+
+            C = self.C_updates(tf.concat([C, clauses_loss, LC_msgs], axis=-1))
             C = tf.debugging.check_numerics(C, message="C after update")
             C = normalize(C, axis=self.norm_axis, eps=self.norm_eps)
             C = tf.debugging.check_numerics(C, message="C after norm")
 
             CL_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, C) * self.CL_scale
-            L = self.L_updates(tf.concat([L, CL_msgs, flip(L)], axis=-1))
+            CL_msgs1, CL_msgs2 = tf.split(CL_msgs, 2, axis=0)
+            L = self.L_updates(tf.concat([L, CL_msgs1, CL_msgs2], axis=-1))
             L = tf.debugging.check_numerics(L, message="L after update")
             L = normalize(L, axis=self.norm_axis, eps=self.norm_eps)
             L = tf.debugging.check_numerics(L, message="L after norm")
 
-            V = tf.concat([L[0:n_vars, :], L[n_vars:, :]], axis=1)
-            logits = self.V_score(V)  # (n_vars, 1)
+            logits = self.V_score(L)  # (n_vars, 1)
 
             is_sat = is_batch_sat(logits, cl_adj_matrix)
             if is_sat == 1:
-                if self.self_supervised:
-                    # now we know the answer, we can use it for supervised training
-                    labels_got = tf.round(tf.sigmoid(logits))
-                    supervised_loss = tf.reduce_mean(
-                        tf.nn.sigmoid_cross_entropy_with_logits(logits=last_logits, labels=labels_got))
-                last_logits = logits
                 break
-            last_logits = logits
 
             per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
             per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
             loss += tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
 
-            # L = tf.stop_gradient(L) * 0.2 + L * 0.8
-            # C = tf.stop_gradient(C) * 0.2 + C * 0.8
+            L = tf.stop_gradient(L) * 0.2 + L * 0.8
+            C = tf.stop_gradient(C) * 0.2 + C * 0.8
 
-        return last_logits, loss / tf.cast(rounds, tf.float32) + supervised_loss, steps
+            if training and steps == 0:
+                self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, "0")
+
+            if training and steps == 16:
+                self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, "16")
+
+        if training:
+            self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query)
+
+        return logits, loss / tf.cast(rounds, tf.float32) + supervised_loss, steps
+
+    def query_stats(self, adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, step: str = "last"):
+        current_labels = tf.round(tf.sigmoid(logits))
+        round_query = tf.round(tf.sigmoid(query))
+        query_logits_match = tf.cast(tf.equal(current_labels, round_query), tf.float32)
+
+        lit_in_n_clauses = tf.sparse.reduce_sum(adj_matrix, axis=-1)
+        lit1, lit2 = tf.split(lit_in_n_clauses, 2, axis=0)
+        vars_count = lit1 + lit2
+        in_n_clauses_matched = tf.reduce_mean(tf.expand_dims(vars_count, axis=-1) * query_logits_match)
+        in_n_clauses_not_matched = tf.reduce_mean(tf.expand_dims(vars_count, axis=-1) * (1 - query_logits_match))
+
+        query_not_matching_values = tf.sigmoid(query) * (1 - query_logits_match)
+        not_matching_mean = tf.reduce_mean(query_not_matching_values)
+        not_matching_median = tfp.stats.percentile(query_not_matching_values, 50.0, interpolation='midpoint')
+        query_logits_match = tf.reduce_sum(query_logits_match, axis=0) / tf.cast(n_vars, tf.float32)
+        query_logits_match = tf.reduce_mean(query_logits_match)
+
+        lit = tf.concat([round_query, 1 - round_query], axis=0)
+        sat_clauses = tf.sparse.sparse_dense_matmul(cl_adj_matrix, lit)
+        sat_clauses = tf.clip_by_value(sat_clauses, 0, 1)
+        sat_clauses = tf.reduce_sum(sat_clauses, axis=0) / tf.cast(n_clauses, tf.float32)
+        sat_clauses = tf.reduce_mean(sat_clauses)
+
+        with tf.name_scope(f"query_stats_{step}"):
+            tf.summary.scalar("query_logits_match", query_logits_match)
+            tf.summary.scalar("sat_clauses", sat_clauses)
+            tf.summary.scalar("vars_in_clauses_matched", in_n_clauses_matched)
+            tf.summary.scalar("vars_in_clauses_not_matched", in_n_clauses_not_matched)
+            tf.summary.scalar("not_matching_mean", not_matching_mean)
+            tf.summary.scalar("not_matching_median", not_matching_median)
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
