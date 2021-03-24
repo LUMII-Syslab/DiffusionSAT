@@ -34,7 +34,6 @@ class SimpleNeuroSAT(Model):
 
         self.LC_scale = self.add_weight(name="LC_scale", shape=[], initializer=tf.constant_initializer(0.1))
         self.CL_scale = self.add_weight(name="CL_scale", shape=[], initializer=tf.constant_initializer(0.1))
-        self.G_scale = self.add_weight(name="G_scale", shape=[], initializer=tf.constant_initializer(0.1))
 
         self.variables_query = MLP(self.n_update_layers + 1, self.feature_maps, self.feature_maps,
                                    name="variables_query", do_layer_norm=False)
