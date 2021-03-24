@@ -62,14 +62,18 @@ class SimpleNeuroSAT(Model):
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
         query = tf.zeros([n_vars, 128])
 
+        step_logits = tf.TensorArray(tf.float32, size=0, dynamic_size=True)
+        step_queries = tf.TensorArray(tf.float32, size=0, dynamic_size=True)
+
         for steps in tf.range(rounds):
             lit1, lit2 = tf.split(L, 2, axis=1)
             literals = tf.concat([lit1, lit2], axis=0)
             LC_msgs = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals) * self.LC_scale
 
             # with tf.GradientTape() as grad_tape:
-            #     v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
+            # v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
             query = self.variables_query(L)
+            step_queries = step_queries.write(steps, query)
             clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
             # step_loss = tf.reduce_sum(clauses_loss)
 
@@ -88,6 +92,7 @@ class SimpleNeuroSAT(Model):
             L = tf.debugging.check_numerics(L, message="L after norm")
 
             logits = self.V_score(L)  # (n_vars, 1)
+            step_logits = step_logits.write(steps, logits)
 
             is_sat = is_batch_sat(logits, cl_adj_matrix)
             if is_sat == 1:
@@ -109,7 +114,27 @@ class SimpleNeuroSAT(Model):
         if training:
             self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query)
 
+        if training:
+            self.log_differences(n_vars, step_logits, steps, "logits_diff")
+
+        if training:
+            self.log_differences(n_vars, step_queries, steps, "queries_diff")
+
         return logits, loss / tf.cast(rounds, tf.float32) + supervised_loss, steps
+
+    def log_differences(self, n_vars, tensor_array, steps, name_scope):
+        with tf.name_scope(name_scope):
+            for i in range(1, self.train_rounds, 1):
+                if i < steps:
+                    new = tensor_array.read(i)
+                    old = tensor_array.read(i - 1)
+                    new = tf.round(tf.sigmoid(new))
+                    old = tf.round(tf.sigmoid(old))
+                    matching = tf.cast(tf.equal(new, old), tf.float32)
+                    matching = tf.reduce_sum(matching, axis=0) / tf.cast(n_vars, tf.float32)
+                    same = tf.reduce_mean(matching)
+
+                    tf.summary.scalar(f"step_{i}_vs_{i - 1}", same)
 
     def query_stats(self, adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, step: str = "last"):
         current_labels = tf.round(tf.sigmoid(logits))
@@ -122,9 +147,14 @@ class SimpleNeuroSAT(Model):
         in_n_clauses_matched = tf.reduce_mean(tf.expand_dims(vars_count, axis=-1) * query_logits_match)
         in_n_clauses_not_matched = tf.reduce_mean(tf.expand_dims(vars_count, axis=-1) * (1 - query_logits_match))
 
+        query_matching_values = tf.sigmoid(query) * (1 - query_logits_match)
         query_not_matching_values = tf.sigmoid(query) * (1 - query_logits_match)
         not_matching_mean = tf.reduce_mean(query_not_matching_values)
         not_matching_median = tfp.stats.percentile(query_not_matching_values, 50.0, interpolation='midpoint')
+
+        matching_mean = tf.reduce_mean(query_matching_values)
+        matching_median = tfp.stats.percentile(query_matching_values, 50.0, interpolation='midpoint')
+
         query_logits_match = tf.reduce_sum(query_logits_match, axis=0) / tf.cast(n_vars, tf.float32)
         query_logits_match = tf.reduce_mean(query_logits_match)
 
@@ -137,10 +167,15 @@ class SimpleNeuroSAT(Model):
         with tf.name_scope(f"query_stats_{step}"):
             tf.summary.scalar("query_logits_match", query_logits_match)
             tf.summary.scalar("sat_clauses", sat_clauses)
+
             tf.summary.scalar("vars_in_clauses_matched", in_n_clauses_matched)
             tf.summary.scalar("vars_in_clauses_not_matched", in_n_clauses_not_matched)
+
             tf.summary.scalar("not_matching_mean", not_matching_mean)
             tf.summary.scalar("not_matching_median", not_matching_median)
+
+            tf.summary.scalar("matching_mean", matching_mean)
+            tf.summary.scalar("matching_median", matching_median)
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
