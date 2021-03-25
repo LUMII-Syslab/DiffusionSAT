@@ -123,3 +123,21 @@ class ClausesNeighborNorm(tf.keras.layers.Layer):
 
         variance = tf.reduce_mean(tf.square(clauses), axis=1, keepdims=True)
         return clauses * tf.math.rsqrt(variance + self.epsilon)
+
+def subtract_graph_mean(inputs, graph: tf.SparseTensor = None):
+    """
+    :param graph: graph level adjacency matrix
+    :param count_in_graph: element count in each graph
+    :param inputs: input tensor variables or clauses state
+    """
+
+    # input size: cells x feature_maps
+    if graph is not None:
+        mask = graph.indices[:, 0]
+        mean = tf.sparse.sparse_dense_matmul(graph, inputs)
+        inputs -= tf.gather(mean, mask)
+    else: # assume one graph per batch
+        mean = tf.reduce_mean(inputs, axis=0, keepdims=True)
+        inputs -= mean
+
+    return inputs

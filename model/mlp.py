@@ -15,7 +15,8 @@ class MLP(Model):
                  out_activation = None, out_bias = None,
                  do_layer_norm = False, norm_axis = 0,
                  normalizer = None,
-                 dropout_rate = 0.0, **kwargs):
+                 dropout_rate = 0.0,
+                 init_zero = False, **kwargs):
 
         super().__init__(**kwargs)
 
@@ -32,7 +33,10 @@ class MLP(Model):
         if dropout_rate>0: self.dense_layers.append(tf.keras.layers.Dropout(rate=dropout_rate))
         bias = 'zeros'
         if out_bias is not None: bias = tf.constant_initializer(out_bias)
-        self.dense_layers.append(Dense(out_nmap, activation=out_activation, bias_initializer=bias))
+        if init_zero:
+            self.dense_layers.append(Dense(out_nmap, activation=out_activation, kernel_initializer='zeros', bias_initializer=bias))
+        else:
+            self.dense_layers.append(Dense(out_nmap, activation=out_activation, bias_initializer=bias))
         self.normalizer = normalizer
 
     @tf.function

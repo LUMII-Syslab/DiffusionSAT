@@ -4,7 +4,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 
 from layers.normalization import PairNorm, LayerNormalization
-from loss.anf import anf_value_cplx_adj, anf_value_real
+from loss.anf import anf_value_cplx_adj, anf_value_real, return_messages_cplx
 from model.mlp import MLP
 from utils.parameters_log import *
 
@@ -12,8 +12,8 @@ from utils.parameters_log import *
 class ANFSAT(Model):
 
     def __init__(self, optimizer: Optimizer,
-                 feature_maps=128, msg_layers=3,
-                 vote_layers=3, train_rounds=16, test_rounds=32,
+                 feature_maps=128, msg_layers=2,
+                 vote_layers=2, train_rounds=16, test_rounds=32,
                  query_maps=128, supervised=True, trial: optuna.Trial = None, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
@@ -44,7 +44,7 @@ class ANFSAT(Model):
         self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate")
         self.variables_output = MLP(output_layers, int(feature_maps * output_scale), 1, name="variables_output")
         self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query")
-        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update")
+        self.clause_mlp = MLP(clauses_layers, int(feature_maps * update_scale), feature_maps + 1 * query_maps, name="clause_update")
         self.grad_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="grad_update")
         self.ands_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="ands_update")
         self.var2ands_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), query_maps, name="var2ands_mlp")
@@ -111,6 +111,7 @@ class ANFSAT(Model):
                     query_value = query
                     clauses_real, clauses_im, clause_ands1,clause_ands2 = anf_value_cplx_adj(query, ands_index1, ands_index2, clauses_adj)
                     query_msg = tf.concat([clauses_real, clauses_im], axis=-1)
+                    #query_msg = (query_msg1+query_msg)/tf.sqrt(2.)
                     # clauses_real, clause_ands1, clause_ands2 = anf_value_real(query, ands_index1, ands_index2, clauses_adj)
                     # query_msg = clauses_real
                     #step_loss = tf.reduce_sum(1 - clauses_real)
@@ -145,6 +146,7 @@ class ANFSAT(Model):
             # Aggregate loss over edges
             variables_ands_loss = tf.sparse.sparse_dense_matmul(clauses_adj, loss_to_vars) # sum over vars and and_data
             variables_ands_loss *= degree_weight
+            #variables_ands_loss = return_messages_cplx(clauses_adj, loss_to_vars)
             variables_loss = variables_ands_loss[1:n_vars+1,:] #take variable part
             ands_data = tf.concat([ands1, ands2, variables_ands_loss[n_vars+1:,:]], axis=-1) #concat anded variables and clause values corespond to ands
             ands_value = self.ands_mlp(ands_data) #apply mlp to and data
