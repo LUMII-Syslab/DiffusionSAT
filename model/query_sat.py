@@ -4,7 +4,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 
 from layers.normalization import PairNorm
-from loss.sat import softplus_loss_adj, softplus_mixed_loss_adj
+from loss.sat import softplus_loss_adj, softplus_mixed_loss_adj, linear_loss_adj, softplus_square_loss
 from model.mlp import MLP
 from utils.parameters_log import *
 from utils.sat import is_batch_sat
@@ -22,6 +22,7 @@ class QuerySAT(Model):
         self.test_rounds = test_rounds
         self.optimizer = optimizer
         self.use_message_passing = True
+        self.use_linear_loss = False
         self.skip_first_rounds = 0
         self.prediction_tries = 1
 
@@ -175,9 +176,22 @@ class QuerySAT(Model):
                 else:
                     logit_loss = 0.
             else:
-                per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
-                per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
-                logit_loss = tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
+                if self.use_linear_loss:
+                    binary_noise = tf.round(tf.random.uniform(tf.shape(logits))) * 2 - 1
+                    noise = tf.random.normal([])
+                    # noise *= tf.exp(tf.random.normal([], stddev=0.5))
+                    # noisy_logits = logits+binary_noise*0.5
+                    noisy_logits = tf.concat([logits + binary_noise * 0.5, logits - binary_noise * 0.5], axis=-1)
+                    per_clause_loss = tf.square(linear_loss_adj(noisy_logits, cl_adj_matrix))
+                    per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
+                    per_graph_loss = tf.reduce_mean(per_graph_loss, axis=-1)
+                    per_graph_loss = tf.sqrt(per_graph_loss + 0.25) - tf.sqrt(0.25)
+                    logit_loss = tf.reduce_sum(per_graph_loss)
+                else:
+                    per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
+                    per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
+                    per_graph_loss = tf.sqrt(per_graph_loss + 1e-6) - tf.sqrt(1e-6)
+                    logit_loss = tf.reduce_sum(per_graph_loss)
 
             step_losses = step_losses.write(step, logit_loss)
 
@@ -186,11 +200,11 @@ class QuerySAT(Model):
 
             is_sat = is_batch_sat(logits, cl_adj_matrix)
             if is_sat == 1:
-                if not self.supervised:
-                    # now we know the answer, we can use it for supervised training
-                    labels_got = tf.round(tf.sigmoid(logits))
-                    supervised_loss = tf.reduce_mean(
-                        tf.nn.sigmoid_cross_entropy_with_logits(logits=last_logits, labels=labels_got))
+                # if not self.supervised:
+                #     # now we know the answer, we can use it for supervised training
+                #     labels_got = tf.round(tf.sigmoid(logits))
+                #     supervised_loss = tf.reduce_mean(
+                #         tf.nn.sigmoid_cross_entropy_with_logits(logits=last_logits, labels=labels_got))
                 last_logits = logits
                 break
             last_logits = logits
@@ -201,7 +215,10 @@ class QuerySAT(Model):
             clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
 
         # if training:
-        #     tf.summary.histogram("query_msg", q_msg)
+        #       logits_mean = tf.reduce_mean(last_logits, axis=-1, keepdims=True)
+        #       logits_dif = last_logits-logits_mean
+        #       tf.summary.histogram("logits_dif", logits_dif)
+        #       tf.summary.histogram("logits_mean", logits_mean)
         #     tf.summary.histogram("clause_msg", cl_msg)
         #     tf.summary.histogram("var_grad", v_grad)
         #     tf.summary.histogram("var_loss_msg", var_loss_msg)
