@@ -75,7 +75,7 @@ class DIMACDataset(Dataset):
         if self.force_data_gen and tfrecords_folder.exists():
             shutil.rmtree(tfrecords_folder)
 
-        if not dimacs_folder.exists():
+        if not dimacs_folder.exists() and not tfrecords_folder.exists():
             self.write_dimacs_to_file(dimacs_folder, generator)
 
         if not tfrecords_folder.exists():
