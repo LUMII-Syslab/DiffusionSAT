@@ -37,7 +37,8 @@ def main():
         train(dataset, model, ckpt, manager)
 
     if Config.evaluate:
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model, print_progress=(Config.task == 'euclidean_tsp'))
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model,
+                                        print_progress=(Config.task == 'euclidean_tsp'))
         for metric in test_metrics:
             if Config.task == 'euclidean_tsp':
                 metric.log_in_tensorboard(reset_state=False, scope="TSP_test_metrics")
@@ -206,8 +207,11 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     validation_data = dataset.validation_data()
     train_data = dataset.train_data()
 
-    # TODO: Check against step in checkpoint
-    for step_data in itertools.islice(train_data, Config.train_steps + 1):
+    if Config.train_steps < int(ckpt.step):
+        raise ValueError(
+            f"Config not consistent with restored model: train_steps={Config.train} ckpt_step={int(ckpt.step)}")
+
+    for step_data in itertools.islice(train_data, Config.train_steps + 1 - int(ckpt.step)):
         tf.summary.experimental.set_step(ckpt.step)
 
         model_data = dataset.filter_model_inputs(step_data)
@@ -243,7 +247,8 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                     model_input = dataset.filter_model_inputs(visualization_step_data)
                     model.log_visualizations(**model_input)
 
-            metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps, initial=(int(ckpt.step) == 0))
+            metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps,
+                                       initial=(int(ckpt.step) == 0))
             for metric in metrics:
                 metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
                 metric.log_in_stdout(step=int(ckpt.step))
@@ -276,7 +281,8 @@ def prepare_checkpoints(model, optimizer):
     return ckpt, manager
 
 
-def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False, print_progress=False) -> list:
+def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False,
+                     print_progress=False) -> list:
     metrics = dataset.metrics(initial)
     iterator = itertools.islice(data, steps) if steps else data
 
