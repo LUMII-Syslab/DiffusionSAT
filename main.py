@@ -65,7 +65,7 @@ def main():
 def evaluate_variable_generalization(model):
     results_file = get_valid_file("gen_variables_size_result.txt")
 
-    lower_limit = 4
+    lower_limit = 5
     upper_limit = 1100
     step = 100
 
@@ -79,7 +79,7 @@ def evaluate_variable_generalization(model):
                                                          max_vars=var_count + step)
 
         start_time = time.time()
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model, steps=1)
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
         elapsed = time.time() - start_time
         prepend_line = f"Results for dataset with min_vars={var_count} and max_vars={var_count + step} and elapsed_time={elapsed:.2f}:"
         for metric in test_metrics:
@@ -181,19 +181,18 @@ def evaluate_batch_generalization(model):
 
 def evaluate_round_generalization(dataset, optimizer):
     results_file = get_valid_file("gen_steps_result.txt")
-    steps = 100
 
     test_data = dataset.test_data()
-    for test_rounds in [2 ** r for r in range(4, 15, 1)]:
+    for test_rounds in [2 ** r for r in range(4, 13, 1)]:
         model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, test_rounds=test_rounds)
         print(f"Evaluating model with test_rounds={test_rounds}")
         _ = prepare_checkpoints(model, optimizer)
 
         start_time = time.time()
-        test_metrics = evaluate_metrics(dataset, test_data, model, steps=steps)
+        test_metrics = evaluate_metrics(dataset, test_data, model)
         elapsed_time = time.time() - start_time
 
-        message = f"Results for model with test_rounds={test_rounds} and elapsed_time={elapsed_time / steps:.3f}:"
+        message = f"Results for model with test_rounds={test_rounds} and elapsed_time={elapsed_time / dataset.test_size :.3f}:"
         for metric in test_metrics:
             metric.log_in_file(str(results_file), prepend_str=message)
 

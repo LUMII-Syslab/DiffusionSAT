@@ -55,11 +55,10 @@ def objective_fn(trial):
 
 
 def prepare_model(trial: optuna.Trial, train_dir):
-    # learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
-    # beta_1 = trial.suggest_float("beta_1", 0.0, 1.0)
-    # beta_2 = trial.suggest_float("beta_2", 0.0, 1.0)
+    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
+    beta_1 = trial.suggest_float("beta_1", 0.5, 1.0)
 
-    optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.5, clip_gradients=True)
+    optimizer = AdaBeliefOptimizer(learning_rate, beta_1=beta_1, clip_gradients=True)
 
     # batch_size = trial.suggest_categorical("batch_size", [5000, 10000, 15000, 20000])
     batch_size = 10000
@@ -119,8 +118,8 @@ def train(train_dir, trial: optuna.Trial, dataset: Dataset, model: Model, ckpt, 
             trial.report(trial_accuracy, int(ckpt.step))
 
             # Handle pruning based on the intermediate value.
-            if trial.should_prune():
-                raise optuna.TrialPruned()
+            # if trial.should_prune():
+            #     raise optuna.TrialPruned()
 
         if int(ckpt.step) % 1000 == 0:
             save_path = ckpt_manager.save()
@@ -131,7 +130,7 @@ def train(train_dir, trial: optuna.Trial, dataset: Dataset, model: Model, ckpt, 
 
         ckpt.step.assign_add(1)
 
-    return running_mean(accuracies, 10)[-1]
+    return running_mean(accuracies, 15)[-1]
 
 
 def create_if_doesnt_exist(folder: str):
@@ -146,7 +145,7 @@ if __name__ == '__main__':
 
     create_if_doesnt_exist(Config.hyperopt_dir)
 
-    study_name = "ac314fc4-7ab5-11eb-8b57-0242ac110005"
+    study_name = "query_sat_on_3sat_no_prune3"
     storage = f"sqlite:///{Config.hyperopt_dir}/np_solvers.db"
     runs_folder = Config.hyperopt_dir + "/" + study_name
     Config.train_dir = runs_folder
@@ -158,14 +157,14 @@ if __name__ == '__main__':
         storage=storage,
         load_if_exists=True,
         sampler=optuna.samplers.TPESampler(multivariate=True),
-        pruner=optuna.pruners.HyperbandPruner(min_resource=5000, max_resource=Config.train_steps),
+        # pruner=optuna.pruners.HyperbandPruner(min_resource=5000, max_resource=Config.train_steps),
         direction="maximize")
 
     study.set_user_attr("model", Config.model)
     study.set_user_attr("dataset", Config.task)
     study.set_user_attr("train_steps", Config.train_steps)
 
-    study.optimize(objective_fn, n_trials=100)
+    study.optimize(objective_fn, n_trials=50)
 
     fig = optuna.visualization.plot_optimization_history(study)
     fig.write_image(f"{runs_folder}/history.png")
