@@ -18,8 +18,8 @@ class KSAT(DIMACDataset):
                  input_mode='variables', **kwargs) -> None:
         super(KSAT, self).__init__(data_dir, min_vars, max_vars, force_data_gen=force_data_gen, **kwargs)
         self.filter = self.__prepare_filter(input_mode)
-        self.train_size = 300000
-        self.test_size = 10000
+        self.train_size = 10000
+        self.test_size = 1000
         self.min_vars = min_vars
         self.max_vars = max_vars
 

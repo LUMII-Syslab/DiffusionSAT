@@ -21,18 +21,18 @@ class QuerySAT(Model):
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
-        self.use_message_passing = True
+        self.use_message_passing = trial.suggest_categorical("message_passing", [True, False]) if trial else True
         self.use_linear_loss = False
         self.skip_first_rounds = 0
         self.prediction_tries = 1
 
-        update_layers = trial.suggest_int("variables_update_layers", 2, 4) if trial else msg_layers
-        output_layers = trial.suggest_int("output_layers", 2, 4) if trial else vote_layers
-        query_layers = trial.suggest_int("query_layers", 2, 4) if trial else vote_layers
-        clauses_layers = trial.suggest_int("clauses_update_layers", 2, 4) if trial else msg_layers
+        update_layers = trial.suggest_int("variables_update_layers", 2, 3) if trial else msg_layers
+        output_layers = trial.suggest_int("output_layers", 2, 3) if trial else vote_layers
+        query_layers = trial.suggest_int("query_layers", 2, 3) if trial else vote_layers
+        clauses_layers = trial.suggest_int("clauses_update_layers", 2, 3) if trial else msg_layers
 
-        feature_maps = trial.suggest_categorical("feature_maps", [16, 32, 64]) if trial else feature_maps
-        query_maps = trial.suggest_categorical("query_maps", [16, 32, 64]) if trial else query_maps
+        feature_maps = trial.suggest_categorical("feature_maps", [32, 64, 128]) if trial else feature_maps
+        query_maps = trial.suggest_categorical("query_maps", [32, 64, 128]) if trial else query_maps
 
         update_scale = trial.suggest_discrete_uniform("update_scale", 0.2, 2., 0.2) if trial else 2
         output_scale = trial.suggest_discrete_uniform("output_scale", 0.2, 2., 0.2) if trial else 1
@@ -123,15 +123,15 @@ class QuerySAT(Model):
 
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
-            with tf.GradientTape() as grad_tape:
+            # with tf.GradientTape() as grad_tape:
                 # add some randomness to avoid zero collapse in normalization
-                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
-                query = self.variables_query(v1)
-                clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
-                step_loss = tf.reduce_sum(clauses_loss)
+                # v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
+            query = self.variables_query(variables)
+            clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
+            # step_loss = tf.reduce_sum(clauses_loss)
 
-            variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
-            variables_grad = variables_grad * var_degree_weight
+            # variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
+            # variables_grad = variables_grad * var_degree_weight
             # calculate new clause state
             clauses_loss *= 4
             q_msg = clauses_loss
@@ -158,10 +158,10 @@ class QuerySAT(Model):
             variables_loss *= degree_weight
             var_loss_msg = variables_loss
             variables_loss_pos, variables_loss_neg = tf.split(variables_loss, 2, axis=0)
-            v_grad = variables_grad
+            # v_grad = variables_grad
 
             # calculate new variable state
-            unit = tf.concat([variables_grad, variables, variables_loss_pos, variables_loss_neg], axis=-1)
+            unit = tf.concat([variables, variables_loss_pos, variables_loss_neg], axis=-1)
             new_variables = self.update_gate(unit)
             new_variables = self.variables_norm(new_variables, variables_graph_norm, training=training) * 0.25
             variables = new_variables + 0.1 * variables

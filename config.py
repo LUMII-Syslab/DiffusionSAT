@@ -18,11 +18,11 @@ class Config:
 
     """Training and task selection config: """
     optimizer = 'radam'
-    train_steps = 1000000
+    train_steps = 100000
     warmup = 0.0
     learning_rate = 0.0001
-    model = 'query_sat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
-    task = 'k_sat'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
+    model = 'simple_neuro_sat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
+    task = 'k_color'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
 
     """Supported training and evaluation modes: """

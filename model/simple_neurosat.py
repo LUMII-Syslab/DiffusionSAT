@@ -36,7 +36,7 @@ class SimpleNeuroSAT(Model):
         self.CL_scale = self.add_weight(name="CL_scale", shape=[], initializer=tf.constant_initializer(0.1))
 
         self.variables_query = MLP(self.n_update_layers + 1, self.feature_maps, self.feature_maps,
-                                   name="variables_query", do_layer_norm=False)
+                                   activation=tf.nn.relu6, name="variables_query", do_layer_norm=False)
         self.V_score = MLP(self.n_score_layers + 1, 2 * self.feature_maps, 1, activation=tf.nn.relu6, name="V_score")
 
         self.self_supervised = False
@@ -49,7 +49,6 @@ class SimpleNeuroSAT(Model):
 
         L = tf.ones(shape=[n_vars, self.feature_maps], dtype=tf.float32) * self.L_init_scale
         C = tf.ones(shape=[n_clauses, self.feature_maps], dtype=tf.float32) * self.C_init_scale
-
         loss = 0.
         supervised_loss = 0.
 
@@ -59,10 +58,10 @@ class SimpleNeuroSAT(Model):
         rounds = self.train_rounds if training else self.test_rounds
         logits = tf.zeros([n_vars, 1])
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
-        query = tf.zeros([n_vars, 128])
+        # query = tf.zeros([n_vars, 128])
 
         step_logits = tf.TensorArray(tf.float32, size=0, dynamic_size=True)
-        step_queries = tf.TensorArray(tf.float32, size=0, dynamic_size=True)
+        # step_queries = tf.TensorArray(tf.float32, size=0, dynamic_size=True)
 
         for steps in tf.range(rounds):
             lit1, lit2 = tf.split(L, 2, axis=1)
@@ -71,14 +70,14 @@ class SimpleNeuroSAT(Model):
 
             # with tf.GradientTape() as grad_tape:
             # v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
-            query = self.variables_query(L)
-            step_queries = step_queries.write(steps, query)
-            clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
+            # query = self.variables_query(L)
+            # step_queries = step_queries.write(steps, query)
+            # clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
             # step_loss = tf.reduce_sum(clauses_loss)
 
-            # variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query)) * self.G_scale
+            # variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
 
-            C = self.C_updates(tf.concat([C, clauses_loss, LC_msgs], axis=-1))
+            C = self.C_updates(tf.concat([C, LC_msgs], axis=-1))
             C = tf.debugging.check_numerics(C, message="C after update")
             C = normalize(C, axis=self.norm_axis, eps=self.norm_eps)
             C = tf.debugging.check_numerics(C, message="C after norm")
@@ -104,20 +103,20 @@ class SimpleNeuroSAT(Model):
             L = tf.stop_gradient(L) * 0.2 + L * 0.8
             C = tf.stop_gradient(C) * 0.2 + C * 0.8
 
-            if training and steps == 0:
-                self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, "0")
+            # if training and steps == 0:
+            #     self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, "0")
+            #
+            # if training and steps == 16:
+            #     self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, "16")
 
-            if training and steps == 16:
-                self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query, "16")
-
-        if training:
-            self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query)
-
-        if training:
-            self.log_differences(n_vars, step_logits, steps, "logits_diff")
-
-        if training:
-            self.log_differences(n_vars, step_queries, steps, "queries_diff")
+        # if training:
+        #     self.query_stats(adj_matrix, cl_adj_matrix, logits, n_clauses, n_vars, query)
+        #
+        # if training:
+        #     self.log_differences(n_vars, step_logits, steps, "logits_diff")
+        #
+        # if training:
+        #     self.log_differences(n_vars, step_queries, steps, "queries_diff")
 
         return logits, loss / tf.cast(rounds, tf.float32) + supervised_loss, steps
 
