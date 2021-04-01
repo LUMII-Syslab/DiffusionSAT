@@ -70,13 +70,13 @@ class SimpleNeuroSAT(Model):
 
             # with tf.GradientTape() as grad_tape:
             #  v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
-            # query = self.variables_query(L)
-            # clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
+            query = self.variables_query(L)
+            clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
             # step_queries = step_queries.write(steps, query)
             # step_loss = tf.reduce_sum(clauses_loss)
             # variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
 
-            C = self.C_updates(tf.concat([C, LC_msgs], axis=-1))
+            C = self.C_updates(tf.concat([C, clauses_loss, LC_msgs], axis=-1))
             C = tf.debugging.check_numerics(C, message="C after update")
             C = normalize(C, axis=self.norm_axis, eps=self.norm_eps)
             C = tf.debugging.check_numerics(C, message="C after norm")
