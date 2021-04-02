@@ -64,9 +64,9 @@ class SimpleNeuroSAT(Model):
         # step_queries = tf.TensorArray(tf.float32, size=0, dynamic_size=True)
 
         for steps in tf.range(rounds):
-            lit1, lit2 = tf.split(L, 2, axis=1)
-            literals = tf.concat([lit1, lit2], axis=0)
-            LC_msgs = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals) * self.LC_scale
+            # lit1, lit2 = tf.split(L, 2, axis=1)
+            # literals = tf.concat([lit1, lit2], axis=0)
+            # LC_msgs = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals) * self.LC_scale
 
             with tf.GradientTape() as grad_tape:
                 #  v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
@@ -76,7 +76,7 @@ class SimpleNeuroSAT(Model):
                 step_loss = tf.reduce_sum(clauses_loss)
                 variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
 
-            C = self.C_updates(tf.concat([C, clauses_loss, LC_msgs], axis=-1))
+            C = self.C_updates(tf.concat([C, clauses_loss], axis=-1))
             C = tf.debugging.check_numerics(C, message="C after update")
             C = normalize(C, axis=self.norm_axis, eps=self.norm_eps)
             C = tf.debugging.check_numerics(C, message="C after norm")
