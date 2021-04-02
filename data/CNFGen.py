@@ -60,11 +60,12 @@ class Clique(KSAT):
     def __init__(self, data_dir, min_vertices=4, max_vertices=20, force_data_gen=False, **kwargs) -> None:
         super(Clique, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 10000
-        self.test_size = 5000
+        self.train_size = 50000
+        self.test_size = 10000
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
-        self.clique_size = 3
+        self.clique_size_min = 3
+        self.clique_size_max = 8
 
     def train_generator(self) -> tuple:
         return self._generator(self.train_size)
@@ -85,7 +86,7 @@ class Clique(KSAT):
                 it += 1
                 G = nx.generators.erdos_renyi_graph(n_vertices, p)
 
-                F = CliqueFormula(G, self.clique_size)
+                F = CliqueFormula(G, random.randint(self.clique_size_min, self.clique_size_max))
                 n_vars = len(list(F.variables()))
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
