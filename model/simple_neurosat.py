@@ -68,13 +68,13 @@ class SimpleNeuroSAT(Model):
             # literals = tf.concat([lit1, lit2], axis=0)
             # LC_msgs = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals) * self.LC_scale
 
-            with tf.GradientTape() as grad_tape:
+            # with tf.GradientTape() as grad_tape:
                 #  v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
-                query = self.variables_query(L)
-                clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
+            query = self.variables_query(L)
+            clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
                 # step_queries = step_queries.write(steps, query)
-                step_loss = tf.reduce_sum(clauses_loss)
-                variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
+                # step_loss = tf.reduce_sum(clauses_loss)
+                # variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
 
             C = self.C_updates(tf.concat([C, clauses_loss], axis=-1))
             C = tf.debugging.check_numerics(C, message="C after update")
@@ -83,7 +83,7 @@ class SimpleNeuroSAT(Model):
 
             CL_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, C) * self.CL_scale
             CL_msgs1, CL_msgs2 = tf.split(CL_msgs, 2, axis=0)
-            L = self.L_updates(tf.concat([L, variables_grad, CL_msgs1, CL_msgs2], axis=-1))
+            L = self.L_updates(tf.concat([L, CL_msgs1, CL_msgs2], axis=-1))
             L = tf.debugging.check_numerics(L, message="L after update")
             L = normalize(L, axis=self.norm_axis, eps=self.norm_eps)
             L = tf.debugging.check_numerics(L, message="L after norm")
