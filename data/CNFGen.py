@@ -13,10 +13,10 @@ class SAT_3(KSAT):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
 
-    def __init__(self, data_dir, min_vars=5, max_vars=105, force_data_gen=False, test_size=5000, **kwargs) -> None:
+    def __init__(self, data_dir, min_vars=5, max_vars=100, force_data_gen=False, **kwargs) -> None:
         super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 100000
-        self.test_size = test_size
+        self.test_size = 5000
         self.min_vars = min_vars
         self.max_vars = max_vars
 
@@ -57,14 +57,15 @@ class Clique(KSAT):
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
     """
 
-    def __init__(self, data_dir, min_vertices=4, max_vertices=20, force_data_gen=False, test_size=5000, **kwargs) -> None:
+    def __init__(self, data_dir, min_vertices=4, max_vertices=20, force_data_gen=False, **kwargs) -> None:
         super(Clique, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 10000
-        self.test_size = test_size
+        self.train_size = 50000
+        self.test_size = 10000
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
-        self.clique_size = 3
+        self.clique_size_min = 3
+        self.clique_size_max = 8
 
     def train_generator(self) -> tuple:
         return self._generator(self.train_size)
@@ -85,7 +86,7 @@ class Clique(KSAT):
                 it += 1
                 G = nx.generators.erdos_renyi_graph(n_vertices, p)
 
-                F = CliqueFormula(G, self.clique_size)
+                F = CliqueFormula(G, random.randint(self.clique_size_min, self.clique_size_max))
                 n_vars = len(list(F.variables()))
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
@@ -102,11 +103,11 @@ class DomSet(KSAT):
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
     """
 
-    def __init__(self, data_dir, min_vertices=4, max_vertices=12, force_data_gen=False, test_size=5000, **kwargs) -> None:
+    def __init__(self, data_dir, min_vertices=4, max_vertices=12, force_data_gen=False, **kwargs) -> None:
         super(DomSet, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000
-        self.test_size = test_size
+        self.test_size = 5000
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
 
@@ -150,11 +151,11 @@ class KColor(KSAT):
     the graph such that no two adjacent vertices get the same color.
     """
 
-    def __init__(self, data_dir, min_vertices=5, max_vertices=20, force_data_gen=False, test_size=5000, **kwargs) -> None:
+    def __init__(self, data_dir, min_vertices=5, max_vertices=20, force_data_gen=False, **kwargs) -> None:
         super(KColor, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 10000
-        self.test_size = test_size
+        self.train_size = 50000
+        self.test_size = 10000
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
 
