@@ -65,7 +65,7 @@ class Clique(KSAT):
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
         self.clique_size_min = 3
-        self.clique_size_max = 8
+        self.clique_size_max = 6
 
     def train_generator(self) -> tuple:
         return self._generator(self.train_size)
