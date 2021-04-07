@@ -11,6 +11,7 @@ from data.tsp_asymmetric import AsymmetricTSP
 from data.sha_anf import ANF
 from model.attention_sat import AttentionSAT
 from model.neuro_sat import NeuroSAT
+from model.neurocore import NeuroCore
 from model.query_sat import QuerySAT
 from model.query_sat_lit import QuerySATLit
 from model.simple_neurosat import SimpleNeuroSAT
@@ -46,7 +47,8 @@ class ModelRegistry(Registry):
             "neuro_sat": NeuroSAT,
             "tsp_matrix_se": TSPMatrixSE,
             "simple_neuro_sat": SimpleNeuroSAT,
-            "anf_sat":ANFSAT
+            "anf_sat":ANFSAT,
+            "neurocore": NeuroCore
         }
 
 
