@@ -9,9 +9,9 @@ from utils.parameters_log import *
 from utils.sat import is_batch_sat
 
 
-class SimpleNeuroSAT(Model):
+class NeuroCore(Model):
     def __init__(self, optimizer, test_rounds=64, train_rounds=32, **kwargs):
-        super(SimpleNeuroSAT, self).__init__(**kwargs)
+        super(NeuroCore, self).__init__(**kwargs)
         self.optimizer = optimizer
 
         self.feature_maps = 128

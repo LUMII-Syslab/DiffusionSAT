@@ -21,7 +21,7 @@ class Config:
     train_steps = 100000
     warmup = 0.0
     learning_rate = 0.0001
-    model = 'simple_neuro_sat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
+    model = 'neurocore'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
     task = 'clique'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
 
