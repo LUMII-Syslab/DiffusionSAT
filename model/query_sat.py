@@ -15,7 +15,7 @@ class QuerySAT(Model):
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
                  vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=64, supervised=False, trial: optuna.Trial = None, **kwargs):
+                 query_maps=128, supervised=False, trial: optuna.Trial = None, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
         self.train_rounds = train_rounds
@@ -26,18 +26,18 @@ class QuerySAT(Model):
         self.skip_first_rounds = 0
         self.prediction_tries = 1
 
-        update_layers = trial.suggest_int("variables_update_layers", 2, 4) if trial else msg_layers
-        output_layers = trial.suggest_int("output_layers", 2, 4) if trial else vote_layers
-        query_layers = trial.suggest_int("query_layers", 2, 4) if trial else vote_layers
-        clauses_layers = trial.suggest_int("clauses_update_layers", 2, 4) if trial else msg_layers
+        update_layers = trial.suggest_int("variables_update_layers", 2, 4) if trial else 3
+        output_layers = trial.suggest_int("output_layers", 2, 4) if trial else 2
+        query_layers = trial.suggest_int("query_layers", 2, 4) if trial else 2
+        clauses_layers = trial.suggest_int("clauses_update_layers", 2, 4) if trial else 2
 
         feature_maps = trial.suggest_categorical("feature_maps", [16, 32, 64]) if trial else feature_maps
         query_maps = trial.suggest_categorical("query_maps", [16, 32, 64]) if trial else query_maps
 
-        update_scale = trial.suggest_discrete_uniform("update_scale", 0.2, 2., 0.2) if trial else 2
+        update_scale = trial.suggest_discrete_uniform("update_scale", 0.2, 2., 0.2) if trial else 1.8
         output_scale = trial.suggest_discrete_uniform("output_scale", 0.2, 2., 0.2) if trial else 1
-        clauses_scale = trial.suggest_discrete_uniform("clauses_scale", 0.2, 2., 0.2) if trial else 2
-        query_scale = trial.suggest_discrete_uniform("query_scale", 0.2, 2., 0.2) if trial else 3
+        clauses_scale = trial.suggest_discrete_uniform("clauses_scale", 0.2, 2., 0.2) if trial else 1.6
+        query_scale = trial.suggest_discrete_uniform("query_scale", 0.2, 2., 0.2) if trial else 1.2
 
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
