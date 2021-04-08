@@ -106,11 +106,11 @@ class QuerySAT(Model):
         n_clauses = shape[1]
         n_vars = shape[0] // 2
         last_logits = tf.zeros([n_vars, 1])
-        # lit_degree = tf.reshape(tf.sparse.reduce_sum(adj_matrix, axis=1), [n_vars * 2, 1])
-        # degree_weight = tf.math.rsqrt(tf.maximum(lit_degree, 1))
-        # var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars, :] + lit_degree[n_vars:, :], 1))
-        # rev_lit_degree = tf.reshape(tf.sparse.reduce_sum(cl_adj_matrix, axis=1), [n_clauses, 1])
-        # rev_degree_weight = tf.math.rsqrt(tf.maximum(rev_lit_degree, 1))
+        lit_degree = tf.reshape(tf.sparse.reduce_sum(adj_matrix, axis=1), [n_vars * 2, 1])
+        degree_weight = tf.math.rsqrt(tf.maximum(lit_degree, 1))
+        var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars, :] + lit_degree[n_vars:, :], 1))
+        rev_lit_degree = tf.reshape(tf.sparse.reduce_sum(cl_adj_matrix, axis=1), [n_clauses, 1])
+        rev_degree_weight = tf.math.rsqrt(tf.maximum(rev_lit_degree, 1))
         # q_msg = tf.zeros([n_clauses, self.query_maps])
         # cl_msg = tf.zeros([n_clauses, self.query_maps])
         # v_grad = tf.zeros([n_vars, self.query_maps])
@@ -131,7 +131,7 @@ class QuerySAT(Model):
                 step_loss = tf.reduce_sum(clauses_loss)
 
             variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
-            # variables_grad = variables_grad * var_degree_weight
+            variables_grad = variables_grad * var_degree_weight
             # calculate new clause state
             clauses_loss *= 4
             q_msg = clauses_loss
@@ -141,7 +141,7 @@ class QuerySAT(Model):
                 lit1, lit2 = tf.split(var_msg, 2, axis=1)
                 literals = tf.concat([lit1, lit2], axis=0)
                 clause_messages = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals)
-                # clause_messages *= rev_degree_weight
+                clause_messages *= rev_degree_weight
                 cl_msg = clause_messages
                 clause_unit = tf.concat([clause_state, clause_messages, clauses_loss], axis=-1)
             else:
@@ -151,11 +151,11 @@ class QuerySAT(Model):
             variables_loss_all = clause_data[:, 0:self.query_maps]
             new_clause_value = clause_data[:, self.query_maps:]
             new_clause_value = self.clauses_norm(new_clause_value, clauses_graph_norm, training=training) * 0.25
-            clause_state = new_clause_value + 0.1 * clause_state
+            clause_state = new_clause_value #+ 0.1 * clause_state
 
             # Aggregate loss over edges
             variables_loss = tf.sparse.sparse_dense_matmul(adj_matrix, variables_loss_all)
-            # variables_loss *= degree_weight
+            variables_loss *= degree_weight
             var_loss_msg = variables_loss
             variables_loss_pos, variables_loss_neg = tf.split(variables_loss, 2, axis=0)
             v_grad = variables_grad
@@ -164,7 +164,7 @@ class QuerySAT(Model):
             unit = tf.concat([variables_grad, variables, variables_loss_pos, variables_loss_neg], axis=-1)
             new_variables = self.update_gate(unit)
             new_variables = self.variables_norm(new_variables, variables_graph_norm, training=training) * 0.25
-            variables = new_variables + 0.1 * variables
+            variables = new_variables #+ 0.1 * variables
 
             # calculate logits and loss
             logits = self.variables_output(variables)
