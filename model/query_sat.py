@@ -10,6 +10,11 @@ from utils.parameters_log import *
 from utils.sat import is_batch_sat
 
 
+def normalize(x, axis, eps):
+    mean, variance = tf.nn.moments(x, axes=[axis], keepdims=True)
+    return tf.nn.batch_normalization(x, mean, variance, offset=None, scale=None, variance_epsilon=eps)
+
+
 class QuerySAT(Model):
 
     def __init__(self, optimizer: Optimizer,
@@ -151,7 +156,8 @@ class QuerySAT(Model):
 
             variables_loss_all = clause_data[:, 0:self.query_maps]
             new_clause_value = clause_data[:, self.query_maps:]
-            new_clause_value = self.clauses_norm(new_clause_value, clauses_graph_norm, training=training) * 0.25
+            new_clause_value = normalize(new_clause_value, 0, 1e-6) * 0.25
+            # new_clause_value = self.clauses_norm(new_clause_value, clauses_graph_norm, training=training) * 0.25
             clause_state = new_clause_value + 0.1 * clause_state
 
             # Aggregate loss over edges
@@ -164,7 +170,8 @@ class QuerySAT(Model):
             # calculate new variable state
             unit = tf.concat([variables_grad, variables, variables_loss_pos, variables_loss_neg], axis=-1)
             new_variables = self.update_gate(unit)
-            new_variables = self.variables_norm(new_variables, variables_graph_norm, training=training) * 0.25
+            new_variables = normalize(new_variables, 0, 1e-6) * 0.25
+            # new_variables = self.variables_norm(new_variables, variables_graph_norm, training=training) * 0.25
             variables = new_variables + 0.1 * variables
 
             # calculate logits and loss
