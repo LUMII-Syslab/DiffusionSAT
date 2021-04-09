@@ -131,8 +131,8 @@ class QuerySAT(Model):
             # make a query for solution, get its value and gradient
             with tf.GradientTape() as grad_tape:
                 # add some randomness to avoid zero collapse in normalization
-                # v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
-                query = self.variables_query(variables)
+                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
+                query = self.variables_query(v1)
                 clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
                 step_loss = tf.reduce_sum(clauses_loss)
 
