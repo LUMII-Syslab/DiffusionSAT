@@ -68,10 +68,8 @@ class QuerySAT(Model):
         n_vars = shape[0] // 2
         n_clauses = shape[1]
 
-        # variables = self.zero_state(n_vars, self.feature_maps)
-        # clause_state = self.zero_state(n_clauses, self.feature_maps)
-        variables = tf.ones([n_vars, self.feature_maps])
-        clause_state = tf.ones([n_vars, self.feature_maps])
+        variables = self.zero_state(n_vars, self.feature_maps)
+        clause_state = self.zero_state(n_clauses, self.feature_maps)
 
         rounds = self.train_rounds if training else self.test_rounds
 
@@ -159,7 +157,7 @@ class QuerySAT(Model):
             variables_loss_all = clause_data[:, 0:self.query_maps]
             new_clause_value = clause_data[:, self.query_maps:]
             new_clause_value = self.clauses_norm(new_clause_value, clauses_graph_norm, training=training) * 0.25
-            clause_state = new_clause_value + 0.1 * clause_state
+            clause_state = new_clause_value #+ 0.1 * clause_state
 
             # Aggregate loss over edges
             variables_loss = tf.sparse.sparse_dense_matmul(adj_matrix, variables_loss_all)
@@ -172,7 +170,7 @@ class QuerySAT(Model):
             unit = tf.concat([variables_grad, variables, variables_loss_pos, variables_loss_neg], axis=-1)
             new_variables = self.update_gate(unit)
             new_variables = self.variables_norm(new_variables, variables_graph_norm, training=training) * 0.25
-            variables = new_variables + 0.1 * variables
+            variables = new_variables #+ 0.1 * variables
 
             # calculate logits and loss
             logits = self.variables_output(variables)
