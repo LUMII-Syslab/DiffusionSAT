@@ -63,8 +63,12 @@ class QuerySAT(Model):
         n_vars = shape[0] // 2
         n_clauses = shape[1]
 
-        variables = self.zero_state(n_vars, self.feature_maps)
-        clause_state = self.zero_state(n_clauses, self.feature_maps)
+        # variables = self.zero_state(n_vars, self.feature_maps)
+        # clause_state = self.zero_state(n_clauses, self.feature_maps)
+
+        variables = tf.ones([n_vars, self.feature_maps])
+        clause_state = tf.ones([n_clauses, self.feature_maps])
+
         rounds = self.train_rounds if training else self.test_rounds
 
         if training and self.skip_first_rounds > 0:  # do some first rounds without training
