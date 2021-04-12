@@ -21,7 +21,7 @@ class QuerySAT(Model):
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
-        self.use_message_passing = True
+        self.use_message_passing = False
         self.use_linear_loss = False
         self.skip_first_rounds = 0
         self.prediction_tries = 1
