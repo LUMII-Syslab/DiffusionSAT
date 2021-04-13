@@ -47,10 +47,14 @@ class QuerySAT(Model):
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
 
-        self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate", do_layer_norm=False)
-        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), 1, name="variables_output", do_layer_norm=False)
-        self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query", do_layer_norm=False)
-        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
+        self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate",
+                               do_layer_norm=False)
+        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), 1, name="variables_output",
+                                    do_layer_norm=False)
+        self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query",
+                                   do_layer_norm=False)
+        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps,
+                              name="clause_update", do_layer_norm=False)
 
         self.lit_mlp = MLP(msg_layers, query_maps * 4, query_maps * 2, name="lit_query", do_layer_norm=False)
 
@@ -68,8 +72,10 @@ class QuerySAT(Model):
         n_vars = shape[0] // 2
         n_clauses = shape[1]
 
-        variables = self.zero_state(n_vars, self.feature_maps)
-        clause_state = self.zero_state(n_clauses, self.feature_maps)
+        # variables = self.zero_state(n_vars, self.feature_maps)
+        # clause_state = self.zero_state(n_clauses, self.feature_maps)
+        variables = tf.ones([n_vars, self.feature_maps]) * 0.25
+        clause_state = tf.ones([n_clauses, self.feature_maps]) * 0.25
 
         rounds = self.train_rounds if training else self.test_rounds
 
@@ -156,8 +162,7 @@ class QuerySAT(Model):
 
             variables_loss_all = clause_data[:, 0:self.query_maps]
             new_clause_value = clause_data[:, self.query_maps:]
-            # new_clause_value = self.clauses_norm(new_clause_value, clauses_graph_norm, training=training) * 0.25
-            new_clause_value = normalize(new_clause_value, 0, 1e-6) * 0.25
+            new_clause_value = self.clauses_norm(new_clause_value, clauses_graph_norm, training=training) * 0.25
             clause_state = new_clause_value + 0.1 * clause_state
 
             # Aggregate loss over edges
@@ -170,8 +175,7 @@ class QuerySAT(Model):
             # calculate new variable state
             unit = tf.concat([variables_grad, variables, variables_loss_pos, variables_loss_neg], axis=-1)
             new_variables = self.update_gate(unit)
-            # new_variables = self.variables_norm(new_variables, variables_graph_norm, training=training) * 0.25
-            new_variables = normalize(new_variables, 0, 1e-6) * 0.25
+            new_variables = self.variables_norm(new_variables, variables_graph_norm, training=training) * 0.25
             variables = new_variables + 0.1 * variables
 
             # calculate logits and loss
@@ -242,7 +246,8 @@ class QuerySAT(Model):
                                   ])
     def train_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
         with tf.GradientTape() as tape:
-            _, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=True, labels=solutions.flat_values)
+            _, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=True,
+                                      labels=solutions.flat_values)
             train_vars = self.trainable_variables
             gradients = tape.gradient(loss, train_vars)
             self.optimizer.apply_gradients(zip(gradients, train_vars))
