@@ -18,7 +18,7 @@ class Config:
 
     """Training and task selection config: """
     optimizer = 'radam'
-    train_steps = 100000
+    train_steps = 500000
     warmup = 0.0
     learning_rate = 0.0002
     model = 'neurocore'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
