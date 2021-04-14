@@ -22,9 +22,9 @@ class NeuroCore(Model):
         self.n_update_layers = 2
         self.n_score_layers = 2
 
-        self.L_updates = MLP(self.n_update_layers + 1, 2 * self.feature_maps + self.feature_maps, self.feature_maps,
+        self.L_updates = MLP(self.n_update_layers + 1, 2 * self.feature_maps, self.feature_maps,
                              activation=tf.nn.relu6, name="L_u")
-        self.C_updates = MLP(self.n_update_layers + 1, self.feature_maps + self.feature_maps, self.feature_maps,
+        self.C_updates = MLP(self.n_update_layers + 1, 2 * self.feature_maps, self.feature_maps,
                              activation=tf.nn.relu6, name="C_u")
 
         init = tf.constant_initializer(1.0 / math.sqrt(self.feature_maps))
