@@ -25,6 +25,7 @@ class QuerySAT(Model):
         self.use_linear_loss = False
         self.skip_first_rounds = 0
         self.prediction_tries = 1
+        self.logit_maps = 4
 
         update_layers = trial.suggest_int("variables_update_layers", 2, 4) if trial else 3
         output_layers = trial.suggest_int("output_layers", 2, 4) if trial else 2
@@ -43,7 +44,7 @@ class QuerySAT(Model):
         self.clauses_norm = PairNorm(subtract_mean=True)
 
         self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate", do_layer_norm=False)
-        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), 1, name="variables_output", do_layer_norm=False)
+        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), self.logit_maps, name="variables_output", do_layer_norm=False)
         self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query", do_layer_norm=False)
         self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
 
@@ -94,7 +95,7 @@ class QuerySAT(Model):
             tf.summary.histogram("clauses", last_clauses)
             last_layer_loss = tf.reduce_sum(
                 softplus_mixed_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix)))
-            tf.summary.histogram("logits", last_logits)
+            tf.summary.histogram("logits", tf.abs(last_logits))
             tf.summary.scalar("last_layer_loss", last_layer_loss)
             # log_as_histogram("step_losses", step_losses.stack())
 
@@ -109,7 +110,7 @@ class QuerySAT(Model):
         shape = tf.shape(adj_matrix)
         n_clauses = shape[1]
         n_vars = shape[0] // 2
-        last_logits = tf.zeros([n_vars, 1])
+        last_logits = tf.zeros([n_vars, self.logit_maps])
         lit_degree = tf.reshape(tf.sparse.reduce_sum(adj_matrix, axis=1), [n_vars * 2, 1])
         degree_weight = tf.math.rsqrt(tf.maximum(lit_degree, 1))
         var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars, :] + lit_degree[n_vars:, :], 1))
@@ -195,6 +196,9 @@ class QuerySAT(Model):
                     per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
                     per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
                     per_graph_loss = tf.sqrt(per_graph_loss + 1e-6) - tf.sqrt(1e-6)
+                    costs = tf.square(tf.range(1, self.logit_maps+1, dtype = tf.float32))
+                    per_graph_loss = tf.reduce_sum(tf.sort(per_graph_loss, axis=-1, direction = 'DESCENDING')*costs)/tf.reduce_sum(costs)
+                    #per_graph_loss = 0.5*(tf.reduce_min(per_graph_loss, axis=-1)+tf.reduce_mean(per_graph_loss, axis=-1))
                     logit_loss = tf.reduce_sum(per_graph_loss)
 
             step_losses = step_losses.write(step, logit_loss)
@@ -202,7 +206,7 @@ class QuerySAT(Model):
             # n_unsat_clauses = unsat_clause_count(logits, clauses)
             # if n_unsat_clauses == 0:
 
-            is_sat = is_batch_sat(logits, cl_adj_matrix)
+            is_sat = is_batch_sat(logits[:,0:1], cl_adj_matrix) # todo:select the best logits per graph
             if is_sat == 1:
                 # if not self.supervised:
                 #     # now we know the answer, we can use it for supervised training
@@ -218,18 +222,22 @@ class QuerySAT(Model):
             variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
             clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
 
-        # if training:
-        #       logits_mean = tf.reduce_mean(last_logits, axis=-1, keepdims=True)
-        #       logits_dif = last_logits-logits_mean
-        #       tf.summary.histogram("logits_dif", logits_dif)
-        #       tf.summary.histogram("logits_mean", logits_mean)
+        if training:
+              logits_round = tf.round(tf.sigmoid(last_logits))
+              logits_different = tf.reduce_mean(tf.abs(logits_round[:,0:1]-logits_round[:,1:]))
+              tf.summary.scalar("logits_different", logits_different)
+
+              logits_mean = tf.reduce_mean(last_logits, axis=-1, keepdims=True)
+              logits_dif = last_logits-logits_mean
+              tf.summary.histogram("logits_dif", logits_dif)
+              # tf.summary.histogram("logits_mean", logits_mean)
         #     tf.summary.histogram("clause_msg", cl_msg)
         #     tf.summary.histogram("var_grad", v_grad)
         #     tf.summary.histogram("var_loss_msg", var_loss_msg)
         #     tf.summary.histogram("query", query)
 
         unsupervised_loss = tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32)
-        return last_logits, step, unsupervised_loss, supervised_loss, clause_state, variables
+        return last_logits[:,0:1], step, unsupervised_loss, supervised_loss, clause_state, variables
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
