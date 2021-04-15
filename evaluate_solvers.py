@@ -1,13 +1,13 @@
+import csv
 import itertools
 import time
 
-import numpy
 import tensorflow as tf
 
 from config import Config
 from registry.registry import DatasetRegistry
 from utils.sat import walksat, build_dimacs_file
-import csv
+from utils.visualization import create_cactus_data
 
 
 def test_walksat():
@@ -29,16 +29,11 @@ def test_walksat():
             var_count.append(n_vars)
             time_used.append(time_elapsed)
 
-    rows = [[x, y, z] for x, y, z in zip(var_count, solved, time_used)]
-    rows = sorted(rows, key=lambda x: x[0])
-    rows = [[y, z] for _, y, z in rows]
-    rows = numpy.cumsum(rows, axis=0)
+    rows = create_cactus_data(solved, time_used, var_count)
 
     with open("walksat_cactus.csv", "w", newline='') as file:
         writer = csv.writer(file)
         writer.writerows(rows)
-
-    print("Total", len(solved), "Solved:", sum(solved), "Time used:", sum(time_used))
 
 
 if __name__ == '__main__':

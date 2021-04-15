@@ -1,3 +1,4 @@
+import csv
 import itertools
 import time
 from pathlib import Path
@@ -15,6 +16,8 @@ from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
 from utils.parameters_log import HP_TRAINABLE_PARAMS, HP_TASK
+from utils.sat import is_graph_sat
+from utils.visualization import create_cactus_data
 
 
 def main():
@@ -37,7 +40,8 @@ def main():
         train(dataset, model, ckpt, manager)
 
     if Config.evaluate:
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model, print_progress=(Config.task == 'euclidean_tsp'))
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model,
+                                        print_progress=(Config.task == 'euclidean_tsp'))
         for metric in test_metrics:
             if Config.task == 'euclidean_tsp':
                 metric.log_in_tensorboard(reset_state=False, scope="TSP_test_metrics")
@@ -61,6 +65,31 @@ def main():
     if Config.test_classic_solver:
         variable_gen_classic_solver()
 
+    if Config.test_cactus:
+        make_cactus(model, dataset)
+
+
+def make_cactus(model: Model, dataset):
+    solved = []
+    var_count = []
+    time_used = []
+    for step_data in itertools.islice(dataset.test_data(), 125):
+        model_input = dataset.filter_model_inputs(step_data)
+        start = time.time()
+        output = model.predict_step(**model_input)
+        elapsed_time = time.time() - start
+
+        is_sat = is_graph_sat(output, step_data["adj_matrix"], step_data["clauses_graph"]).numpy()
+        solved = [int(x) for x in is_sat]
+        var_count += step_data["variables_in_graph"].numpy()
+        time_used += [elapsed_time / len(is_sat)] * len(is_sat)
+
+    rows = create_cactus_data(solved, time_used, var_count)
+
+    model_name = model.__class__.__name__.lower()
+    with open(model_name + "_cactus.csv", "w", newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(rows)
 
 def evaluate_variable_generalization(model):
     results_file = get_valid_file("gen_variables_size_result.txt")

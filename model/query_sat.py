@@ -7,7 +7,7 @@ from layers.normalization import PairNorm
 from loss.sat import softplus_loss_adj, softplus_mixed_loss_adj, linear_loss_adj, softplus_square_loss
 from model.mlp import MLP
 from utils.parameters_log import *
-from utils.sat import is_batch_sat
+from utils.sat import is_batch_sat, is_graph_sat
 
 
 class QuerySAT(Model):
@@ -276,7 +276,7 @@ class QuerySAT(Model):
 
             for i in range(self.prediction_tries):
                 predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False)
-                sat_graphs = self.is_graph_sat(predictions, adj_matrix, clauses_graph)
+                sat_graphs = is_graph_sat(predictions, adj_matrix, clauses_graph)
                 sat_graphs = tf.clip_by_value(sat_graphs - solved_graphs, 0, 1)
 
                 variable_mask = tf.sparse.sparse_dense_matmul(variables_graph, sat_graphs, adjoint_a=True)
@@ -290,24 +290,6 @@ class QuerySAT(Model):
             "loss": loss,
             "prediction": tf.squeeze(predictions, axis=-1)
         }
-
-    @staticmethod
-    def is_graph_sat(predictions: tf.Tensor, adj_matrix: tf.SparseTensor, clauses_matrix: tf.SparseTensor):
-        """
-        :param predictions: Model outputs as logits
-        :param adj_matrix: Literals - Clauses adjacency matrix
-        :param clauses_matrix: Graph - Clauses adjacency matrix
-        :return: vector of elements in {0,1}, where 1 - graph SAT, 0 - graph UNSAT
-        """
-        variables = tf.round(tf.sigmoid(predictions))
-        literals = tf.concat([variables, 1 - variables], axis=0)
-        clauses_sat = tf.sparse.sparse_dense_matmul(adj_matrix, literals, adjoint_a=True)
-        clauses_sat = tf.clip_by_value(clauses_sat, 0, 1)
-
-        clauses_sat_in_g = tf.sparse.sparse_dense_matmul(clauses_matrix, clauses_sat)
-        clauses_total_in_g = tf.expand_dims(tf.sparse.reduce_sum(clauses_matrix, axis=-1), axis=-1)
-
-        return tf.clip_by_value(clauses_sat_in_g + 1 - clauses_total_in_g, 0, 1)
 
     def get_config(self):
         return {HP_MODEL: self.__class__.__name__,
