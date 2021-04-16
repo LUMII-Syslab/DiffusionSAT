@@ -25,7 +25,7 @@ class QuerySAT(Model):
         self.use_linear_loss = False
         self.skip_first_rounds = 0
         self.prediction_tries = 1
-        self.logit_maps = 4
+        self.logit_maps = 8
 
         update_layers = trial.suggest_int("variables_update_layers", 2, 4) if trial else 3
         output_layers = trial.suggest_int("output_layers", 2, 4) if trial else 2
