@@ -73,18 +73,21 @@ def make_cactus(model: Model, dataset):
     solved = []
     var_count = []
     time_used = []
-    for step_data in itertools.islice(dataset.test_data(), 1):
+
+    for step, step_data in enumerate(itertools.islice(dataset.test_data(), 110)):
         model_input = dataset.filter_model_inputs(step_data)
         start = time.time()
         output = model.predict_step(**model_input)
         elapsed_time = time.time() - start
 
-        pred = tf.expand_dims(output["prediction"], axis=-1)
-        is_sat = is_graph_sat(pred, step_data["adjacency_matrix"], step_data["clauses_graph_adj"]).numpy()
-        is_sat = tf.squeeze(is_sat, axis=-1)
-        solved = [int(x) for x in is_sat]
-        var_count += step_data["variables_in_graph"].numpy().tolist()
-        time_used += [elapsed_time / len(is_sat)] * len(is_sat)
+        if step >= 10:
+            pred = tf.expand_dims(output["prediction"], axis=-1)
+            is_sat = is_graph_sat(pred, step_data["adjacency_matrix"], step_data["clauses_graph_adj"]).numpy()
+            is_sat = tf.squeeze(is_sat, axis=-1)
+            solved_batch = [int(x) for x in is_sat]
+            solved += solved_batch
+            var_count += step_data["variables_in_graph"].numpy().tolist()
+            time_used += [elapsed_time / len(solved_batch)] * len(solved_batch)
 
     rows = create_cactus_data(solved, time_used, var_count)
 

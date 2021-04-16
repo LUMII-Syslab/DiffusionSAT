@@ -18,16 +18,17 @@ def test_walksat():
     solved = []
     var_count = []
     time_used = []
-    for step_data in itertools.islice(dataset.test_data(), 125):
+    for step, step_data in enumerate(itertools.islice(dataset.test_data(), 110)):
         clauses = [x.numpy() for x in step_data["normal_clauses"]]
         vars_in_graph = step_data["variables_in_graph"].numpy()
 
-        for iclauses, n_vars in zip(clauses, vars_in_graph):
-            dimacs = build_dimacs_file(iclauses, n_vars)
-            sat, solution, time_elapsed = walksat(dimacs)
-            solved.append(int(sat))
-            var_count.append(n_vars)
-            time_used.append(time_elapsed)
+        if step >= 10:
+            for iclauses, n_vars in zip(clauses, vars_in_graph):
+                dimacs = build_dimacs_file(iclauses, n_vars)
+                sat, solution, time_elapsed = walksat(dimacs)
+                solved.append(int(sat))
+                var_count.append(n_vars)
+                time_used.append(time_elapsed)
 
     rows = create_cactus_data(solved, time_used, var_count)
 
