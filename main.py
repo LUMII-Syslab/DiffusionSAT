@@ -65,7 +65,7 @@ def main():
     if Config.test_classic_solver:
         variable_gen_classic_solver()
 
-    if Config.test_cactus:
+    if Config.make_cactus:
         make_cactus(model, dataset)
 
 
@@ -73,15 +73,17 @@ def make_cactus(model: Model, dataset):
     solved = []
     var_count = []
     time_used = []
-    for step_data in itertools.islice(dataset.test_data(), 125):
+    for step_data in itertools.islice(dataset.test_data(), 1):
         model_input = dataset.filter_model_inputs(step_data)
         start = time.time()
         output = model.predict_step(**model_input)
         elapsed_time = time.time() - start
 
-        is_sat = is_graph_sat(output, step_data["adj_matrix"], step_data["clauses_graph"]).numpy()
+        pred = tf.expand_dims(output["prediction"], axis=-1)
+        is_sat = is_graph_sat(pred, step_data["adjacency_matrix"], step_data["clauses_graph_adj"]).numpy()
+        is_sat = tf.squeeze(is_sat, axis=-1)
         solved = [int(x) for x in is_sat]
-        var_count += step_data["variables_in_graph"].numpy()
+        var_count += step_data["variables_in_graph"].numpy().tolist()
         time_used += [elapsed_time / len(is_sat)] * len(is_sat)
 
     rows = create_cactus_data(solved, time_used, var_count)
@@ -90,6 +92,7 @@ def make_cactus(model: Model, dataset):
     with open(model_name + "_cactus.csv", "w", newline='') as file:
         writer = csv.writer(file)
         writer.writerows(rows)
+
 
 def evaluate_variable_generalization(model):
     results_file = get_valid_file("gen_variables_size_result.txt")
