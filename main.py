@@ -1,3 +1,4 @@
+import csv
 import itertools
 import time
 from pathlib import Path
@@ -15,6 +16,8 @@ from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
 from utils.parameters_log import HP_TRAINABLE_PARAMS, HP_TASK
+from utils.sat import is_graph_sat
+from utils.visualization import create_cactus_data
 
 
 def main():
@@ -37,7 +40,8 @@ def main():
         train(dataset, model, ckpt, manager)
 
     if Config.evaluate:
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model, print_progress=(Config.task == 'euclidean_tsp'))
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model,
+                                        print_progress=(Config.task == 'euclidean_tsp'))
         for metric in test_metrics:
             if Config.task == 'euclidean_tsp':
                 metric.log_in_tensorboard(reset_state=False, scope="TSP_test_metrics")
@@ -61,27 +65,51 @@ def main():
     if Config.test_classic_solver:
         variable_gen_classic_solver()
 
+    if Config.test_cactus:
+        make_cactus(model, dataset)
+
+
+def make_cactus(model: Model, dataset):
+    solved = []
+    var_count = []
+    time_used = []
+    for step_data in itertools.islice(dataset.test_data(), 125):
+        model_input = dataset.filter_model_inputs(step_data)
+        start = time.time()
+        output = model.predict_step(**model_input)
+        elapsed_time = time.time() - start
+
+        is_sat = is_graph_sat(output, step_data["adj_matrix"], step_data["clauses_graph"]).numpy()
+        solved = [int(x) for x in is_sat]
+        var_count += step_data["variables_in_graph"].numpy()
+        time_used += [elapsed_time / len(is_sat)] * len(is_sat)
+
+    rows = create_cactus_data(solved, time_used, var_count)
+
+    model_name = model.__class__.__name__.lower()
+    with open(model_name + "_cactus.csv", "w", newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(rows)
 
 def evaluate_variable_generalization(model):
     results_file = get_valid_file("gen_variables_size_result.txt")
 
-    lower_limit = 5
-    upper_limit = 1100
-    step = 100
+    lower_limit = 10
+    upper_limit = 100
+    step = 10
 
     for var_count in range(lower_limit, upper_limit, step):
-        print(f"Generating dataset with min_vars={var_count} and max_vars={var_count + step}")
+        print(f"Generating dataset with var_count={var_count}")
         dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                          force_data_gen=Config.force_data_gen,
                                                          input_mode=Config.input_mode,
-                                                         max_batch_size=10000,
+                                                         max_batch_size=20000,
+                                                         test_size=10,
                                                          min_vars=var_count,
-                                                         max_vars=var_count + step)
+                                                         max_vars=var_count)
 
-        start_time = time.time()
         test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
-        elapsed = time.time() - start_time
-        prepend_line = f"Results for dataset with min_vars={var_count} and max_vars={var_count + step} and elapsed_time={elapsed:.2f}:"
+        prepend_line = f"Results for dataset with var_count={var_count}:"
         for metric in test_metrics:
             metric.log_in_file(str(results_file), prepend_str=prepend_line)
 
@@ -243,7 +271,8 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                     model_input = dataset.filter_model_inputs(visualization_step_data)
                     model.log_visualizations(**model_input)
 
-            metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps, initial=(int(ckpt.step) == 0))
+            metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps,
+                                       initial=(int(ckpt.step) == 0))
             for metric in metrics:
                 metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
                 metric.log_in_stdout(step=int(ckpt.step))
@@ -276,7 +305,8 @@ def prepare_checkpoints(model, optimizer):
     return ckpt, manager
 
 
-def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False, print_progress=False) -> list:
+def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False,
+                     print_progress=False) -> list:
     metrics = dataset.metrics(initial)
     iterator = itertools.islice(data, steps) if steps else data
 

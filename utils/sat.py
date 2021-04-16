@@ -131,7 +131,7 @@ def walksat(input_dimacs: str,
     :return: returns True if formula is satisfiable and False otherwise, solutions in form [1,2,-3, ...] and time
     """
     exe_path = Path(solver_exe).resolve()
-    output = subprocess.run([str(exe_path), "-solcnf"], input=input_dimacs,
+    output = subprocess.run([str(exe_path), "-solcnf", "-gsat"], input=input_dimacs,
                             stdout=subprocess.PIPE, universal_newlines=True)
 
     if output.returncode != 0:
@@ -156,3 +156,21 @@ def walksat(input_dimacs: str,
     solution = [int(x[-1]) for x in solution]
 
     return sat, solution, time_elapsed
+
+
+def is_graph_sat(predictions: tf.Tensor, adj_matrix: tf.SparseTensor, clauses_matrix: tf.SparseTensor):
+    """
+    :param predictions: Model outputs as logits
+    :param adj_matrix: Literals - Clauses adjacency matrix
+    :param clauses_matrix: Graph - Clauses adjacency matrix
+    :return: vector of elements in {0,1}, where 1 - graph SAT, 0 - graph UNSAT
+    """
+    variables = tf.round(tf.sigmoid(predictions))
+    literals = tf.concat([variables, 1 - variables], axis=0)
+    clauses_sat = tf.sparse.sparse_dense_matmul(adj_matrix, literals, adjoint_a=True)
+    clauses_sat = tf.clip_by_value(clauses_sat, 0, 1)
+
+    clauses_sat_in_g = tf.sparse.sparse_dense_matmul(clauses_matrix, clauses_sat)
+    clauses_total_in_g = tf.expand_dims(tf.sparse.reduce_sum(clauses_matrix, axis=-1), axis=-1)
+
+    return tf.clip_by_value(clauses_sat_in_g + 1 - clauses_total_in_g, 0, 1)
