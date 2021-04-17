@@ -74,7 +74,7 @@ def make_cactus(model: Model, dataset):
     var_count = []
     time_used = []
 
-    for step, step_data in enumerate(itertools.islice(dataset.test_data(), 110)):
+    for step, step_data in enumerate(dataset.test_data()):
         model_input = dataset.filter_model_inputs(step_data)
         start = time.time()
         output = model.predict_step(**model_input)

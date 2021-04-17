@@ -18,7 +18,7 @@ def test_walksat():
     solved = []
     var_count = []
     time_used = []
-    for step, step_data in enumerate(itertools.islice(dataset.test_data(), 110)):
+    for step, step_data in enumerate(dataset.test_data()):
         clauses = [x.numpy() for x in step_data["normal_clauses"]]
         vars_in_graph = step_data["variables_in_graph"].numpy()
 
