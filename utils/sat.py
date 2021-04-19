@@ -131,7 +131,7 @@ def walksat(input_dimacs: str,
     :return: returns True if formula is satisfiable and False otherwise, solutions in form [1,2,-3, ...] and time
     """
     exe_path = Path(solver_exe).resolve()
-    output = subprocess.run([str(exe_path), "-solcnf", "-gsat"], input=input_dimacs,
+    output = subprocess.run([str(exe_path), "-solcnf", "-gsat", "-cutoff", "500K"], input=input_dimacs,
                             stdout=subprocess.PIPE, universal_newlines=True)
 
     if output.returncode != 0:
