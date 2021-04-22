@@ -4,7 +4,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 
 from loss.sat import softplus_mixed_loss_adj
-from model.mlp import MLP
+from model.mlp import NeuroCoreMLP
 from utils.parameters_log import *
 from utils.sat import is_batch_sat
 
@@ -18,14 +18,14 @@ class NeuroCore(Model):
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.norm_axis = 0
-        self.norm_eps = 1e-6
+        self.norm_eps = 1e-3
         self.n_update_layers = 2
-        self.n_score_layers = 2
+        self.n_score_layers = 4
 
-        self.L_updates = MLP(self.n_update_layers + 1, 2 * self.feature_maps + self.feature_maps, self.feature_maps,
-                             activation=tf.nn.relu6, name="L_u")
-        self.C_updates = MLP(self.n_update_layers + 1, self.feature_maps + self.feature_maps, self.feature_maps,
-                             activation=tf.nn.relu6, name="C_u")
+        self.L_updates = NeuroCoreMLP(self.n_update_layers, self.feature_maps, self.feature_maps,
+                                      activation=tf.nn.relu6, name="L_u")
+        self.C_updates = NeuroCoreMLP(self.n_update_layers, self.feature_maps, self.feature_maps,
+                                      activation=tf.nn.relu6, name="C_u")
 
         init = tf.constant_initializer(1.0 / math.sqrt(self.feature_maps))
         self.L_init_scale = self.add_weight(name="L_init_scale", shape=[], initializer=init)
@@ -34,11 +34,7 @@ class NeuroCore(Model):
         self.LC_scale = self.add_weight(name="LC_scale", shape=[], initializer=tf.constant_initializer(0.1))
         self.CL_scale = self.add_weight(name="CL_scale", shape=[], initializer=tf.constant_initializer(0.1))
 
-        self.variables_query = MLP(self.n_update_layers + 1, self.feature_maps, self.feature_maps,
-                                   activation=tf.nn.relu6, name="variables_query", do_layer_norm=False)
-        self.V_score = MLP(self.n_score_layers + 1, 2 * self.feature_maps, 1, activation=tf.nn.relu6, name="V_score")
-
-        self.self_supervised = False
+        self.V_score = NeuroCoreMLP(self.n_score_layers, self.feature_maps, 1, activation=tf.nn.relu6, name="V_score")
 
     def call(self, adj_matrix, clauses_graph, variables_graph, training=None, mask=None):
         shape = tf.shape(adj_matrix)  # inputs is sparse factor matrix
