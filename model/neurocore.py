@@ -45,7 +45,6 @@ class NeuroCore(Model):
         L = tf.ones(shape=[n_lits, self.feature_maps], dtype=tf.float32) * self.L_init_scale
         C = tf.ones(shape=[n_clauses, self.feature_maps], dtype=tf.float32) * self.C_init_scale
         loss = 0.
-        supervised_loss = 0.
 
         def flip(lits):
             return tf.concat([lits[n_vars:, :], lits[0:n_vars, :]], axis=0)
@@ -69,15 +68,23 @@ class NeuroCore(Model):
 
             v, v_n = tf.split(L, 2, axis=0)
             logits = self.V_score(tf.concat([v, v_n], axis=-1))  # (n_vars, 1)
-            is_sat = is_batch_sat(logits, cl_adj_matrix)
-            if is_sat == 1:
-                break
 
             per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
             per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
-            loss += tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
+            per_graph_loss = tf.sqrt(per_graph_loss + 1e-6) - tf.sqrt(1e-6)
+            costs = tf.square(tf.range(1, self.logit_maps + 1, dtype=tf.float32))
+            per_graph_loss_avg = tf.reduce_sum(tf.sort(per_graph_loss, axis=-1, direction='DESCENDING') * costs) / tf.reduce_sum(costs)
+            loss += tf.reduce_sum(per_graph_loss_avg)
+            best_logit_map = tf.argmin(tf.reduce_sum(per_graph_loss, axis=0), output_type=tf.int32)  # todo:select the best logits per graph
 
-        return logits, loss / tf.cast(rounds, tf.float32) + supervised_loss, steps
+            is_sat = is_batch_sat(logits[:, best_logit_map:best_logit_map + 1], cl_adj_matrix)
+            if is_sat == 1:
+                break
+
+            L = tf.stop_gradient(L) * 0.2 + L * 0.8
+            C = tf.stop_gradient(C) * 0.2 + C * 0.8
+
+        return logits, loss / tf.cast(rounds, tf.float32), steps
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
