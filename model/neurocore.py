@@ -21,6 +21,7 @@ class NeuroCore(Model):
         self.norm_eps = 1e-3
         self.n_update_layers = 2
         self.n_score_layers = 4
+        self.logit_maps = 8
 
         self.L_updates = NeuroCoreMLP(self.n_update_layers, self.feature_maps, self.feature_maps,
                                       activation=tf.nn.relu6, name="L_u")
