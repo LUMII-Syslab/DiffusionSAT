@@ -149,7 +149,7 @@ class DIMACDataset(Dataset):
 
         # Put formulas with similar size in same batch
         files = sorted(zip(node_count, files))
-        batches = self.__batch_files(files)
+        batches = self.__batch_files_single(files) if self.batch_of_single else self.__batch_files(files)
 
         options = tf.io.TFRecordOptions(compression_type="GZIP", compression_level=9)
         print(f"Converting DIMACS data from '{dimacs_dir}' into '{tfrecord_dir}'!")
@@ -227,21 +227,33 @@ class DIMACDataset(Dataset):
         int_list = tf.train.Int64List(value=flatten(array))
         return tf.train.Feature(int64_list=int_list)
 
-    def __batch_files(self, files):
+    def __batch_files_single(self, files):
+        files = self.filter_formulas(files)
+        batches = [[filename for _, filename in files]]
+        random.shuffle(batches)
+
+        return batches
+
+    def filter_formulas(self, files):
         files_size = len(files)
+
         # filter formulas that will not fit in any batch
         files = [(node_count, filename) for node_count, filename in files if node_count <= self.max_nodes_per_batch]
-
         dif = files_size - len(files)
         if dif > 0:
             print(f"\n\n WARNING: {dif} formulas was not included in dataset as they exceeded max node count! \n\n")
+
+        return files
+
+    def __batch_files(self, files):
+        files = self.filter_formulas(files)
 
         batches = []
         current_batch = []
         nodes_in_batch = 0
 
         for nodes_cnt, filename in files:
-            if nodes_cnt + nodes_in_batch <= self.max_nodes_per_batch and not self.batch_of_single:
+            if nodes_cnt + nodes_in_batch <= self.max_nodes_per_batch:
                 current_batch.append(filename)
                 nodes_in_batch += nodes_cnt
             else:

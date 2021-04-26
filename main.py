@@ -81,7 +81,7 @@ def make_scatter(model: Model):
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                      force_data_gen=Config.force_data_gen,
                                                      input_mode=Config.input_mode,
-                                                     batch_of_sinle=True)
+                                                     batch_of_single=True)
 
     for step, step_data in enumerate(dataset.test_data()):
         model_input = dataset.filter_model_inputs(step_data)
