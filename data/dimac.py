@@ -21,13 +21,15 @@ class DIMACDataset(Dataset):
     """ Base class for datasets that are based on DIMACS files.
     """
 
-    def __init__(self, data_dir, min_vars, max_vars, force_data_gen=False, max_nodes_per_batch=20000, shuffle_size=200, **kwargs) -> None:
+    def __init__(self, data_dir, min_vars, max_vars, force_data_gen=False, max_nodes_per_batch=20000, shuffle_size=200,
+                 batch_of_single=False, **kwargs) -> None:
         self.force_data_gen = force_data_gen
         self.data_dir = Path(data_dir) / self.__class__.__name__
         self.max_nodes_per_batch = max_nodes_per_batch
         self.shuffle_size = shuffle_size
         self.min_vars = min_vars
         self.max_vars = max_vars
+        self.batch_of_single = batch_of_single
 
     @abstractmethod
     def train_generator(self) -> tuple:
@@ -70,7 +72,11 @@ class DIMACDataset(Dataset):
 
     def fetch_dataset(self, generator: callable, mode: str):
         dimacs_folder = self.data_dir / "dimacs" / f"{mode}_{self.min_vars}_{self.max_vars}"
-        tfrecords_folder = self.data_dir / "tf_records" / f"{mode}_{self.max_nodes_per_batch}_{self.min_vars}_{self.max_vars}"
+
+        if self.batch_of_single:
+            tfrecords_folder = self.data_dir / "tf_records" / f"{mode}_bos_{self.max_nodes_per_batch}_{self.min_vars}_{self.max_vars}"
+        else:
+            tfrecords_folder = self.data_dir / "tf_records" / f"{mode}_{self.max_nodes_per_batch}_{self.min_vars}_{self.max_vars}"
 
         if self.force_data_gen and tfrecords_folder.exists():
             shutil.rmtree(tfrecords_folder)
@@ -235,7 +241,7 @@ class DIMACDataset(Dataset):
         nodes_in_batch = 0
 
         for nodes_cnt, filename in files:
-            if nodes_cnt + nodes_in_batch <= self.max_nodes_per_batch:
+            if nodes_cnt + nodes_in_batch <= self.max_nodes_per_batch and not self.batch_of_single:
                 current_batch.append(filename)
                 nodes_in_batch += nodes_cnt
             else:
