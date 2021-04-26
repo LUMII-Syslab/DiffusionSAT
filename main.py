@@ -16,7 +16,7 @@ from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
 from utils.parameters_log import HP_TRAINABLE_PARAMS, HP_TASK
-from utils.sat import is_graph_sat
+from utils.sat import is_graph_sat, build_dimacs_file, walksat
 from utils.visualization import create_cactus_data
 
 
@@ -67,6 +67,51 @@ def main():
 
     if Config.make_cactus:
         make_cactus(model, dataset)
+
+    if Config.make_scatter:
+        make_scatter(model)
+
+
+def make_scatter(model: Model):
+    model_solved = []
+    solver_solved = []
+    model_time = []
+    solver_time = []
+
+    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                     force_data_gen=Config.force_data_gen,
+                                                     input_mode=Config.input_mode,
+                                                     batch_of_sinle=True)
+
+    for step, step_data in enumerate(dataset.test_data()):
+        model_input = dataset.filter_model_inputs(step_data)
+        start = time.time()
+        output = model.predict_step(**model_input)
+        elapsed_time = time.time() - start
+
+        if step >= 2:
+            pred = tf.expand_dims(output["prediction"], axis=-1)
+            is_sat = is_graph_sat(pred, step_data["adjacency_matrix"], step_data["clauses_graph_adj"]).numpy()
+            is_sat = tf.squeeze(is_sat, axis=-1)
+            solved_batch = [int(x) for x in is_sat]
+            model_solved += solved_batch
+            model_time += [elapsed_time / len(solved_batch)] * len(solved_batch)
+
+            clauses = [x.numpy() for x in step_data["normal_clauses"]]
+            vars_in_graph = step_data["variables_in_graph"].numpy()
+
+            for iclauses, n_vars in zip(clauses, vars_in_graph):
+                dimacs = build_dimacs_file(iclauses, n_vars)
+                sat, solution, time_elapsed = walksat(dimacs)
+                solver_solved.append(int(sat))
+                solver_time.append(time_elapsed)
+
+    rows = [[m_s, m_t, s_s, s_t] for m_s, m_t, s_s, s_t in zip(model_solved, model_time, solver_solved, solver_time)]
+
+    model_name = model.__class__.__name__.lower()
+    with open(model_name + "_vs_walksat_scatter.csv", "w", newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(rows)
 
 
 def make_cactus(model: Model, dataset):

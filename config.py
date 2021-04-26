@@ -34,7 +34,8 @@ class Config:
     evaluate_batch_gen_train = False
     evaluate_variable_gen = False
     test_classic_solver = False
-    test_cactus = False
+    make_cactus = False
+    make_scatter = False
 
     """Internal config variables: """
     __arguments_parsed = False
