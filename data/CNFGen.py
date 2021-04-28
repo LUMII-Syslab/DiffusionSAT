@@ -57,7 +57,7 @@ class Clique(KSAT):
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
     """
 
-    def __init__(self, data_dir, min_vertices=4, max_vertices=20, force_data_gen=False, **kwargs) -> None:
+    def __init__(self, data_dir, min_vertices=4, max_vertices=40, force_data_gen=False, **kwargs) -> None:
         super(Clique, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
         self.train_size = 50000
@@ -65,7 +65,7 @@ class Clique(KSAT):
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
         self.clique_size_min = 3
-        self.clique_size_max = 6
+        self.clique_size_max = 10
 
     def train_generator(self) -> tuple:
         return self._generator(self.train_size)
