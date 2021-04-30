@@ -1,3 +1,4 @@
+import math
 import random
 
 import networkx as nx
@@ -14,7 +15,8 @@ class SAT_3(KSAT):
     """
 
     def __init__(self, data_dir, min_vars=5, max_vars=100, force_data_gen=False, **kwargs) -> None:
-        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
+        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
+                                    **kwargs)
         self.train_size = 100000
         self.test_size = 5000
         self.min_vars = min_vars
@@ -148,9 +150,8 @@ class KColor(KSAT):
     the graph such that no two adjacent vertices get the same color.
     """
 
-    def __init__(self, data_dir, min_vertices=5, max_vertices=20, force_data_gen=False, **kwargs) -> None:
-        super(KColor, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
-                                     force_data_gen=force_data_gen, **kwargs)
+    def __init__(self, data_dir, min_vertices=5, max_vertices=40, force_data_gen=False, **kwargs) -> None:
+        super(KColor, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 50000
         self.test_size = 10000
         self.min_vertices = min_vertices
@@ -163,26 +164,31 @@ class KColor(KSAT):
         return self._generator(self.test_size)
 
     def _generator(self, size) -> tuple:
-        for _ in range(size):
+        total_generated = 0
+        # missed = 0
+        while total_generated <= size:
             n_vertices = random.randint(self.min_vertices, self.max_vertices)
-            p = 0.5
-            n_colors = (n_vertices // 5) + 1  # Approximate formula to describe the relation
-            if n_colors == 2:
-                n_colors = 3
+            p = ((math.log(n_vertices) * (1 + 0.2)) / n_vertices) + 0.05  # Generate mostly connected sparse graphs
 
-            it = 0
-            while True:
-                it += 1
-                G = nx.generators.erdos_renyi_graph(n_vertices, p)
+            G = nx.generators.erdos_renyi_graph(n_vertices, p=p)
+            if not nx.is_connected(G):
+                continue
 
-                F = GraphColoringFormula(G, n_colors)
-                n_vars = len(list(F.variables()))
-                clauses = list(F.clauses())
-                iclauses = [F._compress_clause(x) for x in clauses]
-                with Glucose4(bootstrap_with=iclauses) as solver:
-                    is_sat = solver.solve()
+            n_colors = random.randint(3, 5)  # Same as NeuroSAT paper
 
-                if is_sat:
-                    break
+            F = GraphColoringFormula(G, n_colors)
+            n_vars = len(list(F.variables()))
+            clauses = list(F.clauses())
+            iclauses = [F._compress_clause(x) for x in clauses]
 
-            yield n_vars, iclauses
+            with Glucose4(bootstrap_with=iclauses) as solver:
+                is_sat = solver.solve()
+                solution = solver.get_model()
+
+            if is_sat:
+                # print("Generated graph with coloring:", n_colors, "and vertices: ", n_vertices, "missed: ", missed)
+                total_generated += 1
+                missed = 0
+                yield n_vars, iclauses, solution
+            # else:
+            #     missed += 1
