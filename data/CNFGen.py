@@ -60,12 +60,11 @@ class Clique(KSAT):
     def __init__(self, data_dir, min_vertices=4, max_vertices=40, force_data_gen=False, **kwargs) -> None:
         super(Clique, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 50000
+        self.train_size = 100000
         self.test_size = 10000
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
-        self.clique_size_min = 3
-        self.clique_size_max = 10
+        self.clique_size = 3
 
     def train_generator(self) -> tuple:
         return self._generator(self.train_size)
@@ -74,28 +73,26 @@ class Clique(KSAT):
         return self._generator(self.test_size)
 
     def _generator(self, size) -> tuple:
-        for _ in range(size):
+        total_generated = 0
+        while total_generated <= size:
             n_vertices = random.randint(self.min_vertices, self.max_vertices)
             # generate a random graph with such sparsity that a triangle is expected with probability 0.5.
             # eps = 0.2
             # p = 0.7 * ((1 + eps) * np.log(n_vertices)) / n_vertices # less exact formula
             p = 3 ** (1 / 3) / (n_vertices * (2 - 3 * n_vertices + n_vertices ** 2)) ** (1 / 3)
+            G = nx.generators.erdos_renyi_graph(n_vertices, p=p)
+            F = CliqueFormula(G, self.clique_size)
 
-            it = 0
-            while True:
-                it += 1
-                G = nx.generators.erdos_renyi_graph(n_vertices, p)
+            n_vars = len(list(F.variables()))
+            clauses = list(F.clauses())
+            iclauses = [F._compress_clause(x) for x in clauses]
+            with Glucose4(bootstrap_with=iclauses) as solver:
+                is_sat = solver.solve()
+                solution = solver.get_model()
 
-                F = CliqueFormula(G, random.randint(self.clique_size_min, self.clique_size_max))
-                n_vars = len(list(F.variables()))
-                clauses = list(F.clauses())
-                iclauses = [F._compress_clause(x) for x in clauses]
-                with Glucose4(bootstrap_with=iclauses) as solver:
-                    is_sat = solver.solve()
-
-                if is_sat:
-                    break
-            yield n_vars, iclauses
+            if is_sat:
+                total_generated += 1
+                yield n_vars, iclauses, solution
 
 
 class DomSet(KSAT):
