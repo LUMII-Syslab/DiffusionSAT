@@ -14,9 +14,8 @@ class SAT_3(KSAT):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
 
-    def __init__(self, data_dir, min_vars=5, max_vars=100, force_data_gen=False, **kwargs) -> None:
-        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
-                                    **kwargs)
+    def __init__(self, data_dir, min_vars=5, max_vars=405, force_data_gen=False, **kwargs) -> None:
+        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 100000
         self.test_size = 5000
         self.min_vars = min_vars

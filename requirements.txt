@@ -11,4 +11,4 @@ matplotlib~=3.3.4
 typeguard~=2.10.0
 gym~=0.18.0
 optuna~=2.5.0
--e git+https://github.com/jvkersch/pyconcorde.git#egg=pyconcorde
+git+https://github.com/jvkersch/pyconcorde.git#egg=pyconcorde
