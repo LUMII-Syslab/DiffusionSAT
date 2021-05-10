@@ -46,6 +46,7 @@ class NeuroCore(Model):
         L = tf.ones(shape=[n_lits, self.feature_maps], dtype=tf.float32) * self.L_init_scale
         C = tf.ones(shape=[n_clauses, self.feature_maps], dtype=tf.float32) * self.C_init_scale
         loss = 0.
+        best_logit_map = tf.zeros([n_vars], dtype=tf.int32)
 
         def flip(lits):
             return tf.concat([lits[n_vars:, :], lits[0:n_vars, :]], axis=0)
@@ -76,16 +77,25 @@ class NeuroCore(Model):
             costs = tf.square(tf.range(1, self.logit_maps + 1, dtype=tf.float32))
             per_graph_loss_avg = tf.reduce_sum(tf.sort(per_graph_loss, axis=-1, direction='DESCENDING') * costs) / tf.reduce_sum(costs)
             loss += tf.reduce_sum(per_graph_loss_avg)
-            best_logit_map = tf.argmin(tf.reduce_sum(per_graph_loss, axis=0), output_type=tf.int32)  # todo:select the best logits per graph
 
-            is_sat = is_batch_sat(logits[:, best_logit_map:best_logit_map + 1], cl_adj_matrix)
+            best_logit_map = tf.cast(tf.argmin(per_graph_loss, axis=-1), tf.float32)
+            best_logit_map = tf.expand_dims(best_logit_map, axis=-1)
+            best_logit_map = tf.sparse.sparse_dense_matmul(variables_graph, best_logit_map, adjoint_a=True)
+            best_logit_map = tf.cast(tf.squeeze(best_logit_map, axis=-1), tf.int32)
+
+            out_logits = tf.gather(logits, best_logit_map, batch_dims=1)
+            out_logits = tf.expand_dims(out_logits, axis=-1)
+            is_sat = is_batch_sat(out_logits, cl_adj_matrix)
+
             if is_sat == 1:
                 break
 
             L = tf.stop_gradient(L) * 0.2 + L * 0.8
             C = tf.stop_gradient(C) * 0.2 + C * 0.8
 
-        return logits, loss / tf.cast(rounds, tf.float32), steps
+        out_logits = tf.gather(logits, best_logit_map, batch_dims=1)
+        out_logits = tf.expand_dims(out_logits, axis=-1)
+        return out_logits, loss / tf.cast(rounds, tf.float32), steps
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
