@@ -151,7 +151,7 @@ class KColor(KSAT):
 
     def __init__(self, data_dir, min_vertices=5, max_vertices=40, force_data_gen=False, **kwargs) -> None:
         super(KColor, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices, force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 50000
+        self.train_size = 100000
         self.test_size = 10000
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
@@ -164,7 +164,6 @@ class KColor(KSAT):
 
     def _generator(self, size) -> tuple:
         total_generated = 0
-        # missed = 0
         while total_generated <= size:
             n_vertices = random.randint(self.min_vertices, self.max_vertices)
             p = ((math.log(n_vertices) * (1 + 0.2)) / n_vertices) + 0.05  # Generate mostly connected sparse graphs
@@ -185,9 +184,5 @@ class KColor(KSAT):
                 solution = solver.get_model()
 
             if is_sat:
-                # print("Generated graph with coloring:", n_colors, "and vertices: ", n_vertices, "missed: ", missed)
                 total_generated += 1
-                missed = 0
                 yield n_vars, iclauses, solution
-            # else:
-            #     missed += 1
