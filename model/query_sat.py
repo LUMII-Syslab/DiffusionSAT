@@ -122,7 +122,7 @@ class QuerySAT(Model):
         # query = tf.zeros([n_vars, self.query_maps])
         # var_loss_msg = tf.zeros([n_vars*2, self.query_maps])
         supervised_loss = 0.
-        best_logit_map = tf.zeros([n_vars], dtype=tf.int32)
+        best_logit_map = 0
 
         variables_graph_norm = variables_graph / tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True)
         clauses_graph_norm = clauses_graph / tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True)
@@ -131,8 +131,8 @@ class QuerySAT(Model):
             # make a query for solution, get its value and gradient
             with tf.GradientTape() as grad_tape:
                 # add some randomness to avoid zero collapse in normalization
-                # v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
-                query = self.variables_query(variables)
+                v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
+                query = self.variables_query(v1)
                 clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
                 step_loss = tf.reduce_sum(clauses_loss)
 
@@ -197,26 +197,18 @@ class QuerySAT(Model):
                     per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
                     per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
                     per_graph_loss = tf.sqrt(per_graph_loss + 1e-6) - tf.sqrt(1e-6)
-                    costs = tf.square(tf.range(1, self.logit_maps + 1, dtype=tf.float32))
-                    per_graph_loss_avg = tf.reduce_sum(
-                        tf.sort(per_graph_loss, axis=-1, direction='DESCENDING') * costs) / tf.reduce_sum(costs)
-                    # per_graph_loss = 0.5*(tf.reduce_min(per_graph_loss, axis=-1)+tf.reduce_mean(per_graph_loss, axis=-1))
+                    costs = tf.square(tf.range(1, self.logit_maps+1, dtype = tf.float32))
+                    per_graph_loss_avg = tf.reduce_sum(tf.sort(per_graph_loss, axis=-1, direction = 'DESCENDING')*costs)/tf.reduce_sum(costs)
+                    #per_graph_loss = 0.5*(tf.reduce_min(per_graph_loss, axis=-1)+tf.reduce_mean(per_graph_loss, axis=-1))
                     logit_loss = tf.reduce_sum(per_graph_loss_avg)
-
-                    best_logit_map = tf.cast(tf.argmin(per_graph_loss, axis=-1), tf.float32)
-                    best_logit_map = tf.expand_dims(best_logit_map, axis=-1)
-                    best_logit_map = tf.sparse.sparse_dense_matmul(variables_graph, best_logit_map, adjoint_a=True)
-                    best_logit_map = tf.cast(tf.squeeze(best_logit_map, axis=-1), tf.int32)
-                    # best_logit_map = tf.argmin(tf.reduce_sum(per_graph_loss, axis=0), output_type=tf.int32)  # todo:select the best logits per graph
+                    best_logit_map = tf.argmin(tf.reduce_sum(per_graph_loss, axis=0), output_type=tf.int32) # todo:select the best logits per graph
 
             step_losses = step_losses.write(step, logit_loss)
 
             # n_unsat_clauses = unsat_clause_count(logits, clauses)
             # if n_unsat_clauses == 0:
 
-            out_logits = tf.gather(logits, best_logit_map, batch_dims=1)
-            out_logits = tf.expand_dims(out_logits, axis=-1)
-            is_sat = is_batch_sat(out_logits, cl_adj_matrix)
+            is_sat = is_batch_sat(logits[:,best_logit_map:best_logit_map+1], cl_adj_matrix)
             if is_sat == 1:
                 # if not self.supervised:
                 #     # now we know the answer, we can use it for supervised training
@@ -247,9 +239,7 @@ class QuerySAT(Model):
         #     tf.summary.histogram("query", query)
 
         unsupervised_loss = tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32)
-        out_logits = tf.gather(last_logits, best_logit_map, batch_dims=1)
-        out_logits = tf.expand_dims(out_logits, axis=-1)
-        return out_logits, step, unsupervised_loss, supervised_loss, clause_state, variables
+        return last_logits[:,best_logit_map:best_logit_map+1], step, unsupervised_loss, supervised_loss, clause_state, variables
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
