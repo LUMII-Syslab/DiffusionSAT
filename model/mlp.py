@@ -12,7 +12,7 @@ def leaky_gelu(x):
 
 class MLP(Model):
     def __init__(self, layer_count, hidden_nmap,
-                 out_nmap, activation=tf.nn.relu6,
+                 out_nmap, activation=tf.nn.leaky_relu,
                  out_activation=None, out_bias=None,
                  do_layer_norm=False, norm_axis=0,
                  normalizer=None,
