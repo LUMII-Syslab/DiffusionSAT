@@ -17,7 +17,7 @@ class SAT_3(KSAT):
     def __init__(self, data_dir, min_vars=5, max_vars=100, force_data_gen=False, **kwargs) -> None:
         super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 100000
-        self.test_size = 5000
+        self.test_size = 10000
         self.min_vars = min_vars
         self.max_vars = max_vars
 
@@ -28,29 +28,27 @@ class SAT_3(KSAT):
         return self._generator(self.test_size)
 
     def _generator(self, size) -> tuple:
-        for _ in range(size):
+        formula_count = 0
+        while formula_count <= size:
             n_vars = random.randint(self.min_vars, self.max_vars)
             n_clauses = 4.258 * n_vars + 58.26 * np.power(n_vars, -2 / 3.)
             n_clauses = int(n_clauses)
 
-            while True:
-                F = RandomKCNF(3, n_vars, n_clauses)
-                clauses = list(F.clauses())
-                iclauses = [F._compress_clause(x) for x in clauses]
+            F = RandomKCNF(3, n_vars, n_clauses)
+            clauses = list(F.clauses())
+            iclauses = [F._compress_clause(x) for x in clauses]
 
+            if n_vars > 200:
                 dimacs = build_dimacs_file(iclauses, n_vars)
+                is_sat, solution = run_external_solver(dimacs)
+            else:
+                with Glucose4(bootstrap_with=iclauses) as solver:
+                    is_sat = solver.solve()
+                    solution = solver.get_model()
 
-                if n_vars > 200:
-                    is_sat, solution = run_external_solver(dimacs)
-                else:
-                    with Glucose4(bootstrap_with=iclauses) as solver:
-                        is_sat = solver.solve()
-                        solution = None
-
-                if is_sat:
-                    break
-
-            yield n_vars, iclauses, solution
+            if is_sat:
+                formula_count += 1
+                yield n_vars, iclauses, solution
 
 
 class Clique(KSAT):
