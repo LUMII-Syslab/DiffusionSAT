@@ -229,7 +229,7 @@ class DIMACDataset(Dataset):
 
     def __batch_files_single(self, files):
         files = self.filter_formulas(files)
-        batches = [[filename for _, filename in files]]
+        batches = [[filename] for _, filename in files]
         random.shuffle(batches)
 
         return batches
