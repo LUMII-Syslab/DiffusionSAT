@@ -1,13 +1,19 @@
 import csv
-import itertools
 import time
+from threading import Timer
 
 import tensorflow as tf
+from pysat.solvers import Glucose4
 
 from config import Config
 from registry.registry import DatasetRegistry
-from utils.sat import walksat, build_dimacs_file
 from utils.visualization import create_cactus_data
+
+TIMEOUT = 2
+
+
+def interupt(s):
+    s.interrupt()
 
 
 def test_walksat():
@@ -18,21 +24,32 @@ def test_walksat():
     solved = []
     var_count = []
     time_used = []
+    taken_steps = 0
     for step, step_data in enumerate(dataset.test_data()):
         clauses = [x.numpy() for x in step_data["normal_clauses"]]
         vars_in_graph = step_data["variables_in_graph"].numpy()
 
         if step >= 10:
             for iclauses, n_vars in zip(clauses, vars_in_graph):
-                dimacs = build_dimacs_file(iclauses, n_vars)
-                sat, solution, time_elapsed = walksat(dimacs)
-                solved.append(int(sat))
+                print("Step:", taken_steps)
+                taken_steps += 1
+                # dimacs = build_dimacs_file(iclauses, n_vars)
+                # sat, solution, time_elapsed = walksat(dimacs)
+                iclauses = [x.tolist() for x in iclauses]
+
+                with Glucose4(bootstrap_with=iclauses, use_timer=True) as solver:
+                    timer = Timer(TIMEOUT, interupt, [solver])
+                    timer.start()
+                    sat = solver.solve_limited(expect_interrupt=True)
+                    elapsed_time = solver.time()
+
+                time_used.append(elapsed_time)
+                solved.append(int(sat) if sat else 0)
                 var_count.append(n_vars)
-                time_used.append(time_elapsed)
 
     rows = create_cactus_data(solved, time_used, var_count)
 
-    with open("walksat_cactus.csv", "w", newline='') as file:
+    with open("glucose_cactus.csv", "w", newline='') as file:
         writer = csv.writer(file)
         writer.writerows(rows)
 
