@@ -52,7 +52,7 @@ class SHAGen2019(KSAT):
         super(SHAGen2019, self).__init__(data_dir, min_vars=min_vars,
                                          max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         # maximum number of samples; if there are less, we will stop earlier
-        self.train_size = 50000
+        self.train_size = 100000
         self.test_size = 5000
         if TEST_MODE:
             self.test_size = 1
