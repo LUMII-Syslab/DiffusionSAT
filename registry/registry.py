@@ -1,22 +1,12 @@
 from abc import abstractmethod
 
 from data.CNFGen import SAT_3, Clique, DomSet, KColor
-from data.PrimesGen import PrimesGen
-from data.SHAGen import SHAGen
 from data.SHAGen2019 import SHAGen2019
 from data.k_sat import KSAT
-from data.mixed_sat import MixGraphSAT
-from data.tsp import EuclideanTSP
-from data.tsp_asymmetric import AsymmetricTSP
-from data.sha_anf import ANF
-from model.attention_sat import AttentionSAT
-from model.neuro_sat import NeuroSAT
 from model.neurocore import NeuroCore
 from model.query_sat import QuerySAT
-from model.query_sat_lit import QuerySATLit
 from model.simple_neurosat import SimpleNeuroSAT
-from model.tsp_matrix_se import TSPMatrixSE
-from model.anf_sat import ANFSAT
+
 
 class Registry:
 
@@ -41,13 +31,8 @@ class ModelRegistry(Registry):
     @property
     def registry(self) -> dict:
         return {
-            "attention_sat": AttentionSAT,
             "query_sat": QuerySAT,
-            "query_sat_lit": QuerySATLit,
-            "neuro_sat": NeuroSAT,
-            "tsp_matrix_se": TSPMatrixSE,
             "simple_neuro_sat": SimpleNeuroSAT,
-            "anf_sat":ANFSAT,
             "neurocore": NeuroCore
         }
 
@@ -62,11 +47,5 @@ class DatasetRegistry(Registry):
             "3-sat": SAT_3,
             "clique": Clique,
             "dominating_set": DomSet,
-            "sha-gen": SHAGen,
             "sha-gen2019": SHAGen2019,
-            "euclidean_tsp": EuclideanTSP,
-            "asymmetric_tsp": AsymmetricTSP,
-            "primes": PrimesGen,
-            "mix_sat": MixGraphSAT,
-            "sha-anf": ANF
         }
