@@ -4,7 +4,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 
 from layers.normalization import PairNorm
-from loss.sat import softplus_loss_adj, softplus_mixed_loss_adj, linear_loss_adj, softplus_square_loss
+from loss.sat import softplus_loss, softplus_mixed_loss, linear_loss
 from model.mlp import MLP
 from utils.parameters_log import *
 from utils.sat import is_batch_sat, is_graph_sat
@@ -91,10 +91,10 @@ class QuerySAT(Model):
                                                                                                    variables_graph)
 
         if training:
-            last_clauses = softplus_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix))
+            last_clauses = softplus_loss(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix))
             tf.summary.histogram("clauses", last_clauses)
             last_layer_loss = tf.reduce_sum(
-                softplus_mixed_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix)))
+                softplus_mixed_loss(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix)))
             tf.summary.histogram("logits", tf.abs(last_logits))
             tf.summary.scalar("last_layer_loss", last_layer_loss)
             # log_as_histogram("step_losses", step_losses.stack())
@@ -133,7 +133,7 @@ class QuerySAT(Model):
                 # add some randomness to avoid zero collapse in normalization
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
                 query = self.variables_query(v1)
-                clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
+                clauses_loss = softplus_loss(query, cl_adj_matrix)
                 step_loss = tf.reduce_sum(clauses_loss)
 
             variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
@@ -188,13 +188,13 @@ class QuerySAT(Model):
                     # noise *= tf.exp(tf.random.normal([], stddev=0.5))
                     # noisy_logits = logits+binary_noise*0.5
                     noisy_logits = tf.concat([logits + binary_noise * 0.5, logits - binary_noise * 0.5], axis=-1)
-                    per_clause_loss = tf.square(linear_loss_adj(noisy_logits, cl_adj_matrix))
+                    per_clause_loss = tf.square(linear_loss(noisy_logits, cl_adj_matrix))
                     per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
                     per_graph_loss = tf.reduce_mean(per_graph_loss, axis=-1)
                     per_graph_loss = tf.sqrt(per_graph_loss + 0.25) - tf.sqrt(0.25)
                     logit_loss = tf.reduce_sum(per_graph_loss)
                 else:
-                    per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
+                    per_clause_loss = softplus_mixed_loss(logits, cl_adj_matrix)
                     per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
                     per_graph_loss = tf.sqrt(per_graph_loss + 1e-6) - tf.sqrt(1e-6)
                     costs = tf.square(tf.range(1, self.logit_maps + 1, dtype=tf.float32))
