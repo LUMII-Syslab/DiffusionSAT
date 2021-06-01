@@ -17,12 +17,11 @@ class Config:
     label = ""
 
     """Training and task selection config: """
-    optimizer = 'radam'
     train_steps = 500000
     warmup = 0.0
     learning_rate = 0.0002
-    model = 'neurocore'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
-    task = 'k_color'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
+    model = 'neurocore'  # querysat, neurocore, neurocore_query
+    task = 'kcolor'  # ksat, kcolor, 3sat, clique, sha2019
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
 
     """Supported training and evaluation modes: """
@@ -61,9 +60,6 @@ class Config:
 
         config_parser.add_argument('--ckpt_count', type=int, default=cls.ckpt_count)
         config_parser.add_argument('--eager', action='store_true', default=cls.eager)
-
-        config_parser.add_argument('--optimizer', default=cls.optimizer, const=cls.optimizer, nargs='?',
-                                   choices=["radam"])
 
         config_parser.add_argument('--train_steps', type=int, default=cls.train_steps)
         config_parser.add_argument('--warmup', type=float, default=cls.warmup)

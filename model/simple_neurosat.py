@@ -10,9 +10,9 @@ from utils.sat import is_batch_sat
 import tensorflow_probability as tfp
 
 
-class SimpleNeuroSAT(Model):
+class NeuroCoreQuery(Model):
     def __init__(self, optimizer, test_rounds=64, train_rounds=32, **kwargs):
-        super(SimpleNeuroSAT, self).__init__(**kwargs)
+        super(NeuroCoreQuery, self).__init__(**kwargs)
         self.optimizer = optimizer
 
         self.feature_maps = 128

@@ -5,7 +5,7 @@ from data.SHAGen2019 import SHAGen2019
 from data.k_sat import KSAT
 from model.neurocore import NeuroCore
 from model.query_sat import QuerySAT
-from model.simple_neurosat import SimpleNeuroSAT
+from model.simple_neurosat import NeuroCoreQuery
 
 
 class Registry:
@@ -31,8 +31,8 @@ class ModelRegistry(Registry):
     @property
     def registry(self) -> dict:
         return {
-            "query_sat": QuerySAT,
-            "simple_neuro_sat": SimpleNeuroSAT,
+            "querysat": QuerySAT,
+            "neurocore_query": NeuroCoreQuery,
             "neurocore": NeuroCore
         }
 
@@ -42,9 +42,9 @@ class DatasetRegistry(Registry):
     @property
     def registry(self) -> dict:
         return {
-            "k_sat": KSAT,
-            "k_color": KColor,
-            "3-sat": SAT_3,
+            "ksat": KSAT,
+            "kcolor": KColor,
+            "3sat": SAT_3,
             "clique": Clique,
-            "sha-gen2019": SHAGen2019,
+            "sha2019": SHAGen2019,
         }
