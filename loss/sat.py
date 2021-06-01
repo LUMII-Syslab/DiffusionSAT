@@ -4,7 +4,6 @@ import tensorflow as tf
 def softplus_mixed_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, eps=1e-8):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
-    :param clauses: RaggedTensor of input clauses in DIMAC format
     :param adj_matrix: variables-clauses graph represented as adjacency matrix
     :param eps: small value to avoid taking log from 0
     :return: returns per clause loss which is log_loss multiplied with linear loss
