@@ -18,8 +18,7 @@ def interupt(s):
 
 def test_walksat():
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                     force_data_gen=Config.force_data_gen,
-                                                     input_mode=Config.input_mode)
+                                                     force_data_gen=Config.force_data_gen)
 
     solved = []
     var_count = []

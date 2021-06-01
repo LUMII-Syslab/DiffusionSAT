@@ -24,8 +24,7 @@ def main():
 
     model = ModelRegistry().resolve(Config.model)(optimizer=optimizer)
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                     force_data_gen=Config.force_data_gen,
-                                                     input_mode=Config.input_mode)
+                                                     force_data_gen=Config.force_data_gen)
 
     ckpt, manager = prepare_checkpoints(model, optimizer)
 
@@ -58,7 +57,6 @@ def make_scatter(model: Model):
 
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                      force_data_gen=Config.force_data_gen,
-                                                     input_mode=Config.input_mode,
                                                      batch_of_single=True)
 
     for step, step_data in enumerate(dataset.test_data()):
@@ -131,9 +129,7 @@ def evaluate_variable_generalization(model):
         print(f"Generating dataset with var_count={var_count}")
         dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                          force_data_gen=Config.force_data_gen,
-                                                         input_mode=Config.input_mode,
                                                          max_batch_size=20000,
-                                                         test_size=10,
                                                          min_vars=var_count,
                                                          max_vars=var_count)
 

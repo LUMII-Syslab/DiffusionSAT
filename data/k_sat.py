@@ -14,10 +14,9 @@ class KSAT(DIMACDataset):
     """
 
     def __init__(self, data_dir, force_data_gen=False,
-                 min_vars=3, max_vars=100,
-                 input_mode='variables', test_size=10000, **kwargs) -> None:
+                 min_vars=3, max_vars=100, test_size=10000, **kwargs) -> None:
         super(KSAT, self).__init__(data_dir, min_vars, max_vars, force_data_gen=force_data_gen, **kwargs)
-        self.filter = self.__prepare_filter(input_mode)
+        self.filter = self.__prepare_filter()
         self.train_size = 100000
         self.test_size = test_size
         self.min_vars = min_vars
@@ -141,22 +140,11 @@ class KSAT(DIMACDataset):
     def metrics(self, initial=False) -> list:
         return [SATAccuracy(), StepStatistics()]
 
-    def __prepare_filter(self, input_mode):
-        if input_mode == "variables":
-            return lambda step_data: {
-                "adj_matrix_pos": step_data["adjacency_matrix_pos"],
-                "adj_matrix_neg": step_data["adjacency_matrix_neg"],
-                "clauses_graph": step_data["clauses_graph_adj"],
-                "variables_graph": step_data["variables_graph_adj"],
-                "solutions": step_data["solutions"]
-            }
-        elif input_mode == "literals":
-            return lambda step_data: {
-                "adj_matrix": step_data["adjacency_matrix"],
-                "clauses_graph": step_data["clauses_graph_adj"],
-                "variables_graph": step_data["variables_graph_adj"],
-                "solutions": step_data["solutions"]
-            }
-        else:
-            raise NotImplementedError(
-                f"{input_mode} is not registered. Available modes \"literals\" or \"variables\"")
+    @staticmethod
+    def __prepare_filter():
+        return lambda step_data: {
+            "adj_matrix": step_data["adjacency_matrix"],
+            "clauses_graph": step_data["clauses_graph_adj"],
+            "variables_graph": step_data["variables_graph_adj"],
+            "solutions": step_data["solutions"]
+        }

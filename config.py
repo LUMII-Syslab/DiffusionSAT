@@ -6,7 +6,6 @@ from registry.registry import ModelRegistry, DatasetRegistry
 class Config:
     """Data and placement config: """
     train_dir = '/host-dir/np-solver'
-    hyperopt_dir = '/host-dir/optuna'
     data_dir = '/host-dir/data'
     force_data_gen = False
 
@@ -22,7 +21,6 @@ class Config:
     learning_rate = 0.0002
     model = 'neurocore'  # querysat, neurocore, neurocore_query
     task = 'kcolor'  # ksat, kcolor, 3sat, clique, sha2019
-    input_mode = 'literals'  # "variables" or "literals", applicable to SAT
 
     """Supported training and evaluation modes: """
     train = True
@@ -66,9 +64,6 @@ class Config:
 
         config_parser.add_argument('--task', type=str, default=cls.task, const=cls.task, nargs='?',
                                    choices=DatasetRegistry().registered_names)
-
-        config_parser.add_argument('--input_mode', type=str, default=cls.input_mode, const=cls.input_mode, nargs='?',
-                                   choices=['variables', 'literals'])
 
         config_parser.add_argument('--force_data_gen', action='store_true', default=cls.force_data_gen)
 
