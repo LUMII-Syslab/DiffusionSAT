@@ -67,7 +67,6 @@ class KSAT(DIMACDataset):
         vs = np.random.choice(n, size=min(n, k), replace=False)
         return [int(v + 1) if random.random() < 0.5 else int(-(v + 1)) for v in vs]
 
-    # TODO: remove subsumed clauses - when shorter clause is fully in a longer one, the longer one is redundant
     @staticmethod
     def remove_duplicate_clauses(clauses):
         return list({tuple(sorted(x)) for x in clauses})

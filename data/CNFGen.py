@@ -3,7 +3,7 @@ import random
 
 import networkx as nx
 import numpy as np
-from cnfgen import RandomKCNF, CliqueFormula, DominatingSet, GraphColoringFormula
+from cnfgen import RandomKCNF, CliqueFormula, GraphColoringFormula
 from pysat.solvers import Glucose4
 
 from data.k_sat import KSAT
@@ -11,11 +11,13 @@ from utils.sat import run_external_solver, build_dimacs_file
 
 
 class SAT_3(KSAT):
-    """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
+    """
+    Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
 
     def __init__(self, data_dir, min_vars=5, max_vars=100, force_data_gen=False, **kwargs) -> None:
-        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
+        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
+                                    **kwargs)
         self.train_size = 100000
         self.test_size = 10000
         self.min_vars = min_vars
@@ -52,7 +54,8 @@ class SAT_3(KSAT):
 
 
 class Clique(KSAT):
-    """ Dataset with random sat instances from triangle detection in graphs.
+    """
+    Dataset with random sat instances from triangle detection in graphs.
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
     """
 
@@ -92,50 +95,6 @@ class Clique(KSAT):
             if is_sat:
                 total_generated += 1
                 yield n_vars, iclauses, solution
-
-
-class DomSet(KSAT):
-    """ Dataset with random sat instances from triangle detection in graphs.
-    Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
-    """
-
-    def __init__(self, data_dir, min_vertices=4, max_vertices=12, force_data_gen=False, **kwargs) -> None:
-        super(DomSet, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
-                                     force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 10000
-        self.test_size = 5000
-        self.min_vertices = min_vertices
-        self.max_vertices = max_vertices
-
-    def train_generator(self) -> tuple:
-        return self._generator(self.train_size)
-
-    def test_generator(self) -> tuple:
-        return self._generator(self.test_size)
-
-    def _generator(self, size) -> tuple:
-        for _ in range(size):
-            n_vertices = random.randint(self.min_vertices, self.max_vertices)
-            p = 0.2
-            domset_size = (n_vertices + 2) // 3
-
-            it = 0
-            while True:
-                it += 1
-                G = nx.generators.erdos_renyi_graph(n_vertices, p)
-
-                F = DominatingSet(G, domset_size)
-                n_vars = len(list(F.variables()))
-                clauses = list(F.clauses())
-                iclauses = [F._compress_clause(x) for x in clauses]
-                with Glucose4(bootstrap_with=iclauses) as solver:
-                    is_sat = solver.solve()
-
-                if is_sat:
-                    break
-            # print(n_vertices, n_vars, len(iclauses), it)
-
-            yield n_vars, iclauses
 
 
 class KColor(KSAT):

@@ -162,10 +162,10 @@ class SHAGen2019(KSAT):
                     if BENCHMARK_MODE:
                         with Solver(name="Cadical", bootstrap_with=clauses, use_timer=True) as solver:
                             is_sat = solver.solve()
-                            print("Cadical result: ", is_sat, '{0:.4f}s'.format(solver.time()), nvars, " vars",len(clauses), " clauses")
+                            print("Cadical result: ", is_sat, '{0:.4f}s'.format(solver.time()), nvars, " vars", len(clauses), " clauses")
                         with Solver(name="Glucose3", bootstrap_with=clauses, use_timer=True) as solver:
                             is_sat = solver.solve()
-                            print("Gluecose3 result: ", is_sat, '{0:.4f}s'.format(solver.time()), nvars, " vars",len(clauses), " clauses")
+                            print("Gluecose3 result: ", is_sat, '{0:.4f}s'.format(solver.time()), nvars, " vars", len(clauses), " clauses")
                         with Solver(name="Glucose4", bootstrap_with=clauses, use_timer=True) as solver:
                             is_sat = solver.solve()
                             print("Gluecose4 result: ", is_sat, '{0:.4f}s'.format(solver.time()), nvars, " vars", len(clauses), " clauses")
@@ -178,7 +178,7 @@ class SHAGen2019(KSAT):
                     nvars, clauses = remove_unused_vars(nvars, clauses)
                     if TEST_MODE:
                         print("Fixed vars: ", nvars)
-                    ok = nvars >= self.min_vars and nvars <= self.max_vars  # checking once again after the removal of unused vars
+                    ok = self.min_vars <= nvars <= self.max_vars  # checking once again after the removal of unused vars
 
                 if ok:
                     yield nvars, clauses

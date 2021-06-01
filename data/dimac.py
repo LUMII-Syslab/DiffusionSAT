@@ -144,7 +144,6 @@ class DIMACDataset(Dataset):
         files = [d for d in dimacs_dir.glob("*.dimacs")]
         formula_size = [self.__read_dimacs_details(f) for f in files]
 
-        # TODO: Doesn't match our node count as we use variables instead of literals
         node_count = [2 * n + m for (n, m) in formula_size]
 
         # Put formulas with similar size in same batch
