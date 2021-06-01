@@ -15,7 +15,7 @@ class QuerySAT(Model):
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
                  vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=128, supervised=False, trial: optuna.Trial = None, **kwargs):
+                 query_maps=128, supervised=False, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
         self.train_rounds = train_rounds
@@ -27,28 +27,25 @@ class QuerySAT(Model):
         self.prediction_tries = 1
         self.logit_maps = 8
 
-        update_layers = trial.suggest_int("variables_update_layers", 2, 4) if trial else 3
-        output_layers = trial.suggest_int("output_layers", 2, 4) if trial else 2
-        query_layers = trial.suggest_int("query_layers", 2, 4) if trial else 2
-        clauses_layers = trial.suggest_int("clauses_update_layers", 2, 4) if trial else 2
+        update_layers = 3
+        output_layers = 2
+        query_layers = 2
+        clauses_layers = 2
 
-        feature_maps = trial.suggest_categorical("feature_maps", [16, 32, 64]) if trial else feature_maps
-        query_maps = trial.suggest_categorical("query_maps", [16, 32, 64]) if trial else query_maps
-
-        update_scale = trial.suggest_discrete_uniform("update_scale", 0.2, 2., 0.2) if trial else 1.8
-        output_scale = trial.suggest_discrete_uniform("output_scale", 0.2, 2., 0.2) if trial else 1
-        clauses_scale = trial.suggest_discrete_uniform("clauses_scale", 0.2, 2., 0.2) if trial else 1.6
-        query_scale = trial.suggest_discrete_uniform("query_scale", 0.2, 2., 0.2) if trial else 1.2
+        update_scale = 1.8
+        output_scale = 1
+        clauses_scale = 1.6
+        query_scale = 1.2
 
         self.variables_norm = PairNorm(subtract_mean=True)
         self.clauses_norm = PairNorm(subtract_mean=True)
 
-        self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate", do_layer_norm=False)
-        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), self.logit_maps, name="variables_output", do_layer_norm=False)
-        self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query", do_layer_norm=False)
-        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update", do_layer_norm=False)
+        self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate")
+        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), self.logit_maps, name="variables_output")
+        self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query")
+        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update")
 
-        self.lit_mlp = MLP(msg_layers, query_maps * 4, query_maps * 2, name="lit_query", do_layer_norm=False)
+        self.lit_mlp = MLP(msg_layers, query_maps * 4, query_maps * 2, name="lit_query")
 
         self.feature_maps = feature_maps
         self.query_maps = query_maps
