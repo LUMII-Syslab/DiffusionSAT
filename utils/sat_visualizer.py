@@ -4,7 +4,7 @@ import math
 import matplotlib.pyplot as plt
 import networkx as nx
 
-from data.PrimesGen import PrimesGen
+from data.CNFGen import SAT_3
 
 
 def draw_interaction_graph(var_count: int, clauses: list):
@@ -113,10 +113,7 @@ def draw_resolution_graph(clauses: list):
 
 
 def main():
-    # dataset = SAT_3("/tmp")
-    # dataset = KSATVariables("/tmp")
-    # dataset = SHAGen("/tmp")
-    dataset = PrimesGen("/tmp")
+    dataset = SAT_3("/tmp")
     var_count, clauses = [x for x in itertools.islice(dataset.train_generator(), 5)][4]
     print(clauses)
 

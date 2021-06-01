@@ -49,29 +49,6 @@ def remove_unused_vars(nvars, clauses):
     return n, new_clauses
 
 
-def remove_useless_clauses(clauses):
-    """ Removes clauses and variables if variable only appears in clause with single element
-    """
-    var_n = max([abs(l) for c in clauses for l in c])
-    var_count = [0] * (var_n + 1)
-    max_c = -1
-    for clause in clauses:
-        max_c = max(len(clause), max_c)
-        for lit in clause:
-            var_count[abs(lit)] += 1
-
-    if max_c <= 1:
-        return clauses
-
-    def remove_clauses(clause):
-        if len(clause) == 1 and var_count[abs(clause[0])] <= 1:
-            return False
-
-        return True
-
-    return list(filter(remove_clauses, clauses))
-
-
 def build_dimacs_file(clauses: list, n_vars: int, comments: list = None):
     dimacs = []
 

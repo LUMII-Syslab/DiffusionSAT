@@ -1,11 +1,11 @@
 import io
-import tensorflow as tf
+
 import matplotlib.pyplot as plt
+import tensorflow as tf
 
 
 def log_as_histogram(name, values):
     """Logs values as histogram."""
-    # todo write values directly into histogram
     values *= tf.math.rsqrt(tf.reduce_mean(tf.square(values)) + 1e-10)
     data = []
     scale = 100
@@ -21,7 +21,6 @@ def log_as_histogram(name, values):
 
 def log_discreate_as_histogram(name, values):
     """Logs values as histogram."""
-    # todo write values directly into histogram
     data = tf.TensorArray(tf.int32, size=0, dynamic_size=True, clear_after_read=True)
     for i in tf.range(tf.shape(values)[0]):
         d = tf.zeros(shape=tf.cast(tf.round(values[i]), dtype=tf.int64), dtype=tf.int32) + i
