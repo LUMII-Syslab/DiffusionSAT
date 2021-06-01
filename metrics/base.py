@@ -27,6 +27,7 @@ class Metric(metaclass=ABCMeta):
     def get_values(self, reset_state=True):
         pass
 
+
 class EmptyMetric(Metric):
     """
     Empty metric that servers as placeholder for metrics if dataset is empty.

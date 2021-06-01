@@ -5,7 +5,7 @@ import tensorflow as tf
 from pysat.solvers import Cadical
 
 from data.dimac import DIMACDataset
-from metrics.sat_metrics import SATAccuracyTF, StepStatistics
+from metrics.sat_metrics import SATAccuracy, StepStatistics
 
 
 class KSAT(DIMACDataset):
@@ -139,7 +139,7 @@ class KSAT(DIMACDataset):
         return self.filter(step_data)
 
     def metrics(self, initial=False) -> list:
-        return [SATAccuracyTF(), StepStatistics()]
+        return [SATAccuracy(), StepStatistics()]
 
     def __prepare_filter(self, input_mode):
         if input_mode == "variables":
