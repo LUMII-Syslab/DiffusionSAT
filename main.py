@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
-from pysat.solvers import Glucose4
 from tensorboard.plugins.hparams import api as hp
 from tensorflow.keras import Model
 
@@ -21,13 +20,7 @@ from utils.visualization import create_cactus_data
 
 
 def main():
-    # optimizer = tfa.optimizers.RectifiedAdam(Config.learning_rate,
-    #                                          total_steps=Config.train_steps,
-    #                                          warmup_proportion=Config.warmup)
-    # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
-
     optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
-    # optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)  # check for accuracy issues!
 
     model = ModelRegistry().resolve(Config.model)(optimizer=optimizer)
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
@@ -40,30 +33,15 @@ def main():
         train(dataset, model, ckpt, manager)
 
     if Config.evaluate:
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model,
-                                        print_progress=(Config.task == 'euclidean_tsp'))
+        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
         for metric in test_metrics:
-            if Config.task == 'euclidean_tsp':
-                metric.log_in_tensorboard(reset_state=False, scope="TSP_test_metrics")
             metric.log_in_stdout()
 
     if Config.evaluate_round_gen:
         evaluate_round_generalization(dataset, optimizer)
 
-    if Config.evaluate_batch_gen:
-        evaluate_batch_generalization(model)
-
-    if Config.evaluate_batch_gen_train:
-        evaluate_batch_generalization_training(model)
-
     if Config.evaluate_variable_gen:
         evaluate_variable_generalization(model)
-
-    if Config.test_invariance:
-        test_invariance(dataset, dataset.test_data(), model, 20)
-
-    if Config.test_classic_solver:
-        variable_gen_classic_solver()
 
     if Config.make_cactus:
         make_cactus(model, dataset)
@@ -165,97 +143,12 @@ def evaluate_variable_generalization(model):
             metric.log_in_file(str(results_file), prepend_str=prepend_line)
 
 
-def variable_gen_classic_solver():
-    results_file = get_valid_file("evaluation_classic_solver.txt")
-
-    lower_limit = 5
-    upper_limit = 1100
-    step = 100
-
-    for var_count in range(lower_limit, upper_limit, step):
-        print(f"Generating dataset with min_vars={var_count} and max_vars={var_count + step}")
-        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                         force_data_gen=Config.force_data_gen,
-                                                         input_mode=Config.input_mode,
-                                                         max_nodes_per_batch=20000,
-                                                         min_vars=var_count,
-                                                         max_vars=var_count + step)
-
-        total_time = evaluate_classic_solver(dataset.test_data(), steps=100)
-        prepend_line = f"Results for dataset with min_vars={var_count} and max_vars={var_count + step} and elapsed_time={total_time:.2f}\n"
-        with results_file.open("a") as file:
-            file.write(prepend_line)
-
-
-def evaluate_classic_solver(data: tf.data.Dataset, steps: int = None):
-    iterator = itertools.islice(data, steps) if steps else data
-    total_time = 0
-    for step_data in iterator:
-        clauses = step_data["clauses"].numpy().tolist()
-        with Glucose4(bootstrap_with=clauses, use_timer=True) as solver:
-            _ = solver.solve()
-            _ = solver.get_model()
-            total_time += solver.time()
-
-    return total_time / steps
-
-
 def get_valid_file(file: str):
     train_dir = Path(Config.train_dir)
     results_file = train_dir / file
     if not train_dir.exists():
         train_dir.mkdir(parents=True)
     return results_file
-
-
-def evaluate_batch_generalization_training(model):
-    results_file = get_valid_file("gen_batch_size_results_train.txt")
-
-    # for SAT by default we train on max_batch_size=5000
-    for batch_size in range(3000, 24000, 1000):
-        print(f"Generating dataset with max_batch_size={batch_size}")
-        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                         force_data_gen=Config.force_data_gen,
-                                                         input_mode=Config.input_mode,
-                                                         max_nodes_per_batch=batch_size)
-
-        iterator = itertools.islice(dataset.train_data(), 1)
-        start_time = time.time()
-        for step_data in iterator:
-            model_input = dataset.filter_model_inputs(step_data)
-            output = model.train_step(**model_input)
-
-        elapsed = time.time() - start_time
-        message = f"Train results for dataset with max_batch_size={batch_size} and total_time={elapsed:.2f}\n"
-
-        file_path = Path(results_file)
-        with file_path.open("a") as file:
-            file.write(message)
-
-
-def evaluate_batch_generalization(model):
-    results_file = get_valid_file("gen_batch_size_results.txt")
-
-    # for SAT by default we train on max_batch_size=5000
-    for batch_size in range(3000, 24000, 1000):
-        print(f"Generating dataset with max_batch_size={batch_size}")
-        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                         force_data_gen=Config.force_data_gen,
-                                                         input_mode=Config.input_mode,
-                                                         max_nodes_per_batch=batch_size)
-
-        iterator = itertools.islice(dataset.test_data(), 1)
-
-        start_time = time.time()
-        for step_data in iterator:
-            model_input = dataset.filter_model_inputs(step_data)
-            output = model.predict_step(**model_input)
-        elapsed = time.time() - start_time
-
-        message = f"Results for dataset with max_batch_size={batch_size} and total_time={elapsed:.2f}\n"
-        file_path = Path(results_file)
-        with file_path.open("a") as file:
-            file.write(message)
 
 
 def evaluate_round_generalization(dataset, optimizer):
@@ -285,8 +178,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     validation_data = dataset.validation_data()
     train_data = dataset.train_data()
 
-    # TODO: Check against step in checkpoint
-    for step_data in itertools.islice(train_data, Config.train_steps + 1):
+    for step_data in itertools.islice(train_data, Config.train_steps + 1 - int(ckpt.step)):
         tf.summary.experimental.set_step(ckpt.step)
 
         model_data = dataset.filter_model_inputs(step_data)
@@ -302,11 +194,6 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
 
             print(f"{int(ckpt.step)}. step;\tloss: {loss_mean:.5f};\ttime: {timer.lap():.3f}s")
             mean_loss.reset_states()
-
-            # with tf.name_scope("gradients"):
-            #     with writer.as_default():
-            #         for grd, var in zip(gradients, model.trainable_variables):
-            #             tf.summary.histogram(var.name, grd, step=int(ckpt.step))
 
             with tf.name_scope("variables"):
                 with writer.as_default():
@@ -356,16 +243,13 @@ def prepare_checkpoints(model, optimizer):
     return ckpt, manager
 
 
-def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False,
-                     print_progress=False) -> list:
+def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False) -> list:
     metrics = dataset.metrics(initial)
     iterator = itertools.islice(data, steps) if steps else data
 
     empty = True
     counter = 0
     for step_data in iterator:
-        if print_progress and counter % 10 == 0:
-            print("Testing batch", counter)
         counter += 1
         model_input = dataset.filter_model_inputs(step_data)
         output = model.predict_step(**model_input)
@@ -374,58 +258,6 @@ def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, step
         empty = False
 
     return metrics if not empty else [EmptyMetric()]
-
-
-def test_invariance(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None):
-    metrics = dataset.metrics()
-    iterator = itertools.islice(data, steps) if steps else data
-
-    for step_data in iterator:
-        print("Positive literals: ", tf.math.count_nonzero(tf.clip_by_value(step_data['clauses'], 0, 1).values).numpy())
-        print("Negative literals: ",
-              tf.math.count_nonzero(tf.clip_by_value(step_data['clauses'], -1, 0).values).numpy())
-
-        print("\n")
-        invariance_original(dataset, metrics, model, step_data.copy())
-        print("\n")
-        invariance_shuffle_literals(dataset, metrics, model, step_data.copy())
-        print("\n")
-        invariance_inverse(dataset, metrics, model, step_data.copy())
-        print("---------------------------\n")
-
-    return metrics
-
-
-def invariance_shuffle_literals(dataset, metrics, model, step_data):
-    step_data['clauses'] = tf.map_fn(lambda x: tf.random.shuffle(x), step_data["clauses"])
-    model_input = dataset.filter_model_inputs(step_data)
-    output = model.predict_step(**model_input)
-    print("Shuffle literals inside clauses:")
-    for metric in metrics:
-        metric.update_state(output, step_data)
-        metric.log_in_stdout()
-
-
-def invariance_inverse(dataset, metrics, model, step_data):
-    step_data["adjacency_matrix_pos"], step_data["adjacency_matrix_neg"] = step_data["adjacency_matrix_neg"], step_data[
-        "adjacency_matrix_pos"]
-    step_data["clauses"] = step_data["clauses"] * -1
-    step_data["normal_clauses"] = step_data["normal_clauses"] * -1
-    model_input = dataset.filter_model_inputs(step_data)
-    output = model.predict_step(**model_input)
-    print("Inverse literals:")
-    for metric in metrics:
-        metric.update_state(output, step_data)
-        metric.log_in_stdout()
-
-
-def invariance_original(dataset, metrics, model, step_data):
-    model_input = dataset.filter_model_inputs(step_data)
-    output = model.predict_step(**model_input)
-    for metric in metrics:
-        print("Original values:")
-        metric.update_state(output, step_data)
-        metric.log_in_stdout()
 
 
 if __name__ == '__main__':
