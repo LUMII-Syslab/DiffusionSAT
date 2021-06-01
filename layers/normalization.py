@@ -25,20 +25,14 @@ class LayerNormalization(tf.keras.layers.Layer):
 
 
 class PairNorm(tf.keras.layers.Layer):
-    """ PairNorm: Tackling Oversmoothing in GNNs https://arxiv.org/abs/1909.12223
     """
-
+    PairNorm: Tackling Oversmoothing in GNNs https://arxiv.org/abs/1909.12223
+    """
     def __init__(self, epsilon=1e-6, subtract_mean=False, **kwargs):
         self.epsilon = epsilon
         self.bias = None
         self.subtract_mean = subtract_mean
         super(PairNorm, self).__init__(**kwargs)
-
-    def build(self, input_shape):
-        pass
-        # num_units = input_shape.as_list()[-1]
-        # if self.subtract_mean:
-        #     self.bias = self.add_weight("bias", [num_units], initializer=tf.zeros_initializer)
 
     def call(self, inputs, graph: tf.SparseTensor = None, **kwargs):
         """
@@ -53,91 +47,10 @@ class PairNorm(tf.keras.layers.Layer):
             if graph is not None:
                 mean = tf.sparse.sparse_dense_matmul(graph, inputs)
                 inputs -= tf.gather(mean, mask)
-            else: # assume one graph per batch
+            else:  # assume one graph per batch
                 mean = tf.reduce_mean(inputs, axis=0, keepdims=True)
                 inputs -= mean
 
-            # inputs += self.bias
-
-        # input size: cells x feature_maps
-        # nb here we deviate from PairNorm, we use axis=0, PairNorm uses axis=1
-        # if graph is not None:
-        #     variance = tf.sparse.sparse_dense_matmul(graph, tf.square(inputs)) / count_in_graph
-        #     # variance = tf.math.unsorted_segment_mean(tf.square(inputs), graph_mask, tf.reduce_max(graph_mask) + 1)
-        #     variance = tf.gather(variance, mask)
-        # else:
         variance = tf.reduce_mean(tf.square(inputs), axis=1, keepdims=True)
 
-        return inputs * tf.math.rsqrt(variance + self.epsilon) # +self.bias
-
-class VariablesNeighborNorm(tf.keras.layers.Layer):
-    """ Normalize variables by subtracting neighbor mean and then normalize by features axis
-    """
-
-    def __init__(self, epsilon=1e-6, **kwargs):
-        self.epsilon = epsilon
-        super(VariablesNeighborNorm, self).__init__(**kwargs)
-
-
-    def call(self, variables, adj_matrix: tf.SparseTensor = None, **kwargs):
-        """
-        :param inputs: input tensor variables
-        """
-        # subtract neighbor mean
-        literals = tf.concat([variables, variables], axis=0)
-        literals1 = tf.concat([literals, tf.ones([tf.shape(literals)[0], 1])], axis=1) #todo: it is possible to precompute degree
-        clauses_val = tf.sparse.sparse_dense_matmul(adj_matrix, literals1)
-        lit_new = tf.sparse.sparse_dense_matmul(adj_matrix, clauses_val, adjoint_a=True)
-        lit1, lit2 = tf.split(lit_new, 2, axis=0)
-        var_new_deg = lit1 + lit2
-        var_new = var_new_deg[:, :-1]
-        deg = var_new_deg[:, -1:]
-        mean = var_new / tf.maximum(deg, 2)  # 2 is to avoid degenerate case with a single unit clause
-        variables -= mean                    # todo: better treatment of self references
-
-        variance = tf.reduce_mean(tf.square(variables), axis=1, keepdims=True)
-
-        return variables * tf.math.rsqrt(variance + self.epsilon)
-
-class ClausesNeighborNorm(tf.keras.layers.Layer):
-    """ Normalize clauses by subtracting neighbor mean and then normalize by features axis
-    """
-
-    def __init__(self, epsilon=1e-6, **kwargs):
-        self.epsilon = epsilon
-        super(ClausesNeighborNorm, self).__init__(**kwargs)
-
-
-    def call(self, clauses, cl_adj_matrix: tf.SparseTensor = None, **kwargs):
-        """
-        :param inputs: input tensor variables
-        """
-        # subtract neighbor mean
-        clauses1 = tf.concat([clauses, tf.ones([tf.shape(clauses)[0], 1])], axis=1) #todo: it is possible to precompute degree
-        lit_val = tf.sparse.sparse_dense_matmul(cl_adj_matrix, clauses1)
-        clauses_new_deg = tf.sparse.sparse_dense_matmul(cl_adj_matrix, lit_val, adjoint_a=True)
-        clause_new = clauses_new_deg[:, :-1]
-        deg = clauses_new_deg[:, -1:]
-        mean = clause_new / tf.maximum(deg, 2) # todo: better treatment of self references
-        clauses -= mean
-
-        variance = tf.reduce_mean(tf.square(clauses), axis=1, keepdims=True)
-        return clauses * tf.math.rsqrt(variance + self.epsilon)
-
-def subtract_graph_mean(inputs, graph: tf.SparseTensor = None):
-    """
-    :param graph: graph level adjacency matrix
-    :param count_in_graph: element count in each graph
-    :param inputs: input tensor variables or clauses state
-    """
-
-    # input size: cells x feature_maps
-    if graph is not None:
-        mask = graph.indices[:, 0]
-        mean = tf.sparse.sparse_dense_matmul(graph, inputs)
-        inputs -= tf.gather(mean, mask)
-    else: # assume one graph per batch
-        mean = tf.reduce_mean(inputs, axis=0, keepdims=True)
-        inputs -= mean
-
-    return inputs
+        return inputs * tf.math.rsqrt(variance + self.epsilon)

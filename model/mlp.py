@@ -5,11 +5,6 @@ from tensorflow.python.keras.layers import Dense, Lambda
 from layers.normalization import LayerNormalization
 
 
-def leaky_gelu(x):
-    sg = tf.sigmoid(1.702 * x)
-    return x * (0.8 * sg + 0.2)
-
-
 class MLP(Model):
     def __init__(self, layer_count, hidden_nmap,
                  out_nmap, activation=tf.nn.leaky_relu,
@@ -55,7 +50,8 @@ class MLP(Model):
 class NeuroCoreMLP(Model):
     def __init__(self, layer_count, hidden_nmap, out_nmap, activation=tf.nn.relu6, **kwargs):
         super().__init__(**kwargs)
-        self.dense_layers = [Dense(hidden_nmap, kernel_initializer='glorot_normal', activation=activation) for _ in range(layer_count - 1)]
+        self.dense_layers = [Dense(hidden_nmap, kernel_initializer='glorot_normal', activation=activation) for _ in
+                             range(layer_count - 1)]
         self.dense_layers.append(Dense(out_nmap, kernel_initializer='glorot_normal'))
 
     @tf.function
