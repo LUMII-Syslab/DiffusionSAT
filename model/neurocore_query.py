@@ -1,13 +1,13 @@
 import math
 
 import tensorflow as tf
+import tensorflow_probability as tfp
 from tensorflow.keras.models import Model
 
 from loss.sat import softplus_mixed_loss, softplus_loss
 from model.mlp import MLP
 from utils.parameters_log import *
 from utils.sat import is_batch_sat
-import tensorflow_probability as tfp
 
 
 class NeuroCoreQuery(Model):
@@ -53,9 +53,6 @@ class NeuroCoreQuery(Model):
         loss = 0.
         supervised_loss = 0.
 
-        def flip(lits):
-            return tf.concat([lits[n_vars:, :], lits[0:n_vars, :]], axis=0)
-
         rounds = self.train_rounds if training else self.test_rounds
         logits = tf.zeros([n_vars, 1])
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
@@ -69,14 +66,13 @@ class NeuroCoreQuery(Model):
             literals = tf.concat([lit1, lit2], axis=0)
             LC_msgs = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals) * self.LC_scale
 
-            # with tf.GradientTape() as grad_tape:
-            # v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
-            query = self.variables_query(L)
-            step_queries = step_queries.write(steps, query)
-            clauses_loss = softplus_loss(query, cl_adj_matrix)
-            # step_loss = tf.reduce_sum(clauses_loss)
+            with tf.GradientTape() as grad_tape:
+                query = self.variables_query(L)
+                step_queries = step_queries.write(steps, query)
+                clauses_loss = softplus_loss(query, cl_adj_matrix)
+                step_loss = tf.reduce_sum(clauses_loss)
 
-            # variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query)) * self.G_scale
+            variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query)) * self.G_scale
 
             C = self.C_updates(tf.concat([C, clauses_loss, LC_msgs], axis=-1))
             C = tf.debugging.check_numerics(C, message="C after update")
@@ -85,7 +81,7 @@ class NeuroCoreQuery(Model):
 
             CL_msgs = tf.sparse.sparse_dense_matmul(adj_matrix, C) * self.CL_scale
             CL_msgs1, CL_msgs2 = tf.split(CL_msgs, 2, axis=0)
-            L = self.L_updates(tf.concat([L, CL_msgs1, CL_msgs2], axis=-1))
+            L = self.L_updates(tf.concat([L, CL_msgs1, CL_msgs2, variables_grad], axis=-1))
             L = tf.debugging.check_numerics(L, message="L after update")
             L = normalize(L, axis=self.norm_axis, eps=self.norm_eps)
             L = tf.debugging.check_numerics(L, message="L after norm")

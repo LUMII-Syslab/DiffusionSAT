@@ -4,8 +4,8 @@ from data.CNFGen import SAT_3, Clique, KColor
 from data.SHAGen2019 import SHAGen2019
 from data.k_sat import KSAT
 from model.neurocore import NeuroCore
-from model.query_sat import QuerySAT
-from model.simple_neurosat import NeuroCoreQuery
+from model.querysat import QuerySAT
+from model.neurocore_query import NeuroCoreQuery
 
 
 class Registry:

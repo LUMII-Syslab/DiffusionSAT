@@ -1,4 +1,3 @@
-import optuna
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
@@ -41,9 +40,11 @@ class QuerySAT(Model):
         self.clauses_norm = PairNorm(subtract_mean=True)
 
         self.update_gate = MLP(update_layers, int(feature_maps * update_scale), feature_maps, name="update_gate")
-        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), self.logit_maps, name="variables_output")
+        self.variables_output = MLP(output_layers, int(feature_maps * output_scale), self.logit_maps,
+                                    name="variables_output")
         self.variables_query = MLP(query_layers, int(query_maps * query_scale), query_maps, name="variables_query")
-        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps, name="clause_update")
+        self.clause_mlp = MLP(clauses_layers, int(feature_maps * clauses_scale), feature_maps + 1 * query_maps,
+                              name="clause_update")
 
         self.lit_mlp = MLP(msg_layers, query_maps * 4, query_maps * 2, name="lit_query")
 
@@ -255,7 +256,8 @@ class QuerySAT(Model):
                                   ])
     def train_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
         with tf.GradientTape() as tape:
-            _, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=True, labels=solutions.flat_values)
+            _, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=True,
+                                      labels=solutions.flat_values)
             train_vars = self.trainable_variables
             gradients = tape.gradient(loss, train_vars)
             self.optimizer.apply_gradients(zip(gradients, train_vars))
