@@ -1,6 +1,6 @@
 from abc import abstractmethod
 
-from data.CNFGen import SAT_3, Clique, DomSet, KColor
+from data.CNFGen import SAT_3, Clique, KColor
 from data.SHAGen2019 import SHAGen2019
 from data.k_sat import KSAT
 from model.neurocore import NeuroCore
@@ -46,6 +46,5 @@ class DatasetRegistry(Registry):
             "k_color": KColor,
             "3-sat": SAT_3,
             "clique": Clique,
-            "dominating_set": DomSet,
             "sha-gen2019": SHAGen2019,
         }

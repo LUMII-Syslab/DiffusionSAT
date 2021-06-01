@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""AdaBeliefOptimizer optimizer."""
+from typing import Union, Callable, Dict
+
 import tensorflow as tf
 from tensorflow_addons.utils.types import FloatTensorLike
-
-from typing import Union, Callable, Dict
 from typeguard import typechecked
 
+
 # from tabulate import tabulate
-#from colorama import Fore, Back, Style
+# from colorama import Fore, Back, Style
 
 
 @tf.keras.utils.register_keras_serializable(package="Addons")
@@ -63,21 +63,21 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
 
     @typechecked
     def __init__(
-        self,
-        learning_rate: Union[FloatTensorLike, Callable, Dict] = 0.001,
-        beta_1: FloatTensorLike = 0.9,
-        beta_2: FloatTensorLike = 0.999,
-        epsilon: FloatTensorLike = 1e-14,
-        weight_decay: Union[FloatTensorLike, Callable, Dict] = 0.0,
-        rectify: bool = True,
-        amsgrad: bool = False,
-        sma_threshold: FloatTensorLike = 5.0,
-        total_steps: int = 0,
-        warmup_proportion: FloatTensorLike = 0.1,
-        min_lr: FloatTensorLike = 0.0,
-        name: str = "AdaBeliefOptimizer",
-        clip_gradients=False, clip_multiplier=3.0, clip_epsilon=1e-2,
-        **kwargs
+            self,
+            learning_rate: Union[FloatTensorLike, Callable, Dict] = 0.001,
+            beta_1: FloatTensorLike = 0.9,
+            beta_2: FloatTensorLike = 0.999,
+            epsilon: FloatTensorLike = 1e-14,
+            weight_decay: Union[FloatTensorLike, Callable, Dict] = 0.0,
+            rectify: bool = True,
+            amsgrad: bool = False,
+            sma_threshold: FloatTensorLike = 5.0,
+            total_steps: int = 0,
+            warmup_proportion: FloatTensorLike = 0.1,
+            min_lr: FloatTensorLike = 0.0,
+            name: str = "AdaBeliefOptimizer",
+            clip_gradients=False, clip_multiplier=3.0, clip_epsilon=1e-2,
+            **kwargs
     ):
         r"""Construct a new AdaBelief optimizer.
         Args:
@@ -215,8 +215,8 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
         )
         m_corr_t = m_t / (1.0 - beta_1_power)
 
-        grad_dif = self.get_slot(var,'grad_dif')
-        grad_dif.assign( grad - m_t )
+        grad_dif = self.get_slot(var, 'grad_dif')
+        grad_dif.assign(grad - m_t)
         v_t = v.assign(
             beta_2_t * v + (1.0 - beta_2_t) * tf.square(grad_dif) + epsilon_t,
             use_locking=self._use_locking,
@@ -244,7 +244,7 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
                 sma_t >= sma_threshold, r_t * m_corr_t / (v_corr_t + epsilon_t), m_corr_t
             )
         else:
-            var_t =  m_corr_t / (v_corr_t + epsilon_t)
+            var_t = m_corr_t / (v_corr_t + epsilon_t)
 
         if self._has_weight_decay:
             var_t += wd_t * var
@@ -294,7 +294,7 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
             m_t = self._resource_scatter_add(m, indices, m_scaled_g_values)
         m_corr_t = m_t / (1.0 - beta_1_power)
 
-        grad_dif = self.get_slot(var,'grad_dif')
+        grad_dif = self.get_slot(var, 'grad_dif')
         grad_dif.assign(m_t)
         grad_dif = self._resource_scatter_add(grad_dif, indices, -1.0 * grad)
 
@@ -322,10 +322,10 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
         if self.rectify:
             sma_threshold = self._get_hyper("sma_threshold", var_dtype)
             var_t = tf.where(
-            sma_t >= sma_threshold, r_t * m_corr_t / (v_corr_t + epsilon_t), m_corr_t
+                sma_t >= sma_threshold, r_t * m_corr_t / (v_corr_t + epsilon_t), m_corr_t
             )
         else:
-            var_t =  m_corr_t / (v_corr_t + epsilon_t)
+            var_t = m_corr_t / (v_corr_t + epsilon_t)
 
         if self._has_weight_decay:
             var_t += wd_t * var
