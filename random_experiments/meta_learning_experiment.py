@@ -123,8 +123,8 @@ def train_on_inverse_task_and_other_loss(images, labels):
     second_weight = tf.stack([gradients[1], weight_2], axis=-1)
     update_2 = tf.squeeze(optim_model(second_weight), axis=-1)
 
-    weight_1.assign_add(update_1 * 0.0001)
-    weight_2.assign_add(update_2 * 0.0001)
+    weight_1.assign_add(update_1*0.0001)
+    weight_2.assign_add(update_2*0.0001)
 
     train_loss(loss)
     train_accuracy(9 - labels, predictions)
@@ -158,7 +158,7 @@ def test_inverse(images, labels):
     test_accuracy(9 - labels, predictions)
 
 
-EPOCHS = 50
+EPOCHS = 200
 
 
 @tf.function
