@@ -48,6 +48,7 @@ model = Learner()
 optim_model = OptimusPrime()
 
 loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+second_loss = tf.keras.losses.MeanSquaredError()
 
 optimizer = tf.keras.optimizers.Adam()
 
@@ -64,6 +65,8 @@ weight_2 = tf.Variable(initializer([128, 10]), name="weight_1")
 flatten = tf.keras.layers.Flatten()
 
 
+## TODO: For some initializations doesn't train
+
 @tf.function
 def train_step(images, labels, update_weights=False):
     with tf.GradientTape() as tape:
@@ -75,7 +78,7 @@ def train_step(images, labels, update_weights=False):
             x = tf.nn.relu(x)
             predictions = tf.matmul(x, weight_2)
 
-            loss = loss_object(labels, predictions)
+            loss = tf.reduce_mean(tf.square(tf.one_hot(labels, 10) - tf.nn.softmax(predictions))) * 100
             gradients = tape2.gradient(loss, [weight_1, weight_2])
 
         first_weight = tf.stack([gradients[0], weight_1], axis=-1)
@@ -87,10 +90,10 @@ def train_step(images, labels, update_weights=False):
         x = tf.matmul(x, weight_1 + update_1)
         x = tf.nn.relu(x)
         predictions = tf.matmul(x, weight_2 + update_2)
-        new_loss = loss_object(labels, predictions)
+        new_loss = tf.reduce_mean(tf.square(tf.one_hot(labels, 10) - tf.nn.softmax(predictions))) * 100
 
-        weight_1.assign_add(update_1 * 0.01)
-        weight_2.assign_add(update_2 * 0.01)
+        weight_1.assign_add(update_1 * 0.0001)
+        weight_2.assign_add(update_2 * 0.0001)
 
         optim_loss = new_loss - tf.stop_gradient(loss)
         gradients = tape.gradient(optim_loss, optim_model.trainable_variables)
@@ -98,6 +101,33 @@ def train_step(images, labels, update_weights=False):
 
     train_loss(optim_loss)
     train_accuracy(labels, predictions)
+
+
+@tf.function
+def train_on_inverse_task_and_other_loss(images, labels):
+    # Šis izmanto jau uztrenētu optimizātoru
+
+    # training=True is only needed if there are layers with different
+    # behavior during training versus inference (e.g. Dropout).
+    with tf.GradientTape() as tape2:
+        x = flatten(images)
+        x = tf.matmul(x, weight_1)
+        x = tf.nn.relu(x)
+        predictions = tf.matmul(x, weight_2)
+
+        loss = loss_object(9 - labels, predictions)
+        gradients = tape2.gradient(loss, [weight_1, weight_2])
+
+    first_weight = tf.stack([gradients[0], weight_1], axis=-1)
+    update_1 = tf.squeeze(optim_model(first_weight), axis=-1)
+    second_weight = tf.stack([gradients[1], weight_2], axis=-1)
+    update_2 = tf.squeeze(optim_model(second_weight), axis=-1)
+
+    weight_1.assign_add(update_1 * 0.0001)
+    weight_2.assign_add(update_2 * 0.0001)
+
+    train_loss(loss)
+    train_accuracy(9 - labels, predictions)
 
 
 @tf.function
@@ -114,7 +144,21 @@ def test_step(images, labels):
     test_accuracy(labels, predictions)
 
 
-EPOCHS = 100
+@tf.function
+def test_inverse(images, labels):
+    # training=False is only needed if there are layers with different
+    # behavior during training versus inference (e.g. Dropout).
+    x = flatten(images)
+    x = tf.matmul(x, weight_1)
+    x = tf.nn.relu(x)
+    predictions = tf.matmul(x, weight_2)
+    t_loss = loss_object(9 - labels, predictions)
+
+    test_loss(t_loss)
+    test_accuracy(9 - labels, predictions)
+
+
+EPOCHS = 50
 
 
 @tf.function
@@ -150,10 +194,33 @@ for epoch in range(EPOCHS):
     for images, labels in train_ds:
         train_step(images, labels)
 
-    update_learner(images, labels)
-
     for test_images, test_labels in test_ds:
         test_step(test_images, test_labels)
+
+    print(
+        f'Epoch {epoch + 1}, '
+        f'Loss: {train_loss.result()}, '
+        f'Accuracy: {train_accuracy.result() * 100}, '
+        f'Test Loss: {test_loss.result()}, '
+        f'Test Accuracy: {test_accuracy.result() * 100}'
+    )
+
+initializer = tf.initializers.lecun_normal()
+weight_1.assign(initializer([784, 128]))
+weight_2.assign(initializer([128, 10]))
+
+for epoch in range(EPOCHS):
+    # Reset the metrics at the start of the next epoch
+    train_loss.reset_states()
+    train_accuracy.reset_states()
+    test_loss.reset_states()
+    test_accuracy.reset_states()
+
+    for images, labels in train_ds:
+        train_on_inverse_task_and_other_loss(images, labels)
+
+    for test_images, test_labels in test_ds:
+        test_inverse(test_images, test_labels)
 
     print(
         f'Epoch {epoch + 1}, '
