@@ -136,6 +136,7 @@ def softplus_loss_adj(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTens
 
     return clauses_val
 
+
 def linear_loss_adj(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
@@ -143,11 +144,19 @@ def linear_loss_adj(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor
     :return: returns per clause loss in range [0..] - 0 if clause is satisfied, >0 if not satisfied
     """
     variable_predictions = tf.sigmoid(variable_predictions)
-    literals = tf.concat([variable_predictions, 1-variable_predictions], axis=0)
+    literals = tf.concat([variable_predictions, 1 - variable_predictions], axis=0)
     clauses_val = tf.sparse.sparse_dense_matmul(adj_matrix, literals)
-    clauses_val = tf.nn.relu(1-clauses_val)
 
-    return clauses_val
+    literals_zero_l = tf.nn.relu(-variable_predictions)
+    literals_zero_h = tf.nn.relu(variable_predictions)
+
+    literals_one_l = tf.nn.relu(variable_predictions - 1)
+    literals_one_h = tf.nn.relu(1 - variable_predictions)
+
+    literal_loss = tf.reduce_sum((literals_zero_l + literals_zero_h) * (literals_one_l + literals_one_h))
+    clauses_val = tf.nn.relu(1 - clauses_val)
+
+    return tf.reduce_sum(clauses_val) + literal_loss
 
 
 def max_clauses_loss(variable_prediction: tf.Tensor, clauses: tf.RaggedTensor, temp=1):

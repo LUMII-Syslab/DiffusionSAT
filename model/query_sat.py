@@ -21,8 +21,8 @@ class QuerySAT(Model):
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
-        self.use_message_passing = True
-        self.use_linear_loss = False
+        self.use_message_passing = False
+        self.use_linear_loss = True
         self.skip_first_rounds = 0
         self.prediction_tries = 1
         self.logit_maps = 8
@@ -95,7 +95,7 @@ class QuerySAT(Model):
             tf.summary.histogram("clauses", last_clauses)
             last_layer_loss = tf.reduce_sum(
                 softplus_mixed_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix)))
-            tf.summary.histogram("logits", tf.abs(last_logits))
+            tf.summary.histogram("logits", last_logits)
             tf.summary.scalar("last_layer_loss", last_layer_loss)
             # log_as_histogram("step_losses", step_losses.stack())
 
@@ -183,16 +183,17 @@ class QuerySAT(Model):
                     logit_loss = 0.
             else:
                 if self.use_linear_loss:
-                    binary_noise = tf.round(tf.random.uniform(tf.shape(logits))) * 2 - 1
-                    noise = tf.random.normal([])
+                    # binary_noise = tf.round(tf.random.uniform(tf.shape(logits))) * 2 - 1
+                    # noise = tf.random.normal([])
                     # noise *= tf.exp(tf.random.normal([], stddev=0.5))
                     # noisy_logits = logits+binary_noise*0.5
-                    noisy_logits = tf.concat([logits + binary_noise * 0.5, logits - binary_noise * 0.5], axis=-1)
-                    per_clause_loss = tf.square(linear_loss_adj(noisy_logits, cl_adj_matrix))
-                    per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
-                    per_graph_loss = tf.reduce_mean(per_graph_loss, axis=-1)
-                    per_graph_loss = tf.sqrt(per_graph_loss + 0.25) - tf.sqrt(0.25)
-                    logit_loss = tf.reduce_sum(per_graph_loss)
+                    # noisy_logits = tf.concat([logits + binary_noise * 0.5, logits - binary_noise * 0.5], axis=-1)
+
+                    logit_loss = linear_loss_adj(logits, cl_adj_matrix)
+                    # per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
+                    # per_graph_loss = tf.reduce_mean(per_graph_loss, axis=-1)
+                    # per_graph_loss = tf.sqrt(per_graph_loss + 0.25) - tf.sqrt(0.25)
+                    # logit_loss = tf.reduce_sum(per_clause_loss)
                 else:
                     per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
                     per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
