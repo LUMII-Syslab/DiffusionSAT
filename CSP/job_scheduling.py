@@ -50,6 +50,30 @@ if __name__ == '__main__':
         for step in range(1000):
             with tf.GradientTape() as tape:
                 rez = diff_round(var)
+
+                # Job Scheduling example from AIMI book
+                # loss = tf.nn.relu(rez[0] + 10 - rez[2])
+                # loss += tf.nn.relu(rez[0] + 10 - rez[3])
+                # loss += tf.nn.relu(rez[1] + 10 - rez[4])
+                # loss += tf.nn.relu(rez[1] + 10 - rez[5])
+                #
+                # loss += tf.nn.relu(rez[2] + 1 - rez[6])
+                # loss += tf.nn.relu(rez[6] + 2 - rez[10])
+                # loss += tf.nn.relu(rez[3] + 1 - rez[7])
+                # loss += tf.nn.relu(rez[7] + 2 - rez[11])
+                # loss += tf.nn.relu(rez[4] + 1 - rez[8])
+                # loss += tf.nn.relu(rez[8] + 2 - rez[12])
+                # loss += tf.nn.relu(rez[5] + 1 - rez[9])
+                # loss += tf.nn.relu(rez[9] + 2 - rez[13])
+                # loss += tf.reduce_sum(tf.nn.relu(rez[:14] + 3 - rez[14]))
+                #
+                # a = tf.nn.relu(rez[0] + 10 - rez[1])
+                # b = tf.nn.relu(rez[1] + 10 - rez[0])
+                # loss += a * b
+                #
+                # interval = tf.reduce_sum(tf.nn.relu(rez - 27))
+                # interval += tf.reduce_sum(tf.nn.relu(1 - rez))
+
                 x = rez[0]
                 y = rez[1]
 
