@@ -1,29 +1,5 @@
 import tensorflow as tf
 
-"""
-X = {
-0: Axle F,
-1: Axle B,
-2: Wheel RF,
-3: Wheel LF,
-4: Wheel RB,
-5: Wheel LB,
-6: Nuts RF,
-7: Nuts LF,
-8: Nuts RB,
-9: Nuts LB,
-10: Cap RF,
-11: Cap LF,
-12: Cap RB,
-13: Cap LB,
-14: Inspect
-} .
-"""
-
-"""
-Axle F + 10 ≤ Wheel RF ; Axle F + 10 ≤ Wheel LF ;
-Axle B + 10 ≤ Wheel RB ; Axle B + 10 ≤ Wheel LB .
-"""
 init = tf.keras.initializers.RandomNormal()
 bits = 5
 var = tf.Variable(init([2], dtype=tf.float32))
