@@ -1,6 +1,4 @@
-import numpy as np
 import tensorflow as tf
-import tensorflow_probability as tfp
 
 """
 X = {
@@ -28,7 +26,7 @@ Axle B + 10 ≤ Wheel RB ; Axle B + 10 ≤ Wheel LB .
 """
 init = tf.keras.initializers.RandomNormal()
 bits = 5
-x = tf.Variable(init([3], dtype=tf.float32))
+var = tf.Variable(init([2], dtype=tf.float32))
 binary_values = [2 ** k for k in range(0, bits)]
 
 
@@ -51,24 +49,33 @@ if __name__ == '__main__':
     for i in range(10):
         for step in range(1000):
             with tf.GradientTape() as tape:
-                rez2 = diff_round(x)
+                rez = diff_round(var)
+                x = rez[0]
+                y = rez[1]
 
-                loss_l = tf.reduce_sum(tf.nn.relu(32 - rez2))
-                loss_u = tf.reduce_sum(tf.nn.relu(rez2))
+                loss_0 = tf.nn.relu(-x + y - 1)
+                loss_1 = tf.nn.relu(3 * x + 2 * y - 12)
+                loss_2 = tf.nn.relu(2 * x + 3 * y - 12)
+                loss_3 = tf.nn.relu(-x)
+                loss_4 = tf.nn.relu(-y)
+                loss_max = -y
 
-                loss_0 = tf.nn.relu(5 - rez2[0])
-                loss_1 = tf.nn.relu(rez2[0] + 10 - rez2[1])
-                loss_2 = tf.nn.relu(rez2[1] - 25)
-                loss_3 = tf.nn.relu(20 - rez2[1])
+                # loss_l = tf.reduce_sum(tf.nn.relu(32 - rez2))
+                # loss_u = tf.reduce_sum(tf.nn.relu(rez2))
+                #
+                # loss_0 = tf.nn.relu(5 - rez2[0])
+                # loss_1 = tf.nn.relu(rez2[0] + 10 - rez2[1])
+                # loss_2 = tf.nn.relu(rez2[1] - 25)
+                # loss_3 = tf.nn.relu(20 - rez2[1])
+                #
+                # loss_4 = tf.nn.relu(rez2[2] - 31)
+                # loss_5 = tf.nn.relu(31 - rez2[2])
 
-                loss_4 = tf.nn.relu(rez2[2] - 31)
-                loss_5 = tf.nn.relu(31 - rez2[2])
+                sys_loss = 0.8 * (loss_0 + loss_1 + loss_2 + loss_3 + loss_4) + 0.2 * loss_max
 
-                sys_loss = loss_0 + loss_1 + loss_2 + loss_3 + loss_l + loss_u + loss_4 + loss_5
-
-                grad = tape.gradient(sys_loss, [x])
-                opt.apply_gradients(zip(grad, [x]))
+                grad = tape.gradient(sys_loss, [var])
+                opt.apply_gradients(zip(grad, [var]))
 
         print("Step", i, "Loss0", loss_0.numpy(), "Loss1", loss_1.numpy(), "Loss2", loss_2.numpy(), "Loss3",
-              loss_3.numpy())
-        print(rez2.numpy().tolist())
+              loss_3.numpy(), "Total_loss", sys_loss.numpy())
+        print(rez.numpy().tolist())
