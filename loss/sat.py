@@ -147,14 +147,11 @@ def linear_loss_adj(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor
     literals = tf.concat([variable_predictions, 1 - variable_predictions], axis=0)
     clauses_val = tf.sparse.sparse_dense_matmul(adj_matrix, literals)
 
-    literals_zero_l = tf.nn.relu(-variable_predictions)
-    literals_zero_h = tf.nn.relu(variable_predictions)
+    zero_loss = tf.square(variable_predictions)
+    ones_loss = tf.square(variable_predictions - 1)
 
-    literals_one_l = tf.nn.relu(variable_predictions - 1)
-    literals_one_h = tf.nn.relu(1 - variable_predictions)
-
-    literal_loss = tf.reduce_sum((literals_zero_l + literals_zero_h) * (literals_one_l + literals_one_h))
-    clauses_val = tf.nn.relu(1 - clauses_val)
+    literal_loss = tf.reduce_sum(zero_loss * ones_loss)
+    clauses_val = relu1(1 - clauses_val)
 
     return tf.reduce_sum(clauses_val) + literal_loss
 
