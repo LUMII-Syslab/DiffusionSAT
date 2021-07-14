@@ -151,7 +151,7 @@ def linear_loss_adj(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor
     ones_loss = tf.square(variable_predictions - 1)
 
     literal_loss = tf.reduce_sum(zero_loss * ones_loss)
-    clauses_val = relu1(1 - clauses_val)
+    clauses_val = tf.nn.relu(1 - clauses_val)
 
     return tf.reduce_sum(clauses_val) + literal_loss
 

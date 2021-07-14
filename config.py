@@ -20,7 +20,7 @@ class Config:
     optimizer = 'radam'
     train_steps = 1000000
     warmup = 0.0
-    learning_rate = 0.0002
+    learning_rate = 0.0001
     model = 'query_sat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
     task = '3-sat'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
