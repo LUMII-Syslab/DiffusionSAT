@@ -7,7 +7,7 @@ import os
 
 from data.k_sat import KSAT
 from utils.sat import remove_unused_vars, remove_useless_clauses
-
+import random
 
 class PrimesGen(KSAT):
     """ Dataset with SAT instances based on integer factorization into 2 primes, each below 1000.
@@ -17,7 +17,7 @@ class PrimesGen(KSAT):
     if not os.path.exists(FETCHED_DATA_DIR):
         FETCHED_DATA_DIR = "data/" + FETCHED_DATA_DIR
 
-    def __init__(self, data_dir, min_vars=4, max_vars=100, force_data_gen=False, **kwargs) -> None:
+    def __init__(self, data_dir, min_vars=4, max_vars=200, force_data_gen=False, **kwargs) -> None:
         super(PrimesGen, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000  # maximum number of samples; if there are less, we will stop earlier
         self.test_size = 1000
@@ -27,20 +27,20 @@ class PrimesGen(KSAT):
         #### the desired number of variables ####
         self.min_vars = min_vars
         self.max_vars = max_vars
-        self.max_attempts = 100  # how many times we need to check the number of variables to be within the given range before we stop the generator
+        self.max_attempts = 100000000  # TODO: remove attempts
+        self.file_list = glob.glob(PrimesGen.FETCHED_DATA_DIR + "/*.dimacs")
+        random.shuffle(self.file_list)
+        # print("LIST", PrimesGen.FETCHED_DATA_DIR + "/*.dimacs", fileList)
 
     def train_generator(self) -> tuple:
-        return self._generator(self.train_size)
+        return self._generator1(self.train_size, self.file_list[self.test_size:])
 
     def test_generator(self) -> tuple:
-        return self._generator(self.test_size)
+        return self._generator1(self.test_size, self.file_list[:self.test_size])
 
-    def _generator(self, size) -> tuple:
+    def _generator1(self, size, file_list) -> tuple:
 
-        file_list = glob.glob(PrimesGen.FETCHED_DATA_DIR + "/*.dimacs")
-        # print("LIST", PrimesGen.FETCHED_DATA_DIR + "/*.dimacs", fileList)
         file_index = 0
-
         samples_so_far = 0
 
         while samples_so_far < size:
