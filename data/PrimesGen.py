@@ -19,7 +19,7 @@ class PrimesGen(KSAT):
 
     def __init__(self, data_dir, min_vars=4, max_vars=200, force_data_gen=False, **kwargs) -> None:
         super(PrimesGen, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
-        self.train_size = 10000  # maximum number of samples; if there are less, we will stop earlier
+        self.train_size = 20000  # maximum number of samples; if there are less, we will stop earlier
         self.test_size = 1000
 
         #### constraints ####
