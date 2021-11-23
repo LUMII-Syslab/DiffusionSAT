@@ -26,15 +26,16 @@ def main():
     #                                          warmup_proportion=Config.warmup)
     # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
 
-    optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
+    optimizer_solver = AdaBeliefOptimizer(0.001, beta_1=0.6, clip_gradients=True)
+    optimizer_maker = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
     # optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)  # check for accuracy issues!
 
-    model = ModelRegistry().resolve(Config.model)(optimizer=optimizer)
+    model = ModelRegistry().resolve(Config.model)(optimizer_maker=optimizer_maker, optimizer_solver=optimizer_solver)
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                      force_data_gen=Config.force_data_gen,
                                                      input_mode=Config.input_mode)
 
-    ckpt, manager = prepare_checkpoints(model, optimizer)
+    ckpt, manager = prepare_checkpoints(model, optimizer_maker)
 
     if Config.train:
         train(dataset, model, ckpt, manager)
@@ -48,7 +49,7 @@ def main():
             metric.log_in_stdout()
 
     if Config.evaluate_round_gen:
-        evaluate_round_generalization(dataset, optimizer)
+        evaluate_round_generalization(dataset, optimizer_maker)
 
     if Config.evaluate_batch_gen:
         evaluate_batch_generalization(model)
@@ -65,7 +66,7 @@ def main():
     if Config.test_classic_solver:
         variable_gen_classic_solver()
 
-    if Config.make_cactus:
+    if Config.test_cactus:
         make_cactus(model, dataset)
 
 
@@ -235,7 +236,9 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     writer = tf.summary.create_file_writer(Config.train_dir)
     writer.set_as_default()
 
-    mean_loss = tf.metrics.Mean()
+    mean_loss_solver = tf.metrics.Mean()
+    mean_loss_maker = tf.metrics.Mean()
+    mean_clauses_count = tf.metrics.Mean()
     timer = Timer(start_now=True)
     validation_data = dataset.validation_data()
     train_data = dataset.train_data()
@@ -247,16 +250,27 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
         model_data = dataset.filter_model_inputs(step_data)
 
         model_output = model.train_step(**model_data)
-        loss, gradients = model_output["loss"], model_output["gradients"]
-        mean_loss.update_state(loss)
+        maker_loss, maker_gradients = model_output["problem_maker_loss"], model_output["maker_gradients"]
+        solver_loss, solver_gradients = model_output["solver_loss"], model_output["solver_gradients"]
+
+        mean_loss_maker.update_state(maker_loss)
+        mean_loss_solver.update_state(solver_loss)
+        mean_clauses_count.update_state(model_output["count_loss"])
 
         if int(ckpt.step) % 100 == 0:
-            loss_mean = mean_loss.result()
+            loss_mean_maker = mean_loss_maker.result()
+            loss_mean_solver = mean_loss_solver.result()
+            loss_clauses_count = mean_clauses_count.result()
             with writer.as_default():
-                tf.summary.scalar("loss", loss_mean, step=int(ckpt.step))
+                tf.summary.scalar("loss_maker", loss_mean_maker, step=int(ckpt.step))
+                tf.summary.scalar("loss_solver", loss_mean_solver, step=int(ckpt.step))
+                tf.summary.scalar("clauses_loss", loss_clauses_count, step=int(ckpt.step))
 
-            print(f"{int(ckpt.step)}. step;\tloss: {loss_mean:.5f};\ttime: {timer.lap():.3f}s")
-            mean_loss.reset_states()
+            print(
+                f"{int(ckpt.step)}. step;\tloss_maker: {loss_mean_maker:.5f};\tloss_count: {loss_clauses_count:.4f};\tloss_solver: {loss_mean_solver:.5f};\ttime: {timer.lap():.3f}s")
+            mean_loss_maker.reset_states()
+            mean_loss_solver.reset_states()
+            mean_clauses_count.reset_states()
 
             # with tf.name_scope("gradients"):
             #     with writer.as_default():
@@ -277,11 +291,11 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                     model_input = dataset.filter_model_inputs(visualization_step_data)
                     model.log_visualizations(**model_input)
 
-            metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps,
-                                       initial=(int(ckpt.step) == 0))
-            for metric in metrics:
-                metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
-                metric.log_in_stdout(step=int(ckpt.step))
+            # metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps,
+            #                            initial=(int(ckpt.step) == 0))
+            # for metric in metrics:
+            #     metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
+            #     metric.log_in_stdout(step=int(ckpt.step))
 
             hparams = model.get_config()
             hparams[HP_TASK] = dataset.__class__.__name__

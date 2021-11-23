@@ -52,6 +52,50 @@ class SAT_3(KSAT):
             yield n_vars, iclauses, solution
 
 
+class UNSAT_3(KSAT):
+    """ Dataset with random UNSAT 3-SAT instances at the satisfiability threshold from CNFGen library.
+    """
+
+    def __init__(self, data_dir, min_vars=5, max_vars=40, force_data_gen=False, **kwargs) -> None:
+        super(UNSAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
+                                      **kwargs)
+        self.train_size = 10000
+        self.test_size = 5000
+        self.min_vars = min_vars
+        self.max_vars = max_vars
+
+    def train_generator(self) -> tuple:
+        return self._generator(self.train_size)
+
+    def test_generator(self) -> tuple:
+        return self._generator(self.test_size)
+
+    def _generator(self, size) -> tuple:
+        for _ in range(size):
+            n_vars = random.randint(self.min_vars, self.max_vars)
+            n_clauses = 4.258 * n_vars + 58.26 * np.power(n_vars, -2 / 3.)
+            n_clauses = int(n_clauses)
+
+            while True:
+                F = RandomKCNF(3, n_vars, n_clauses)
+                clauses = list(F.clauses())
+                iclauses = [F._compress_clause(x) for x in clauses]
+
+                dimacs = build_dimacs_file(iclauses, n_vars)
+
+                if n_vars > 200:
+                    sat, solution = run_external_solver(dimacs)
+                else:
+                    with Glucose4(bootstrap_with=iclauses) as solver:
+                        sat = solver.solve()
+                        solution = [1] * n_vars
+
+                if not sat:
+                    break
+
+            yield n_vars, iclauses, solution
+
+
 class Clique(KSAT):
     """ Dataset with random sat instances from triangle detection in graphs.
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
