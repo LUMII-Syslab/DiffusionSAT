@@ -14,7 +14,7 @@ from model.neuro_sat import NeuroSAT
 from model.neurocore import NeuroCore
 from model.query_sat import QuerySAT
 from model.query_sat_lit import QuerySATLit
-from model.query_unsat import CoreFinder
+from model.unsat_core_finder import CoreFinder
 from model.simple_neurosat import SimpleNeuroSAT
 from model.tsp_matrix_se import TSPMatrixSE
 

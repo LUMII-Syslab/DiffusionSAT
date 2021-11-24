@@ -114,7 +114,7 @@ class SATSolver(Model):
             logits = self.variables_output(variables)
             per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
 
-            logit_loss = tf.reduce_mean(per_clause_loss)
+            logit_loss = per_clause_loss
             step_losses = step_losses.write(step, logit_loss)
 
             is_sat = is_batch_sat(logits, cl_adj_matrix)
@@ -128,7 +128,7 @@ class SATSolver(Model):
             variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
             clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
 
-        unsupervised_loss = tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32)
+        unsupervised_loss = tf.reduce_sum(step_losses.stack(), axis=0) / tf.cast(rounds, tf.float32)
         return last_logits, step, unsupervised_loss, clause_state, variables
 
 
@@ -253,28 +253,34 @@ class CoreFinder(Model):
             clauses_mask = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=True)
             _, solver_loss, step = self.solver(adj_matrix * clauses_mask, clauses_graph, variables_graph, training=True)
 
-            per_graph_clauses = tf.sparse.sparse_dense_matmul(clauses_graph, tf.expand_dims(clauses_mask, axis=-1))
-            per_graph_clauses = tf.squeeze(per_graph_clauses, axis=-1)
+            count_loss = tf.sparse.reduce_sum(clauses_graph * clauses_mask, axis=1)
+            minimizer_loss = -solver_loss + count_loss * 0.0001  # TODO: solver_loss should be per graph
+            minimizer_loss = tf.reduce_mean(minimizer_loss)
+            solver_loss = tf.reduce_mean(solver_loss)
 
-            count_loss = tf.reduce_mean(per_graph_clauses)
-            maker_loss = -solver_loss + count_loss
+        discretization_level = tf.abs(tf.round(clauses_mask) - clauses_mask)
+        discretization_level = tf.reduce_max(discretization_level)
+
+        count_set_clauses = tf.reduce_sum(tf.round(clauses_mask))
 
         maker_vars = self.unsat_minimizer.trainable_variables
         solver_vars = self.solver.trainable_variables
 
-        maker_gradients = minimizer_tape.gradient(maker_loss, maker_vars)
+        minimizer_gradients = minimizer_tape.gradient(minimizer_loss, maker_vars)
         solver_gradients = solver_tape.gradient(solver_loss, solver_vars)
 
-        self.unsat_minimizer.optimizer.apply_gradients(zip(maker_gradients, maker_vars))
+        self.unsat_minimizer.optimizer.apply_gradients(zip(minimizer_gradients, maker_vars))
         self.solver.optimizer.apply_gradients(zip(solver_gradients, solver_vars))
 
         return {
             "steps_taken": step,
             "count_loss": count_loss,
-            "problem_maker_loss": -solver_loss,
+            "minimizer_loss": minimizer_loss,
             "solver_loss": solver_loss,
-            "maker_gradients": maker_gradients,
-            "solver_gradients": solver_gradients
+            "minimizer_gradients": minimizer_gradients,
+            "solver_gradients": solver_gradients,
+            "discretization_level": discretization_level,
+            "set_clauses": count_set_clauses
         }
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),

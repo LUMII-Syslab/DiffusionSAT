@@ -30,7 +30,8 @@ def main():
     optimizer_maker = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
     # optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)  # check for accuracy issues!
 
-    model = ModelRegistry().resolve(Config.model)(optimizer_maker=optimizer_maker, optimizer_solver=optimizer_solver)
+    model = ModelRegistry().resolve(Config.model)(optimizer_minimizer=optimizer_maker,
+                                                  optimizer_solver=optimizer_solver)
     dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                      force_data_gen=Config.force_data_gen,
                                                      input_mode=Config.input_mode)
@@ -239,6 +240,8 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     mean_loss_solver = tf.metrics.Mean()
     mean_loss_maker = tf.metrics.Mean()
     mean_clauses_count = tf.metrics.Mean()
+    mean_discretization = tf.metrics.Mean()
+    mean_set_clauses = tf.metrics.Mean()
     timer = Timer(start_now=True)
     validation_data = dataset.validation_data()
     train_data = dataset.train_data()
@@ -250,27 +253,37 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
         model_data = dataset.filter_model_inputs(step_data)
 
         model_output = model.train_step(**model_data)
-        maker_loss, maker_gradients = model_output["problem_maker_loss"], model_output["maker_gradients"]
+        maker_loss, maker_gradients = model_output["minimizer_loss"], model_output["minimizer_gradients"]
         solver_loss, solver_gradients = model_output["solver_loss"], model_output["solver_gradients"]
 
         mean_loss_maker.update_state(maker_loss)
         mean_loss_solver.update_state(solver_loss)
         mean_clauses_count.update_state(model_output["count_loss"])
+        mean_discretization.update_state(model_output["discretization_level"])
+        mean_set_clauses.update_state(model_output["set_clauses"])
 
         if int(ckpt.step) % 100 == 0:
             loss_mean_maker = mean_loss_maker.result()
             loss_mean_solver = mean_loss_solver.result()
             loss_clauses_count = mean_clauses_count.result()
+            mean_discretization_res = mean_discretization.result()
+            mean_set_clauses_res = mean_set_clauses.result()
             with writer.as_default():
                 tf.summary.scalar("loss_maker", loss_mean_maker, step=int(ckpt.step))
                 tf.summary.scalar("loss_solver", loss_mean_solver, step=int(ckpt.step))
                 tf.summary.scalar("clauses_loss", loss_clauses_count, step=int(ckpt.step))
 
             print(
-                f"{int(ckpt.step)}. step;\tloss_maker: {loss_mean_maker:.5f};\tloss_count: {loss_clauses_count:.4f};\tloss_solver: {loss_mean_solver:.5f};\ttime: {timer.lap():.3f}s")
+                f"{int(ckpt.step)}. step;\tloss_minimizer: {loss_mean_maker:.5f};\tloss_count: {loss_clauses_count:.4f};"
+                f"\tloss_solver: {loss_mean_solver:.5f};"
+                f"\tdiscretization={mean_discretization_res};"
+                f"\tset_clauses={mean_set_clauses_res};"
+                f"\ttime: {timer.lap():.3f}s")
             mean_loss_maker.reset_states()
             mean_loss_solver.reset_states()
             mean_clauses_count.reset_states()
+            mean_discretization.reset_states()
+            mean_set_clauses.reset_states()
 
             # with tf.name_scope("gradients"):
             #     with writer.as_default():
