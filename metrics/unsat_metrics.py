@@ -62,7 +62,7 @@ class UNSATAccuracyTF(Metric):
             predicted_core.append(predicted_core_batched[i:i + length].numpy())
             i += length
 
-        filtered_cores = [cl[~(core == 0)] for cl, core in zip(clauses, predicted_core)]
+        filtered_cores = [cl[core == 1] for cl, core in zip(clauses, predicted_core)]
         cores_found = []
         for core in filtered_cores:
             core_cnf = CNF(from_clauses=core.tolist())
