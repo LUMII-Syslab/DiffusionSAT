@@ -6,6 +6,8 @@ from cnfgen import RandomKCNF, CliqueFormula, DominatingSet, GraphColoringFormul
 from pysat.solvers import Glucose4
 
 from data.k_sat import KSAT
+from metrics.sat_metrics import StepStatistics
+from metrics.unsat_metrics import UNSATAccuracyTF
 from utils.sat import run_external_solver, build_dimacs_file
 
 
@@ -14,7 +16,8 @@ class SAT_3(KSAT):
     """
 
     def __init__(self, data_dir, min_vars=5, max_vars=100, force_data_gen=False, **kwargs) -> None:
-        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
+        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
+                                    **kwargs)
         self.train_size = 100000
         self.test_size = 5000
         self.min_vars = min_vars
@@ -95,6 +98,8 @@ class UNSAT_3(KSAT):
 
             yield n_vars, iclauses, solution
 
+    def metrics(self, initial=False) -> list:
+        return [UNSATAccuracyTF(), StepStatistics()]
 
 class Clique(KSAT):
     """ Dataset with random sat instances from triangle detection in graphs.

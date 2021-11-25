@@ -304,11 +304,11 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                     model_input = dataset.filter_model_inputs(visualization_step_data)
                     model.log_visualizations(**model_input)
 
-            # metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps,
-            #                            initial=(int(ckpt.step) == 0))
-            # for metric in metrics:
-            #     metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
-            #     metric.log_in_stdout(step=int(ckpt.step))
+            metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps, initial=(int(ckpt.step) == 0))
+
+            for metric in metrics:
+                metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
+                metric.log_in_stdout(step=int(ckpt.step))
 
             hparams = model.get_config()
             hparams[HP_TASK] = dataset.__class__.__name__
@@ -338,8 +338,7 @@ def prepare_checkpoints(model, optimizer):
     return ckpt, manager
 
 
-def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False,
-                     print_progress=False) -> list:
+def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False, print_progress=False) -> list:
     metrics = dataset.metrics(initial)
     iterator = itertools.islice(data, steps) if steps else data
 

@@ -251,7 +251,11 @@ class CoreFinder(Model):
     def train_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
         with tf.GradientTape() as minimizer_tape, tf.GradientTape() as solver_tape:
             clauses_mask = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=True)
-            _, solver_loss, step = self.solver(adj_matrix * clauses_mask, clauses_graph, variables_graph, training=True)
+
+            masked_adj_matrix = adj_matrix * clauses_mask
+            masked_clauses_graph = clauses_graph * clauses_mask  # TODO: Do I need to mask this graph?
+
+            _, solver_loss, step = self.solver(masked_adj_matrix, masked_clauses_graph, variables_graph, training=True)
 
             count_loss = tf.sparse.reduce_sum(clauses_graph * clauses_mask, axis=1)
             minimizer_loss = -solver_loss + count_loss * 0.0001  # TODO: solver_loss should be per graph
@@ -289,14 +293,16 @@ class CoreFinder(Model):
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
                                   ])
     def predict_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
-        clauses_mask, count_loss = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=True)
-        sat_prediction, solver_loss, step = self.solver(adj_matrix * clauses_mask, clauses_graph * clauses_mask,
-                                                        variables_graph, training=True)
+        clauses_mask = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=False)
+
+        masked_adj_matrix = adj_matrix * clauses_mask
+        masked_clauses_graph = clauses_graph * clauses_mask  # TODO: Do I need to mask this?
+
+        _, solver_loss, step = self.solver(masked_adj_matrix, masked_clauses_graph, variables_graph, training=False)
 
         return {
             "steps_taken": step,
             "loss": solver_loss,
-            "sat_predictions": tf.squeeze(sat_prediction, axis=-1),
             "unsat_core": clauses_mask
         }
 
