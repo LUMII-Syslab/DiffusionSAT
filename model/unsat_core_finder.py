@@ -32,7 +32,7 @@ class SATSolver(Model):
         self.feature_maps = feature_maps
         self.query_maps = query_maps
 
-    def call(self, adj_matrix, clauses_graph=None, variables_graph=None, training=None, mask=None):
+    def call(self, adj_matrix, int_adj_matrix=None, clauses_graph=None, variables_graph=None, training=None, mask=None):
         shape = tf.shape(adj_matrix)
         n_vars = shape[0] // 2
         n_clauses = shape[1]
@@ -43,6 +43,7 @@ class SATSolver(Model):
         rounds = self.train_rounds if training else self.test_rounds
 
         last_logits, step, unsupervised_loss, clause_state, variables = self.loop(adj_matrix,
+                                                                                  int_adj_matrix,
                                                                                   clause_state,
                                                                                   clauses_graph,
                                                                                   rounds,
@@ -62,7 +63,7 @@ class SATSolver(Model):
 
         return last_logits, unsupervised_loss, step
 
-    def loop(self, adj_matrix, clause_state, clauses_graph, rounds, training, variables, variables_graph):
+    def loop(self, adj_matrix, int_adj_matrix, clause_state, clauses_graph, rounds, training, variables, variables_graph):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
         shape = tf.shape(adj_matrix)
@@ -74,8 +75,10 @@ class SATSolver(Model):
         degree_weight = tf.math.rsqrt(tf.maximum(lit_degree, 1))
         var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars, :] + lit_degree[n_vars:, :], 1))
 
-        variables_graph_norm = variables_graph / tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True)
-        clauses_graph_norm = clauses_graph / tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True)
+        variables_graph_norm = variables_graph * tf.math.reciprocal_no_nan(
+            tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True))
+        clauses_graph_norm = clauses_graph * tf.math.reciprocal_no_nan(
+            tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True))
 
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
@@ -112,12 +115,12 @@ class SATSolver(Model):
 
             # calculate logits and loss
             logits = self.variables_output(variables)
-            per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
+            per_clause_loss = softplus_mixed_loss_adj(logits, tf.sparse.transpose(int_adj_matrix))
 
             logit_loss = per_clause_loss
             step_losses = step_losses.write(step, logit_loss)
 
-            is_sat = is_batch_sat(logits, cl_adj_matrix)
+            is_sat = is_batch_sat(logits, tf.sparse.transpose(int_adj_matrix))
             last_logits = logits
 
             if is_sat == 1:
@@ -253,9 +256,9 @@ class CoreFinder(Model):
             clauses_mask = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=True)
 
             masked_adj_matrix = adj_matrix * clauses_mask
-            masked_clauses_graph = clauses_graph * clauses_mask  # TODO: Do I need to mask this graph?
+            int_masked_adj_matrix = adj_matrix * tf.round(clauses_mask)
 
-            _, solver_loss, step = self.solver(masked_adj_matrix, masked_clauses_graph, variables_graph, training=True)
+            _, solver_loss, step = self.solver(masked_adj_matrix, int_masked_adj_matrix, clauses_graph, variables_graph, training=True)
 
             count_loss = tf.sparse.reduce_sum(clauses_graph * clauses_mask, axis=1)
             minimizer_loss = -solver_loss + count_loss * 0.0001  # TODO: solver_loss should be per graph
@@ -296,9 +299,9 @@ class CoreFinder(Model):
         clauses_mask = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=False)
 
         masked_adj_matrix = adj_matrix * clauses_mask
-        masked_clauses_graph = clauses_graph * clauses_mask  # TODO: Do I need to mask this?
+        int_masked_adj_matrix = adj_matrix * tf.round(clauses_mask)
 
-        _, solver_loss, step = self.solver(masked_adj_matrix, masked_clauses_graph, variables_graph, training=False)
+        _, solver_loss, step = self.solver(masked_adj_matrix, int_masked_adj_matrix, clauses_graph, variables_graph, training=False)
 
         return {
             "steps_taken": step,
