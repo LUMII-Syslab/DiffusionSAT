@@ -26,7 +26,7 @@ def main():
     #                                          warmup_proportion=Config.warmup)
     # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
 
-    optimizer_solver = AdaBeliefOptimizer(0.001, beta_1=0.6, clip_gradients=True)
+    optimizer_solver = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
     optimizer_maker = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
     # optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)  # check for accuracy issues!
 
@@ -304,7 +304,8 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                     model_input = dataset.filter_model_inputs(visualization_step_data)
                     model.log_visualizations(**model_input)
 
-            metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps, initial=(int(ckpt.step) == 0))
+            metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps,
+                                       initial=(int(ckpt.step) == 0))
 
             for metric in metrics:
                 metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
@@ -338,7 +339,8 @@ def prepare_checkpoints(model, optimizer):
     return ckpt, manager
 
 
-def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False, print_progress=False) -> list:
+def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None, initial=False,
+                     print_progress=False) -> list:
     metrics = dataset.metrics(initial)
     iterator = itertools.islice(data, steps) if steps else data
 

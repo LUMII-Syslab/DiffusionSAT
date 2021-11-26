@@ -189,8 +189,10 @@ class UNSATMinimizer(Model):
         degree_weight = tf.math.rsqrt(tf.maximum(lit_degree, 1))
         var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars, :] + lit_degree[n_vars:, :], 1))
 
-        variables_graph_norm = variables_graph / tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True)
-        clauses_graph_norm = clauses_graph / tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True)
+        variables_graph_norm = variables_graph * tf.math.reciprocal_no_nan(
+            tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True))
+        clauses_graph_norm = clauses_graph * tf.math.reciprocal_no_nan(
+            tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True))
 
         for _ in tf.range(rounds):
             # make a query for solution, get its value and gradient
@@ -234,7 +236,11 @@ class UNSATMinimizer(Model):
             variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
             clauses = tf.stop_gradient(clauses) * 0.2 + clauses * 0.
 
-        clauses_mask = tf.sigmoid(last_logits + tf.random.normal(tf.shape(last_logits), 0, 1))  # TODO: Better noise
+        if training:
+            clauses_mask = tf.sigmoid(
+                last_logits + tf.random.normal(tf.shape(last_logits), 0, 1))  # TODO: Better noise
+        else:
+            clauses_mask = tf.sigmoid(last_logits)
 
         return tf.squeeze(clauses_mask, axis=-1)
 
@@ -255,35 +261,42 @@ class CoreFinder(Model):
         with tf.GradientTape() as minimizer_tape, tf.GradientTape() as solver_tape:
             clauses_mask = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=True)
 
-            masked_adj_matrix = adj_matrix * clauses_mask
-            int_masked_adj_matrix = adj_matrix * tf.round(clauses_mask)
+            core_adj_matrix = adj_matrix * clauses_mask
+            core_int_adj_matrix = adj_matrix * clauses_mask
 
-            _, solver_loss, step = self.solver(masked_adj_matrix, int_masked_adj_matrix, clauses_graph, variables_graph, training=True)
+            _, core_loss, step = self.solver(core_adj_matrix, core_int_adj_matrix, clauses_graph, variables_graph, training=True)
+
+            # UNSAT minimizer has to return formulas where all sub-formulas are satisfiable
+            subcore_mask = tf.nn.dropout(clauses_mask, rate=0.5)  # TODO: Drop single non-zero (one clause) value from each graph
+            subcore_adj_matrix = adj_matrix * subcore_mask
+            subcore_int_adj_matrix = adj_matrix * subcore_mask
+
+            _, subcore_loss, step = self.solver(subcore_adj_matrix, subcore_int_adj_matrix, clauses_graph,
+                                                variables_graph, training=True)
 
             count_loss = tf.sparse.reduce_sum(clauses_graph * clauses_mask, axis=1)
-            minimizer_loss = -solver_loss + count_loss * 0.0001  # TODO: solver_loss should be per graph
-            minimizer_loss = tf.reduce_mean(minimizer_loss)
-            solver_loss = tf.reduce_mean(solver_loss)
+            minimizer_loss = tf.reduce_mean(-core_loss) + tf.reduce_mean(subcore_loss)
+            core_loss = tf.reduce_mean(core_loss) + tf.reduce_mean(subcore_loss)
 
         discretization_level = tf.abs(tf.round(clauses_mask) - clauses_mask)
-        discretization_level = tf.reduce_max(discretization_level)
+        discretization_level = tf.reduce_mean(discretization_level)
 
         count_set_clauses = tf.reduce_sum(tf.round(clauses_mask))
 
-        maker_vars = self.unsat_minimizer.trainable_variables
+        minimizer_vars = self.unsat_minimizer.trainable_variables
         solver_vars = self.solver.trainable_variables
 
-        minimizer_gradients = minimizer_tape.gradient(minimizer_loss, maker_vars)
-        solver_gradients = solver_tape.gradient(solver_loss, solver_vars)
+        minimizer_gradients = minimizer_tape.gradient(minimizer_loss, minimizer_vars)
+        solver_gradients = solver_tape.gradient(core_loss, solver_vars)
 
-        self.unsat_minimizer.optimizer.apply_gradients(zip(minimizer_gradients, maker_vars))
+        self.unsat_minimizer.optimizer.apply_gradients(zip(minimizer_gradients, minimizer_vars))
         self.solver.optimizer.apply_gradients(zip(solver_gradients, solver_vars))
 
         return {
             "steps_taken": step,
             "count_loss": count_loss,
             "minimizer_loss": minimizer_loss,
-            "solver_loss": solver_loss,
+            "solver_loss": core_loss,
             "minimizer_gradients": minimizer_gradients,
             "solver_gradients": solver_gradients,
             "discretization_level": discretization_level,
@@ -301,7 +314,8 @@ class CoreFinder(Model):
         masked_adj_matrix = adj_matrix * clauses_mask
         int_masked_adj_matrix = adj_matrix * tf.round(clauses_mask)
 
-        _, solver_loss, step = self.solver(masked_adj_matrix, int_masked_adj_matrix, clauses_graph, variables_graph, training=False)
+        last_logits, solver_loss, step = self.solver(masked_adj_matrix, int_masked_adj_matrix, clauses_graph,
+                                                     variables_graph, training=False)
 
         return {
             "steps_taken": step,

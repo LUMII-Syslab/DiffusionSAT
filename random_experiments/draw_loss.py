@@ -3,10 +3,10 @@ import tensorflow as tf
 from loss.sat import softplus_mixed_loss, softplus_loss
 
 if __name__ == '__main__':
-    clauses = tf.RaggedTensor.from_tensor([[-1, 2], [-1, -2], [1, -2], [-1, 2], [1, -2]])
+    clauses = tf.RaggedTensor.from_tensor([[1, -2], [-1, 2], [-2, -1], [1, 2]])
 
-    v1_all = [w/2 for w in range(-40, 40, 1)]
-    v2_all = [b/2 for b in range(-40, 40, 1)]
+    v1_all = [w / 2 for w in range(-40, 40, 1)]
+    v2_all = [b / 2 for b in range(-40, 40, 1)]
 
     loss_landscape = []
     for v2 in v2_all:

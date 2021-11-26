@@ -21,7 +21,7 @@ class DIMACDataset(Dataset):
     """ Base class for datasets that are based on DIMACS files.
     """
 
-    def __init__(self, data_dir, min_vars, max_vars, force_data_gen=False, max_nodes_per_batch=5000, shuffle_size=200, **kwargs) -> None:
+    def __init__(self, data_dir, min_vars, max_vars, force_data_gen=False, max_nodes_per_batch=700, shuffle_size=200, **kwargs) -> None:
         self.force_data_gen = force_data_gen
         self.data_dir = Path(data_dir) / self.__class__.__name__
         self.max_nodes_per_batch = max_nodes_per_batch
