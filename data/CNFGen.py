@@ -84,9 +84,8 @@ class UNSAT_3(KSAT):
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
 
-                dimacs = build_dimacs_file(iclauses, n_vars)
-
                 if n_vars > 200:
+                    dimacs = build_dimacs_file(iclauses, n_vars)
                     sat, solution = run_external_solver(dimacs)
                 else:
                     with Glucose4(bootstrap_with=iclauses) as solver:
