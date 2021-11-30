@@ -136,6 +136,13 @@ class SATSolver(Model):
         return last_logits, step, unsupervised_loss, clause_state, variables
 
 
+def sample_logistic(shape, eps=1e-5):
+    minval = eps
+    maxval = 1 - eps
+    sample = (minval - maxval) * tf.random.uniform(shape) + maxval
+    return tf.math.log(sample / (1 - sample))
+
+
 class UNSATMinimizer(Model):
 
     def __init__(self, optimizer: Optimizer,
@@ -234,12 +241,12 @@ class UNSATMinimizer(Model):
 
             # due to the loss at each level, gradients accumulate on the backward pass and may become very large for the first layers
             # reduce the gradient magnitude to remedy this
-            variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
-            clauses = tf.stop_gradient(clauses) * 0.2 + clauses * 0.
+            # variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
+            # clauses = tf.stop_gradient(clauses) * 0.2 + clauses * 0.8
 
         if training:
             clauses_mask = tf.sigmoid(
-                last_logits + tf.random.normal(tf.shape(last_logits), 0, 1))  # TODO: Better noise
+                last_logits + sample_logistic(tf.shape(last_logits)))
         else:
             clauses_mask = tf.sigmoid(last_logits)
 
@@ -275,6 +282,8 @@ class CoreFinder(Model):
             core_logits, core_loss, step = self.solver(core_adj_matrix, core_int_adj_matrix, core_clauses_graph,
                                                        core_variables_graph, training=True)
 
+            core_loss = tf.sparse.sparse_dense_matmul(core_clauses_graph, core_loss)
+
             # Remove one random clause, from core
             int_mask = tf.round(clauses_mask)
             noise = tf.random.uniform(tf.shape(int_mask)) * int_mask
@@ -301,18 +310,16 @@ class CoreFinder(Model):
                                                              subcore_clauses_graph,
                                                              subcore_variables_graph, training=True)
 
+            subcore_loss = tf.sparse.sparse_dense_matmul(subcore_clauses_graph, subcore_loss)
             count_loss = tf.sparse.reduce_sum(clauses_graph * clauses_mask, axis=1)
 
-            subcore_loss = tf.reduce_mean(subcore_loss)
-            core_loss = tf.reduce_mean(core_loss)
-
-            minimizer_loss = subcore_loss - core_loss
-            solver_loss = subcore_loss + core_loss
+            minimizer_loss = tf.reduce_sum(subcore_loss - core_loss)
+            solver_loss = tf.reduce_sum(subcore_loss + core_loss)
 
         discretization_level = tf.abs(tf.round(clauses_mask) - clauses_mask)
         discretization_level = tf.reduce_mean(discretization_level)
 
-        count_set_clauses = tf.reduce_sum(tf.round(clauses_mask))
+        count_set_clauses = tf.reduce_mean(tf.sparse.reduce_sum(clauses_graph * tf.round(clauses_mask), axis=1))
 
         minimizer_vars = self.unsat_minimizer.trainable_variables
         solver_vars = self.solver.trainable_variables
@@ -343,10 +350,17 @@ class CoreFinder(Model):
         clauses_mask = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=False)
 
         masked_adj_matrix = adj_matrix * clauses_mask
-        int_masked_adj_matrix = adj_matrix * tf.round(clauses_mask)
+        int_masked_adj_matrix = adj_matrix * clauses_mask
+        core_clauses_graph = clauses_graph * clauses_mask
 
-        last_logits, solver_loss, step = self.solver(masked_adj_matrix, int_masked_adj_matrix, clauses_graph,
-                                                     variables_graph, training=False)
+        variables_mask = tf.sparse.reduce_max(int_masked_adj_matrix, axis=1)
+        variables_mask = tf.stop_gradient(variables_mask)  # Workaround for no implementation of Sparse Max
+        v, not_v = tf.split(variables_mask, 2)
+        variables_mask = tf.maximum(v, not_v)
+        core_variables_graph = variables_graph * variables_mask
+
+        last_logits, solver_loss, step = self.solver(masked_adj_matrix, int_masked_adj_matrix, core_clauses_graph,
+                                                     core_variables_graph, training=False)
 
         return {
             "steps_taken": step,
