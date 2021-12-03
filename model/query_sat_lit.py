@@ -3,7 +3,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
 
 from layers.normalization import PairNorm
-from loss.sat import softplus_loss, unsat_clause_count, softplus_log_loss, softplus_mixed_loss
+from loss.sat import softplus_loss, unsat_clause_count, softplus_mixed_loss
 from model.mlp import MLP
 from utils.parameters_log import *
 

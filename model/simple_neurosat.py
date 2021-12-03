@@ -3,7 +3,7 @@ import math
 import tensorflow as tf
 from tensorflow.keras.models import Model
 
-from loss.sat import softplus_mixed_loss_adj, softplus_loss_adj
+from loss.sat import softplus_mixed_loss, softplus_loss
 from model.mlp import MLP
 from utils.parameters_log import *
 from utils.sat import is_batch_sat
@@ -73,7 +73,7 @@ class SimpleNeuroSAT(Model):
             # v1 = tf.concat([L, tf.random.normal([n_vars, 4])], axis=-1)
             query = self.variables_query(L)
             step_queries = step_queries.write(steps, query)
-            clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
+            clauses_loss = softplus_loss(query, cl_adj_matrix)
             # step_loss = tf.reduce_sum(clauses_loss)
 
             # variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query)) * self.G_scale
@@ -97,7 +97,7 @@ class SimpleNeuroSAT(Model):
             if is_sat == 1:
                 break
 
-            per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
+            per_clause_loss = softplus_mixed_loss(logits, cl_adj_matrix)
             per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
             loss += tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
 

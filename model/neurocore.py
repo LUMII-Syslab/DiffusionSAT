@@ -3,7 +3,7 @@ import math
 import tensorflow as tf
 from tensorflow.keras.models import Model
 
-from loss.sat import softplus_mixed_loss_adj
+from loss.sat import softplus_mixed_loss
 from model.mlp import MLP
 from utils.parameters_log import *
 from utils.sat import is_batch_sat
@@ -77,7 +77,7 @@ class NeuroCore(Model):
             if is_sat == 1:
                 break
 
-            per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
+            per_clause_loss = softplus_mixed_loss(logits, cl_adj_matrix)
             per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
             loss += tf.reduce_sum(tf.sqrt(per_graph_loss + 1e-6))
 

@@ -3,6 +3,7 @@ import itertools
 import time
 from pathlib import Path
 
+import keras.optimizers
 import numpy as np
 import tensorflow as tf
 from pysat.solvers import Glucose4
@@ -26,8 +27,12 @@ def main():
     #                                          warmup_proportion=Config.warmup)
     # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
 
-    optimizer_solver = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
-    optimizer_maker = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
+    # optimizer_solver = tf.keras.O(Config.learning_rate, beta_1=0.6, clip_gradients=True)
+    optimizer_solver = keras.optimizers.adam_v2.Adam(Config.learning_rate, beta_1=0.6)
+
+    # optimizer_maker = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
+    optimizer_maker = keras.optimizers.adam_v2.Adam(Config.learning_rate, beta_1=0.6)
+
     # optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)  # check for accuracy issues!
 
     model = ModelRegistry().resolve(Config.model)(optimizer_minimizer=optimizer_maker,
@@ -269,9 +274,9 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
             mean_discretization_res = mean_discretization.result()
             mean_set_clauses_res = mean_set_clauses.result()
             with writer.as_default():
-                tf.summary.scalar("loss_maker", loss_mean_maker, step=int(ckpt.step))
-                tf.summary.scalar("loss_solver", loss_mean_solver, step=int(ckpt.step))
-                tf.summary.scalar("clauses_loss", loss_clauses_count, step=int(ckpt.step))
+                tf.summary.scalar("models/unsat_finder", loss_mean_maker, step=int(ckpt.step))
+                tf.summary.scalar("models/sat_solver", loss_mean_solver, step=int(ckpt.step))
+                tf.summary.scalar("models/clauses_loss", loss_clauses_count, step=int(ckpt.step))
 
             print(
                 f"{int(ckpt.step)}. step;\tloss_minimizer: {loss_mean_maker:.5f};\tloss_count: {loss_clauses_count:.4f};"
@@ -285,14 +290,24 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
             mean_discretization.reset_states()
             mean_set_clauses.reset_states()
 
-            # with tf.name_scope("gradients"):
-            #     with writer.as_default():
-            #         for grd, var in zip(gradients, model.trainable_variables):
-            #             tf.summary.histogram(var.name, grd, step=int(ckpt.step))
-
-            with tf.name_scope("variables"):
+            with tf.name_scope("sat_solver_gradients"):
                 with writer.as_default():
-                    for var in model.trainable_variables:  # type: tf.Variable
+                    for grd, var in zip(model_output["solver_gradients"], model.solver.trainable_variables):
+                        tf.summary.histogram(var.name, grd, step=int(ckpt.step))
+
+            with tf.name_scope("unsat_finder_gradients"):
+                with writer.as_default():
+                    for grd, var in zip(model_output["minimizer_gradients"], model.unsat_minimizer.trainable_variables):
+                        tf.summary.histogram(var.name, grd, step=int(ckpt.step))
+
+            with tf.name_scope("sat_solver_variables"):
+                with writer.as_default():
+                    for var in model.solver.trainable_variables:  # type: tf.Variable
+                        tf.summary.histogram(var.name, var, step=int(ckpt.step))
+
+            with tf.name_scope("unsat_finder_variables"):
+                with writer.as_default():
+                    for var in model.unsat_minimizer.trainable_variables:  # type: tf.Variable
                         tf.summary.histogram(var.name, var, step=int(ckpt.step))
 
         if int(ckpt.step) % 1000 == 0:
@@ -414,6 +429,7 @@ def invariance_original(dataset, metrics, model, step_data):
 if __name__ == '__main__':
     config = Config.parse_config()
     tf.config.run_functions_eagerly(Config.eager)
+    # tf.debugging.enable_check_numerics()
 
     if Config.restore:
         print(f"Restoring model from last checkpoint in '{Config.restore}'!")

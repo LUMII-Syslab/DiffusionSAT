@@ -9,8 +9,6 @@ from data.mixed_sat import MixGraphSAT
 from data.sha_anf import ANF
 from data.tsp import EuclideanTSP
 from data.tsp_asymmetric import AsymmetricTSP
-from model.attention_sat import AttentionSAT
-from model.neuro_sat import NeuroSAT
 from model.neurocore import NeuroCore
 from model.query_sat import QuerySAT
 from model.query_sat_lit import QuerySATLit
@@ -45,10 +43,8 @@ class ModelRegistry(Registry):
     @property
     def registry(self) -> dict:
         return {
-            "attention_sat": AttentionSAT,
             "query_sat": QuerySAT,
             "query_sat_lit": QuerySATLit,
-            "neuro_sat": NeuroSAT,
             "query_unsat": CoreFinder,
             "tsp_matrix_se": TSPMatrixSE,
             "simple_neuro_sat": SimpleNeuroSAT,
