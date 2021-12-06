@@ -292,19 +292,19 @@ class CoreFinder(Model):
                                                        clauses_graph, variables_graph, training=True)
 
             # Sub-formulas of UNSAT core should be satisfiable
-            sub_formula_losses = []
-            for i in range(2):
-                clause_mask = self.generate_subcore_mask(clauses_graph, clauses_mask_sigmoid)
-                subformula_mask_sigmoid = clauses_mask_sigmoid * clause_mask
-                subformula_mask_softplus = clauses_mask_softplus * clause_mask
-                subcore_logits, subcore_loss, step = self.solver(adj_matrix, subformula_mask_sigmoid,
-                                                                 subformula_mask_softplus, clauses_graph,
-                                                                 variables_graph, training=True)
-
-                sub_formula_losses.append(subcore_loss)
-
-            subcore_total_loss = tf.stack(sub_formula_losses, axis=0)
-            subcore_total_loss = tf.reduce_mean(subcore_total_loss, axis=0)
+            # sub_formula_losses = []
+            # for i in range(10):
+            #     clause_mask = self.generate_subcore_mask(clauses_graph, clauses_mask_sigmoid)
+            #     subformula_mask_sigmoid = clauses_mask_sigmoid * clause_mask
+            #     subformula_mask_softplus = clauses_mask_softplus * clause_mask
+            #     subcore_logits, subcore_loss, step = self.solver(adj_matrix, subformula_mask_sigmoid,
+            #                                                      subformula_mask_softplus, clauses_graph,
+            #                                                      variables_graph, training=True)
+            #
+            #     sub_formula_losses.append(subcore_loss)
+            #
+            # subcore_total_loss = tf.stack(sub_formula_losses, axis=0)
+            # subcore_total_loss = tf.reduce_sum(subcore_total_loss, axis=0)
 
             # We want to find minimum (or minimal) UNSAT core
             count_loss = tf.sparse.reduce_sum(clauses_graph * clauses_mask_sigmoid, axis=1)
@@ -314,8 +314,8 @@ class CoreFinder(Model):
 
             # Loss for both networks
             minimizer_loss = unsat_cnf_loss(core_logits, masked_adj_matrix, masked_clauses_graph)
-            minimizer_loss = tf.reduce_mean(subcore_total_loss)
-            solver_loss = tf.reduce_mean(subcore_total_loss)
+            minimizer_loss = tf.reduce_mean(minimizer_loss + count_loss * 0.001)
+            solver_loss = tf.reduce_mean(core_loss)
 
         # Update weights of each network
         minimizer_gradients = minimizer_tape.gradient(minimizer_loss, self.unsat_minimizer.trainable_variables)

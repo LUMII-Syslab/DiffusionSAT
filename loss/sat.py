@@ -33,9 +33,10 @@ def unsat_cnf_clauses_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.Spars
 
 def unsat_cnf_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor, graph_clauses: tf.SparseTensor, eps=1e-5):
     clauses_val = unsat_cnf_clauses_loss(var_predictions, clauses_lit_adj, eps=eps)
-    clauses_val = -(tf.math.log(clauses_val + eps) - tf.math.log1p(eps))
+    clauses_val = tf.square(clauses_val)
+    clauses_val = tf.math.log(clauses_val + eps) - tf.math.log1p(eps)
     per_graph_value = tf.sparse.sparse_dense_matmul(graph_clauses, clauses_val)
-    return tf.exp(-per_graph_value)
+    return per_graph_value
 
 
 def softplus_mixed_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, eps=1e-8):
@@ -88,7 +89,7 @@ def linear_loss_adj(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor
 
 
 if __name__ == '__main__':
-    adj_matrix = tf.SparseTensor([[2, 0], [0, 1], [1, 1], [0, 2], [3, 2]], [1., 1., 1., 1., 1.], [4, 4])
+    adj_matrix = tf.SparseTensor([[2, 0], [2, 1], [1, 1], [0, 2], [3, 2]], [1., 1., 1., 1., 1.], [4, 4])
     logits = tf.constant([-20., -20.])
     logits = tf.expand_dims(logits, axis=-1)
 
