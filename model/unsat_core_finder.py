@@ -217,27 +217,17 @@ class UNSATMinimizer(Model):
         clauses_graph_norm = clauses_graph * tf.math.reciprocal_no_nan(
             tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True))
 
-        tf.debugging.check_numerics(variables_graph_norm.values, "variables_graph_norm")
-        tf.debugging.check_numerics(clauses_graph_norm.values, "clauses_graph_norm")
-
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
             with tf.GradientTape() as grad_tape:
                 # add some randomness to avoid zero collapse in normalization
-                tf.debugging.check_numerics(variables, "variables2")
-
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
-                tf.debugging.check_numerics(v1, "v1")
                 query = self.variables_query(v1)
-                tf.debugging.check_numerics(query, "query")
                 clauses_loss = unsat_cnf_clauses_loss(query, cl_adj_matrix)
                 step_loss = tf.reduce_sum(clauses_loss)
 
-                tf.debugging.check_numerics(clauses_loss, "clauses_loss")
-
             variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
             variables_grad = variables_grad * var_degree_weight
-            tf.debugging.check_numerics(variables_grad, "variables_grad")
             # calculate new clause state
             clauses_loss *= 4
 
@@ -259,8 +249,6 @@ class UNSATMinimizer(Model):
             new_variables = self.update_gate(unit)
             new_variables = self.variables_norm(new_variables, variables_graph_norm, training=training) * 0.25
             variables = new_variables + 0.1 * variables
-
-            tf.debugging.check_numerics(variables, "variables")
 
             # calculate logits and loss
             logits = self.clauses_output(clauses)
@@ -299,25 +287,24 @@ class CoreFinder(Model):
             clauses_mask_sigmoid, clauses_mask_softplus = self.unsat_minimizer(adj_matrix, clauses_graph,
                                                                                variables_graph,
                                                                                training=True)
-            tf.debugging.check_numerics(clauses_mask_sigmoid, "clauses_mask_sigmoid")
-            tf.debugging.check_numerics(clauses_mask_softplus, "clauses_mask_softplus")
 
             core_logits, core_loss, step = self.solver(adj_matrix, clauses_mask_sigmoid, clauses_mask_softplus,
                                                        clauses_graph, variables_graph, training=True)
 
-            tf.debugging.check_numerics(core_logits, "core_logits")
-
             # Sub-formulas of UNSAT core should be satisfiable
-            subcore_total_loss = 0
-            for i in range(4):
-                clause_mask = self.generate_clause_mask(clauses_graph, clauses_mask_sigmoid)
+            sub_formula_losses = []
+            for i in range(2):
+                clause_mask = self.generate_subcore_mask(clauses_graph, clauses_mask_sigmoid)
                 subformula_mask_sigmoid = clauses_mask_sigmoid * clause_mask
                 subformula_mask_softplus = clauses_mask_softplus * clause_mask
                 subcore_logits, subcore_loss, step = self.solver(adj_matrix, subformula_mask_sigmoid,
                                                                  subformula_mask_softplus, clauses_graph,
                                                                  variables_graph, training=True)
 
-                subcore_total_loss += subcore_loss
+                sub_formula_losses.append(subcore_loss)
+
+            subcore_total_loss = tf.stack(sub_formula_losses, axis=0)
+            subcore_total_loss = tf.reduce_mean(subcore_total_loss, axis=0)
 
             # We want to find minimum (or minimal) UNSAT core
             count_loss = tf.sparse.reduce_sum(clauses_graph * clauses_mask_sigmoid, axis=1)
@@ -327,8 +314,8 @@ class CoreFinder(Model):
 
             # Loss for both networks
             minimizer_loss = unsat_cnf_loss(core_logits, masked_adj_matrix, masked_clauses_graph)
-            minimizer_loss = tf.reduce_mean(minimizer_loss + subcore_total_loss)
-            solver_loss = tf.reduce_mean(core_loss + subcore_total_loss)
+            minimizer_loss = tf.reduce_mean(subcore_total_loss)
+            solver_loss = tf.reduce_mean(subcore_total_loss)
 
         # Update weights of each network
         minimizer_gradients = minimizer_tape.gradient(minimizer_loss, self.unsat_minimizer.trainable_variables)
@@ -360,7 +347,7 @@ class CoreFinder(Model):
         return discretization_level
 
     @staticmethod
-    def generate_clause_mask(clauses_graph, clauses_mask):
+    def generate_subcore_mask(clauses_graph, clauses_mask):
         """ Generates binary mask that masks single non-zero clause in each graph of the batch """
         int_mask = tf.round(clauses_mask)
         noise = tf.random.uniform(tf.shape(int_mask)) * int_mask
@@ -368,7 +355,7 @@ class CoreFinder(Model):
         max_val = tf.sparse.reduce_max(tf.sparse.transpose(clauses_graph) * max_val, axis=1)
         mask = -(noise - max_val) * int_mask
         mask = tf.not_equal(mask, 0)
-        return tf.cast(mask, tf.float32)
+        return 1 - tf.cast(mask, tf.float32)
 
     @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
