@@ -12,9 +12,9 @@ from data.tsp_asymmetric import AsymmetricTSP
 from model.neurocore import NeuroCore
 from model.query_sat import QuerySAT
 from model.query_sat_lit import QuerySATLit
-from model.unsat_core_finder import CoreFinder
 from model.simple_neurosat import SimpleNeuroSAT
 from model.tsp_matrix_se import TSPMatrixSE
+from model.unsat_core_finder import CoreFinder
 
 
 # from model.anf_sat import ANFSAT
@@ -31,7 +31,7 @@ class Registry:
         if name in self.registry:
             return self.registry.get(name)
 
-        raise ModuleNotFoundError(f"Model with name {name} is not registered!")
+        raise ModuleNotFoundError(f"Class with name {name} is not registered in {self.__class__.__name__}!")
 
     @property
     def registered_names(self):
@@ -53,7 +53,7 @@ class ModelRegistry(Registry):
         }
 
 
-class DatasetRegistry(Registry):
+class SATDatasetRegistry(Registry):
 
     @property
     def registry(self) -> dict:
@@ -61,7 +61,6 @@ class DatasetRegistry(Registry):
             "k_sat": KSAT,
             "k_color": KColor,
             "3-sat": SAT_3,
-            "3-unsat": UNSAT_3,
             "clique": Clique,
             "dominating_set": DomSet,
             "sha-gen": SHAGen,
@@ -71,4 +70,12 @@ class DatasetRegistry(Registry):
             "primes": PrimesGen,
             "mix_sat": MixGraphSAT,
             "sha-anf": ANF
+        }
+
+
+class UNSATDatasetRegistry(Registry):
+    @property
+    def registry(self) -> dict:
+        return {
+            "3-sat": UNSAT_3,
         }

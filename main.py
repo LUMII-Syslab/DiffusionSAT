@@ -14,7 +14,7 @@ from config import Config
 from data.dataset import Dataset
 from metrics.base import EmptyMetric
 from optimization.AdaBelief import AdaBeliefOptimizer
-from registry.registry import ModelRegistry, DatasetRegistry
+from registry.registry import ModelRegistry, SATDatasetRegistry, UNSATDatasetRegistry
 from utils.measure import Timer
 from utils.parameters_log import HP_TRAINABLE_PARAMS, HP_TASK
 from utils.sat import is_graph_sat
@@ -34,17 +34,21 @@ def main():
 
     model = ModelRegistry().resolve(Config.model)(optimizer_minimizer=optimizer_maker,
                                                   optimizer_solver=optimizer_solver)
-    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                     force_data_gen=Config.force_data_gen,
-                                                     input_mode=Config.input_mode)
+    dataset_unsat = UNSATDatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                                force_data_gen=Config.force_data_gen,
+                                                                input_mode=Config.input_mode)
+
+    dataset_sat = SATDatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                            force_data_gen=Config.force_data_gen,
+                                                            input_mode=Config.input_mode)
 
     ckpt, manager = prepare_checkpoints(model, optimizer_maker)
 
     if Config.train:
-        train(dataset, model, ckpt, manager)
+        train(dataset_unsat, model, ckpt, manager)
 
     if Config.evaluate:
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model,
+        test_metrics = evaluate_metrics(dataset_unsat, dataset_unsat.test_data(), model,
                                         print_progress=(Config.task == 'euclidean_tsp'))
         for metric in test_metrics:
             if Config.task == 'euclidean_tsp':
@@ -52,7 +56,7 @@ def main():
             metric.log_in_stdout()
 
     if Config.evaluate_round_gen:
-        evaluate_round_generalization(dataset, optimizer_maker)
+        evaluate_round_generalization(dataset_unsat, optimizer_maker)
 
     if Config.evaluate_batch_gen:
         evaluate_batch_generalization(model)
@@ -64,13 +68,13 @@ def main():
         evaluate_variable_generalization(model)
 
     if Config.test_invariance:
-        test_invariance(dataset, dataset.test_data(), model, 20)
+        test_invariance(dataset_unsat, dataset_unsat.test_data(), model, 20)
 
     if Config.test_classic_solver:
         variable_gen_classic_solver()
 
     if Config.test_cactus:
-        make_cactus(model, dataset)
+        make_cactus(model, dataset_unsat)
 
 
 def make_cactus(model: Model, dataset):
@@ -110,13 +114,13 @@ def evaluate_variable_generalization(model):
 
     for var_count in range(lower_limit, upper_limit, step):
         print(f"Generating dataset with var_count={var_count}")
-        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                         force_data_gen=Config.force_data_gen,
-                                                         input_mode=Config.input_mode,
-                                                         max_batch_size=20000,
-                                                         test_size=10,
-                                                         min_vars=var_count,
-                                                         max_vars=var_count)
+        dataset = SATDatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                            force_data_gen=Config.force_data_gen,
+                                                            input_mode=Config.input_mode,
+                                                            max_batch_size=20000,
+                                                            test_size=10,
+                                                            min_vars=var_count,
+                                                            max_vars=var_count)
 
         test_metrics = evaluate_metrics(dataset, dataset.test_data(), model)
         prepend_line = f"Results for dataset with var_count={var_count}:"
@@ -133,12 +137,12 @@ def variable_gen_classic_solver():
 
     for var_count in range(lower_limit, upper_limit, step):
         print(f"Generating dataset with min_vars={var_count} and max_vars={var_count + step}")
-        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                         force_data_gen=Config.force_data_gen,
-                                                         input_mode=Config.input_mode,
-                                                         max_nodes_per_batch=20000,
-                                                         min_vars=var_count,
-                                                         max_vars=var_count + step)
+        dataset = SATDatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                            force_data_gen=Config.force_data_gen,
+                                                            input_mode=Config.input_mode,
+                                                            max_nodes_per_batch=20000,
+                                                            min_vars=var_count,
+                                                            max_vars=var_count + step)
 
         total_time = evaluate_classic_solver(dataset.test_data(), steps=100)
         prepend_line = f"Results for dataset with min_vars={var_count} and max_vars={var_count + step} and elapsed_time={total_time:.2f}\n"
@@ -173,10 +177,10 @@ def evaluate_batch_generalization_training(model):
     # for SAT by default we train on max_batch_size=5000
     for batch_size in range(3000, 24000, 1000):
         print(f"Generating dataset with max_batch_size={batch_size}")
-        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                         force_data_gen=Config.force_data_gen,
-                                                         input_mode=Config.input_mode,
-                                                         max_nodes_per_batch=batch_size)
+        dataset = SATDatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                            force_data_gen=Config.force_data_gen,
+                                                            input_mode=Config.input_mode,
+                                                            max_nodes_per_batch=batch_size)
 
         iterator = itertools.islice(dataset.train_data(), 1)
         start_time = time.time()
@@ -198,10 +202,10 @@ def evaluate_batch_generalization(model):
     # for SAT by default we train on max_batch_size=5000
     for batch_size in range(3000, 24000, 1000):
         print(f"Generating dataset with max_batch_size={batch_size}")
-        dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                         force_data_gen=Config.force_data_gen,
-                                                         input_mode=Config.input_mode,
-                                                         max_nodes_per_batch=batch_size)
+        dataset = SATDatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                            force_data_gen=Config.force_data_gen,
+                                                            input_mode=Config.input_mode,
+                                                            max_nodes_per_batch=batch_size)
 
         iterator = itertools.islice(dataset.test_data(), 1)
 

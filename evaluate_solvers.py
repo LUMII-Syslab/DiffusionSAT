@@ -5,15 +5,15 @@ import time
 import tensorflow as tf
 
 from config import Config
-from registry.registry import DatasetRegistry
+from registry.registry import SATDatasetRegistry
 from utils.sat import walksat, build_dimacs_file
 from utils.visualization import create_cactus_data
 
 
 def test_walksat():
-    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                     force_data_gen=Config.force_data_gen,
-                                                     input_mode=Config.input_mode)
+    dataset = SATDatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                        force_data_gen=Config.force_data_gen,
+                                                        input_mode=Config.input_mode)
 
     solved = []
     var_count = []

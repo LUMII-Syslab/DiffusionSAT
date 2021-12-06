@@ -1,6 +1,6 @@
 import argparse
 
-from registry.registry import ModelRegistry, DatasetRegistry
+from registry.registry import ModelRegistry, SATDatasetRegistry
 
 
 class Config:
@@ -22,7 +22,7 @@ class Config:
     warmup = 0.0
     learning_rate = 0.0001
     model = 'query_unsat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
-    task = '3-unsat'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
+    task = '3-sat'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
 
     """Supported training and evaluation modes: """
@@ -72,7 +72,7 @@ class Config:
                                    choices=ModelRegistry().registered_names)
 
         config_parser.add_argument('--task', type=str, default=cls.task, const=cls.task, nargs='?',
-                                   choices=DatasetRegistry().registered_names)
+                                   choices=SATDatasetRegistry().registered_names)
 
         config_parser.add_argument('--input_mode', type=str, default=cls.input_mode, const=cls.input_mode, nargs='?',
                                    choices=['variables', 'literals'])

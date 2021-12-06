@@ -11,7 +11,7 @@ from config import Config
 from data.dataset import Dataset
 from metrics.base import EmptyMetric
 from optimization.AdaBelief import AdaBeliefOptimizer
-from registry.registry import ModelRegistry, DatasetRegistry
+from registry.registry import ModelRegistry, SATDatasetRegistry
 from utils.measure import Timer
 import numpy as np
 
@@ -64,10 +64,10 @@ def prepare_model(trial: optuna.Trial, train_dir):
     batch_size = 10000
 
     model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, trial=trial)
-    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                     max_nodes_per_batch=batch_size,
-                                                     force_data_gen=Config.force_data_gen,
-                                                     input_mode=Config.input_mode)
+    dataset = SATDatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
+                                                        max_nodes_per_batch=batch_size,
+                                                        force_data_gen=Config.force_data_gen,
+                                                        input_mode=Config.input_mode)
 
     ckpt, manager = prepare_checkpoints(train_dir, model, optimizer)
     return dataset, model, ckpt, manager

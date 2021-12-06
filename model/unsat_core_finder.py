@@ -327,8 +327,8 @@ class CoreFinder(Model):
 
             # Loss for both networks
             minimizer_loss = unsat_cnf_loss(core_logits, masked_adj_matrix, masked_clauses_graph)
-            minimizer_loss = tf.reduce_mean(minimizer_loss)
-            solver_loss = tf.reduce_mean(core_loss)
+            minimizer_loss = tf.reduce_mean(minimizer_loss + subcore_total_loss)
+            solver_loss = tf.reduce_mean(core_loss + subcore_total_loss)
 
         # Update weights of each network
         minimizer_gradients = minimizer_tape.gradient(minimizer_loss, self.unsat_minimizer.trainable_variables)
