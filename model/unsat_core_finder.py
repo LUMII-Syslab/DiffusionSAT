@@ -271,10 +271,7 @@ class UNSATMinimizer(Model):
             variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
             clauses = tf.stop_gradient(clauses) * 0.2 + clauses * 0.8
 
-        if training:
-            last_logits = tf.reduce_mean(step_outputs.stack(), axis=0)
-        else:
-            last_logits = step_outputs.stack()[-1, :, :]
+        last_logits = tf.reduce_mean(step_outputs.stack(), axis=0)
 
         if training:
             last_logits += sample_logistic(tf.shape(last_logits))
@@ -379,12 +376,12 @@ class CoreFinder(Model):
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
                                   ])
     def predict_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
-        clauses_mask, _ = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=False)
+        clauses_mask_sigmoid, _ = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=False)
 
         return {
             "steps_taken": tf.zeros([1]),
             "loss": tf.zeros([1]),
-            "unsat_core": clauses_mask
+            "unsat_core": clauses_mask_sigmoid
         }
 
     def get_config(self):

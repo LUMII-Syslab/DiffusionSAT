@@ -37,7 +37,7 @@ def unsat_cnf_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor,
     clauses_val = unsat_cnf_clauses_loss(var_predictions, clauses_lit_adj)
     clauses_val = tf.math.log(clauses_val + eps) - tf.math.log1p(eps)  # TODO: Thing if can avoid taking log
     per_graph_value = tf.sparse.sparse_dense_matmul(graph_clauses, clauses_val)
-    return tf.exp(per_graph_value)
+    return per_graph_value
 
 
 def softplus_mixed_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, eps=1e-8):
