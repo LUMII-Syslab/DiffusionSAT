@@ -58,12 +58,15 @@ class UNSAT_3(KSAT):
     """ Dataset with random UNSAT 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
 
-    def __init__(self, data_dir, min_vars=5, max_vars=5, force_data_gen=False, **kwargs) -> None:
-        super(UNSAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
+    def __init__(self, data_dir, min_vars=5, max_vars=5, force_data_gen=False, input_mode='variables',
+                 **kwargs) -> None:
+        super(UNSAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
+                                      **kwargs)
         self.train_size = 100000
         self.test_size = 10000
         self.min_vars = min_vars
         self.max_vars = max_vars
+        self.filter = self.__prepare_filter(input_mode)
 
     def train_generator(self) -> tuple:
         return self._generator(self.train_size)
@@ -97,6 +100,30 @@ class UNSAT_3(KSAT):
 
     def metrics(self, initial=False) -> list:
         return [UNSATAccuracyTF(), StepStatistics()]
+
+    def filter_model_inputs(self, step_data) -> dict:
+        return self.filter(step_data)
+
+    def __prepare_filter(self, input_mode):
+        if input_mode == "variables":
+            return lambda step_data: {
+                "unsat_adj_matrix_pos": step_data["adjacency_matrix_pos"],
+                "unsat_adj_matrix_neg": step_data["adjacency_matrix_neg"],
+                "unsat_clauses_graph": step_data["clauses_graph_adj"],
+                "unsat_variables_graph": step_data["variables_graph_adj"],
+                "unsat_solutions": step_data["solutions"]
+            }
+        elif input_mode == "literals":
+            return lambda step_data: {
+                "unsat_adj_matrix": step_data["adjacency_matrix"],
+                "unsat_clauses_graph": step_data["clauses_graph_adj"],
+                "unsat_variables_graph": step_data["variables_graph_adj"],
+                "unsat_solutions": step_data["solutions"]
+            }
+        else:
+            raise NotImplementedError(
+                f"{input_mode} is not registered. Available modes \"literals\" or \"variables\"")
+
 
 class Clique(KSAT):
     """ Dataset with random sat instances from triangle detection in graphs.

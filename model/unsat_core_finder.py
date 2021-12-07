@@ -47,9 +47,10 @@ class SATSolver(Model):
         n_vars = shape[0] // 2
         n_clauses = shape[1]
 
-        adj_matrix = adj_matrix * clauses_mask_sigmoid
-        clauses_graph = clauses_graph * clauses_mask_sigmoid
-        variables_graph = self.mask_variables_graph(adj_matrix, variables_graph, clauses_mask_softplus)
+        if clauses_mask_sigmoid is not None and clauses_mask_softplus is not None:
+            adj_matrix = adj_matrix * clauses_mask_sigmoid
+            clauses_graph = clauses_graph * clauses_mask_sigmoid
+            variables_graph = self.mask_variables_graph(adj_matrix, variables_graph, clauses_mask_softplus)
 
         variables = tf.ones([n_vars, self.feature_maps])
         clause_state = tf.ones([n_clauses, self.feature_maps])
@@ -277,19 +278,28 @@ class CoreFinder(Model):
         self.unsat_minimizer = UNSATMinimizer(optimizer_minimizer)
         self.solver = SATSolver(optimizer_solver)
 
-    @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),  # TODO: Also SAT instances
+    @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
                                   ])
-    def train_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
+    def train_step(self, unsat_adj_matrix, unsat_clauses_graph, unsat_variables_graph, unsat_solutions,
+                   adj_matrix, clauses_graph, variables_graph, solutions):
         with tf.GradientTape() as minimizer_tape, tf.GradientTape() as solver_tape:
-            clauses_mask_sigmoid, clauses_mask_softplus = self.unsat_minimizer(adj_matrix, clauses_graph,
-                                                                               variables_graph,
-                                                                               training=True)
+            clauses_mask_sigmoid, clauses_mask_softplus = self.unsat_minimizer(unsat_adj_matrix, unsat_clauses_graph,
+                                                                               unsat_variables_graph, training=True)
 
-            core_logits, core_loss, step = self.solver(adj_matrix, clauses_mask_sigmoid, clauses_mask_softplus,
-                                                       clauses_graph, variables_graph, training=True)
+            core_logits, core_loss, step = self.solver(unsat_adj_matrix, clauses_mask_sigmoid, clauses_mask_softplus,
+                                                       unsat_clauses_graph, unsat_variables_graph, training=True)
+
+            # TODO: In theory, any subset of SAT formula should be SAT
+            # TODO: How to train the second network
+            sat_logits, sat_loss, sat_steps = self.solver(adj_matrix, clauses_graph=clauses_graph,
+                                                          variables_graph=variables_graph, training=True)
 
             # Sub-formulas of UNSAT core should be satisfiable
             # sub_formula_losses = []
@@ -307,15 +317,15 @@ class CoreFinder(Model):
             # subcore_total_loss = tf.reduce_sum(subcore_total_loss, axis=0)
 
             # We want to find minimum (or minimal) UNSAT core
-            count_loss = tf.sparse.reduce_sum(clauses_graph * clauses_mask_sigmoid, axis=1)
+            count_loss = tf.sparse.reduce_sum(unsat_clauses_graph * clauses_mask_sigmoid, axis=1)
 
-            masked_adj_matrix = tf.sparse.transpose(adj_matrix * clauses_mask_sigmoid)
-            masked_clauses_graph = clauses_graph * clauses_mask_sigmoid
+            masked_adj_matrix = tf.sparse.transpose(unsat_adj_matrix * clauses_mask_sigmoid)
+            masked_clauses_graph = unsat_clauses_graph * clauses_mask_sigmoid
 
             # Loss for both networks
             minimizer_loss = unsat_cnf_loss(core_logits, masked_adj_matrix, masked_clauses_graph)
-            minimizer_loss = tf.reduce_mean(minimizer_loss + count_loss * 0.001)
-            solver_loss = tf.reduce_mean(core_loss)
+            minimizer_loss = tf.reduce_mean(minimizer_loss)
+            solver_loss = tf.reduce_mean(core_loss) + tf.reduce_mean(sat_loss)
 
         # Update weights of each network
         minimizer_gradients = minimizer_tape.gradient(minimizer_loss, self.unsat_minimizer.trainable_variables)
@@ -327,7 +337,7 @@ class CoreFinder(Model):
 
         # Additional metrics
         discr_level = self.discretization_level(clauses_mask_sigmoid)
-        count_set_clauses = tf.reduce_mean(tf.sparse.reduce_sum(clauses_graph * tf.round(clauses_mask_sigmoid), axis=1))
+        count_set_clauses = tf.reduce_mean(tf.sparse.reduce_sum(unsat_clauses_graph * tf.round(clauses_mask_sigmoid), axis=1))
 
         return {
             "steps_taken": step,
@@ -362,8 +372,9 @@ class CoreFinder(Model):
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
                                   ])
-    def predict_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
-        clauses_mask_sigmoid, _ = self.unsat_minimizer(adj_matrix, clauses_graph, variables_graph, training=False)
+    def predict_step(self, unsat_adj_matrix, unsat_clauses_graph, unsat_variables_graph, unsat_solutions):
+        clauses_mask_sigmoid, _ = self.unsat_minimizer(unsat_adj_matrix, unsat_clauses_graph, unsat_variables_graph,
+                                                       training=False)
 
         return {
             "steps_taken": tf.zeros([1]),

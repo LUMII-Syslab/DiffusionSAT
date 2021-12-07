@@ -45,7 +45,7 @@ def main():
     ckpt, manager = prepare_checkpoints(model, optimizer_maker)
 
     if Config.train:
-        train(dataset_unsat, model, ckpt, manager)
+        train(dataset_unsat, dataset_sat, model, ckpt, manager)
 
     if Config.evaluate:
         test_metrics = evaluate_metrics(dataset_unsat, dataset_unsat.test_data(), model,
@@ -239,7 +239,7 @@ def evaluate_round_generalization(dataset, optimizer):
             metric.log_in_file(str(results_file), prepend_str=message)
 
 
-def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
+def train(unsat_dataset: Dataset, sat_dataset: Dataset, model: Model, ckpt, ckpt_manager):
     writer = tf.summary.create_file_writer(Config.train_dir)
     writer.set_as_default()
 
@@ -249,16 +249,19 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     mean_discretization = tf.metrics.Mean()
     mean_set_clauses = tf.metrics.Mean()
     timer = Timer(start_now=True)
-    validation_data = dataset.validation_data()
-    train_data = dataset.train_data()
+    validation_data_unsat = unsat_dataset.validation_data()
+    train_data_unsat = unsat_dataset.train_data()
+
+    train_data_sat = sat_dataset.train_data()
 
     # TODO: Check against step in checkpoint
-    for step_data in itertools.islice(train_data, Config.train_steps + 1):
+    for unsat_step_data, sat_step_data in itertools.islice(zip(train_data_unsat, train_data_sat), Config.train_steps + 1):
         tf.summary.experimental.set_step(ckpt.step)
 
-        model_data = dataset.filter_model_inputs(step_data)
+        unsat_model_data = unsat_dataset.filter_model_inputs(unsat_step_data)
+        sat_model_data = sat_dataset.filter_model_inputs(sat_step_data)
 
-        model_output = model.train_step(**model_data)
+        model_output = model.train_step(**{**unsat_model_data, **sat_model_data})
         maker_loss, maker_gradients = model_output["minimizer_loss"], model_output["minimizer_gradients"]
         solver_loss, solver_gradients = model_output["solver_loss"], model_output["solver_gradients"]
 
@@ -315,12 +318,12 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
             n_eval_steps = 100
             if Config.task == 'euclidean_tsp' or Config.task == 'asymmetric_tsp':  # TODO: Make it similar to metrics
                 n_eval_steps = 1
-                iterator = itertools.islice(validation_data, 1)
+                iterator = itertools.islice(validation_data_unsat, 1)
                 for visualization_step_data in iterator:
-                    model_input = dataset.filter_model_inputs(visualization_step_data)
+                    model_input = unsat_dataset.filter_model_inputs(visualization_step_data)
                     model.log_visualizations(**model_input)
 
-            metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps,
+            metrics = evaluate_metrics(unsat_dataset, validation_data_unsat, model, steps=n_eval_steps,
                                        initial=(int(ckpt.step) == 0))
 
             for metric in metrics:
@@ -328,7 +331,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                 metric.log_in_stdout(step=int(ckpt.step))
 
             hparams = model.get_config()
-            hparams[HP_TASK] = dataset.__class__.__name__
+            hparams[HP_TASK] = unsat_dataset.__class__.__name__
             hparams[HP_TRAINABLE_PARAMS] = np.sum([np.prod(v.shape) for v in model.trainable_variables])
             hp.hparams(hparams)
 
