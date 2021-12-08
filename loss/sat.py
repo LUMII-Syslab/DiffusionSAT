@@ -33,7 +33,6 @@ def unsat_cnf_clauses_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.Spars
 
 def unsat_cnf_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor, graph_clauses: tf.SparseTensor, eps=1e-5):
     clauses_val = unsat_cnf_clauses_loss(var_predictions, clauses_lit_adj, eps=eps)
-    clauses_val = tf.square(clauses_val)
     clauses_val = tf.math.log(clauses_val + eps) - tf.math.log1p(eps)
     per_graph_value = tf.sparse.sparse_dense_matmul(graph_clauses, clauses_val)
     return per_graph_value
