@@ -9,6 +9,7 @@ from utils.parameters_log import *
 from utils.sat import is_batch_sat
 
 import tensorflow_probability as tfp
+from tensorflow_probability.python.distributions import Beta
 
 
 class SATSolver(Model):
@@ -42,15 +43,11 @@ class SATSolver(Model):
         variables_mask = 1 - tf.exp(-(v + not_v))
         return variables_graph * variables_mask
 
-    def call(self, adj_matrix, clauses_mask_sigmoid=None, clauses_graph=None, variables_graph=None, training=None, mask=None):
-
+    def call(self, adj_matrix, clauses_mask_sigmoid=None, clauses_graph=None, variables_graph=None, training=None,
+             mask=None, logging_name=None):
         shape = tf.shape(adj_matrix)
         n_vars = shape[0] // 2
         n_clauses = shape[1]
-
-        if clauses_mask_sigmoid is not None:
-            adj_matrix = adj_matrix * clauses_mask_sigmoid
-            clauses_graph = clauses_graph * clauses_mask_sigmoid
 
         variables = tf.ones([n_vars, self.feature_maps])
         clause_state = tf.ones([n_clauses, self.feature_maps])
@@ -63,20 +60,23 @@ class SATSolver(Model):
                                                                                   rounds,
                                                                                   training,
                                                                                   variables,
-                                                                                  variables_graph)
+                                                                                  variables_graph,
+                                                                                  tf.expand_dims(clauses_mask_sigmoid,
+                                                                                                 axis=-1))
 
         if training:
-            last_clauses = softplus_loss(last_logits, tf.sparse.transpose(adj_matrix))
-            tf.summary.histogram("clauses", last_clauses)
-            last_layer_loss = tf.reduce_sum(softplus_mixed_loss(last_logits, tf.sparse.transpose(adj_matrix)))
-            tf.summary.histogram("logits", last_logits)
-            tf.summary.scalar("last_layer_loss", last_layer_loss)
+            last_clauses = softplus_loss(last_logits, tf.sparse.transpose(adj_matrix), clauses_mask_sigmoid)
+            tf.summary.histogram(f"{logging_name}/clauses", last_clauses)
+            last_layer_loss = tf.reduce_sum(
+                softplus_mixed_loss(last_logits, tf.sparse.transpose(adj_matrix), clauses_mask_sigmoid))
+            tf.summary.histogram(f"{logging_name}/logits", last_logits)
+            tf.summary.scalar(f"{logging_name}/last_layer_loss", last_layer_loss)
 
-            tf.summary.scalar("steps_taken", step)
+            tf.summary.scalar(f"{logging_name}/steps_taken", step)
 
         return last_logits, unsupervised_loss, step
 
-    def loop(self, adj_matrix, clause_state, clauses_graph, rounds, training, variables, variables_graph):
+    def loop(self, adj_matrix, clause_state, clauses_graph, rounds, training, variables, variables_graph, clauses_mask):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
         shape = tf.shape(adj_matrix)
@@ -100,7 +100,7 @@ class SATSolver(Model):
                 # add some randomness to avoid zero collapse in normalization
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
                 query = self.variables_query(v1)
-                clauses_loss = softplus_loss(query, cl_adj_matrix)
+                clauses_loss = softplus_loss(query, cl_adj_matrix, clauses_mask)
                 step_loss = tf.reduce_sum(clauses_loss)
 
             variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
@@ -108,7 +108,7 @@ class SATSolver(Model):
             # calculate new clause state
             clauses_loss *= 4
 
-            clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
+            clause_unit = tf.concat([clause_state, clauses_loss], axis=-1) * clauses_mask
             clause_data = self.clause_mlp(clause_unit, training=training)
 
             variables_loss_all = clause_data[:, 0:self.query_maps]
@@ -129,7 +129,7 @@ class SATSolver(Model):
 
             # calculate logits and loss
             logits = self.variables_output(variables)
-            per_clause_loss = softplus_mixed_loss(logits, tf.sparse.map_values(tf.round, cl_adj_matrix))
+            per_clause_loss = softplus_mixed_loss(logits, tf.sparse.map_values(tf.round, cl_adj_matrix), clauses_mask)
             per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
             per_graph_loss = tf.sqrt(per_graph_loss + 1e-6) - tf.sqrt(1e-6)
 
@@ -175,6 +175,7 @@ class UNSATMinimizer(Model):
         self.update_gate = MLP(3, feature_maps * 2, feature_maps, name="update_gate")
         self.clauses_output = MLP(2, feature_maps, self.logit_maps, name="clauses_mask_output")
         self.variables_query = MLP(2, query_maps, query_maps, name="variables_query")
+        self.clauses_query = MLP(2, query_maps, query_maps, name="clauses_query")
         self.clause_mlp = MLP(2, feature_maps * 2, feature_maps + 1 * query_maps, name="clause_update")
 
         self.feature_maps = feature_maps
@@ -223,11 +224,13 @@ class UNSATMinimizer(Model):
             with tf.GradientTape() as grad_tape:
                 # add some randomness to avoid zero collapse in normalization
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
-                query = self.variables_query(v1)
-                clauses_loss = unsat_cnf_clauses_loss(query, cl_adj_matrix)
+                v2 = tf.concat([clauses, tf.random.normal([n_clauses, 3])], axis=-1)
+                variables_query = self.variables_query(v1)
+                clauses_query = self.clauses_query(v2)
+                clauses_loss = unsat_cnf_clauses_loss(variables_query, cl_adj_matrix, clauses_query)
                 step_loss = tf.reduce_sum(clauses_loss)
 
-            variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
+            variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, variables_query))
             variables_grad = variables_grad * var_degree_weight
             # calculate new clause state
             clauses_loss *= 4
@@ -257,10 +260,10 @@ class UNSATMinimizer(Model):
 
             # due to the loss at each level, gradients accumulate on the backward pass and may become very large for the first layers
             # reduce the gradient magnitude to remedy this
-            variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
-            clauses = tf.stop_gradient(clauses) * 0.2 + clauses * 0.8
+            # variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
+            # clauses = tf.stop_gradient(clauses) * 0.2 + clauses * 0.8
 
-        last_logits = tf.reduce_mean(step_outputs.stack(), axis=0)
+        last_logits = step_outputs.stack()[-1, :, :]
 
         if training:
             last_logits += sample_logistic(tf.shape(last_logits))
@@ -293,35 +296,43 @@ class CoreFinder(Model):
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
-                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
+                                  tf.TensorSpec(shape=(), dtype=tf.bool)
                                   ])
     def train_step(self, unsat_adj_matrix, unsat_clauses_graph, unsat_variables_graph, unsat_solutions,
-                   adj_matrix, clauses_graph, variables_graph, solutions):
+                   adj_matrix, clauses_graph, variables_graph, solutions, train_solver=True):
         with tf.GradientTape() as minimizer_tape, tf.GradientTape() as solver_tape:
             clauses_mask_sigmoid, clauses_mask_softplus = self.unsat_minimizer(unsat_adj_matrix, unsat_clauses_graph,
                                                                                unsat_variables_graph, training=True)
 
+            tf.summary.histogram("UNSATMinimizer/clauses_mask_sigmoid", clauses_mask_sigmoid)
             core_logits, core_loss, step = self.solver(unsat_adj_matrix, clauses_mask_sigmoid, unsat_clauses_graph,
-                                                       unsat_variables_graph, training=True)
+                                                       unsat_variables_graph, training=True, logging_name="core_sat")
 
             mean = tf.reduce_mean(clauses_mask_sigmoid)
-            stddev = tfp.stats.stddev(clauses_mask_sigmoid)
+            variance = tfp.stats.variance(clauses_mask_sigmoid)
+            v = mean * (1 - mean) * tf.math.reciprocal_no_nan(variance) - 1
+            alpha = mean * v
+            beta = (1 - mean) * v
+
             shape = tf.shape(adj_matrix)
-            clauses_noise = tf.random.normal([shape[1]], mean, stddev)
-            clauses_noise = tf.clip_by_value(clauses_noise, 0, 1)
+            clauses_noise = Beta(alpha, beta).sample([shape[1]])
+            tf.summary.histogram("UNSATMinimizer/random_clauses_mask", clauses_noise)
+
             sat_logits, sat_loss, sat_steps = self.solver(adj_matrix, clauses_mask_sigmoid=clauses_noise,
                                                           clauses_graph=clauses_graph,
-                                                          variables_graph=variables_graph, training=True)
+                                                          variables_graph=variables_graph, training=True,
+                                                          logging_name="sat")
 
             # Sub-formulas of UNSAT core should be satisfiable
             # sub_formula_losses = []
             # for i in range(1):
             #     clause_mask = self.generate_subcore_mask(unsat_clauses_graph, clauses_mask_sigmoid)
             #     subformula_mask_sigmoid = clauses_mask_sigmoid * clause_mask
-            #     subformula_mask_softplus = clauses_mask_softplus * clause_mask
+            #     # subformula_mask_softplus = clauses_mask_softplus * clause_mask
             #     subcore_logits, subcore_loss, step = self.solver(unsat_adj_matrix, subformula_mask_sigmoid,
-            #                                                      subformula_mask_softplus, unsat_clauses_graph,
-            #                                                      unsat_variables_graph, training=True)
+            #                                                      unsat_clauses_graph, unsat_variables_graph,
+            #                                                      training=True)
             #
             #     sub_formula_losses.append(subcore_loss)
             #
@@ -331,15 +342,16 @@ class CoreFinder(Model):
             # We want to find minimum (or minimal) UNSAT core
             count_loss = tf.sparse.reduce_sum(unsat_clauses_graph * clauses_mask_sigmoid, axis=1)
 
-            masked_adj_matrix = tf.sparse.transpose(unsat_adj_matrix * clauses_mask_sigmoid)
-            masked_adj_matrix = tf.sparse.map_values(tf.round, masked_adj_matrix)
-            masked_clauses_graph = unsat_clauses_graph * clauses_mask_sigmoid
-            masked_clauses_graph = tf.sparse.map_values(tf.round, masked_clauses_graph)
+            cl_adj_matrix = tf.sparse.transpose(unsat_adj_matrix)
+            # masked_adj_matrix = tf.sparse.map_values(tf.round, masked_adj_matrix)
+            # masked_clauses_graph = unsat_clauses_graph * clauses_mask_sigmoid
+            # masked_clauses_graph = tf.s parse.map_values(tf.round, masked_clauses_graph)
 
             # Loss for both networks
-            unsat_loss = unsat_cnf_loss(core_logits, masked_adj_matrix, masked_clauses_graph)
-            minimizer_loss = tf.reduce_mean(unsat_loss)  # + tf.sqrt(tf.reduce_mean(count_loss)) * 0.001
-            solver_loss = tf.reduce_mean(sat_loss) + tf.reduce_mean(core_loss)  # + tf.reduce_mean(subcore_total_loss))
+            unsat_loss = unsat_cnf_loss(core_logits, cl_adj_matrix, unsat_clauses_graph,
+                                        tf.expand_dims(clauses_mask_sigmoid, axis=-1))
+            minimizer_loss = tf.reduce_mean(unsat_loss)
+            solver_loss = tf.reduce_mean(sat_loss)
 
             tf.summary.scalar("finder/unsat_loss", tf.reduce_mean(unsat_loss))
 
@@ -350,8 +362,10 @@ class CoreFinder(Model):
         minimizer_gradients = minimizer_tape.gradient(minimizer_loss, self.unsat_minimizer.trainable_variables)
         solver_gradients = solver_tape.gradient(solver_loss, self.solver.trainable_variables)
 
-        self.unsat_minimizer.optimizer.apply_gradients(
-            zip(minimizer_gradients, self.unsat_minimizer.trainable_variables))
+        if train_solver:
+            self.unsat_minimizer.optimizer.apply_gradients(
+                zip(minimizer_gradients, self.unsat_minimizer.trainable_variables))
+
         self.solver.optimizer.apply_gradients(zip(solver_gradients, self.solver.trainable_variables))
 
         # Additional metrics

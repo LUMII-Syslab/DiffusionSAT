@@ -26,30 +26,35 @@ def unsat_clause_count(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor
     return tf.math.reduce_sum(varsum)  # count not satisfied ones
 
 
-def unsat_cnf_clauses_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor, eps=1e-5):
-    clauses_val = softplus_loss(var_predictions, clauses_lit_adj)
+def unsat_cnf_clauses_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor, clauses_mask: tf.Tensor, eps=1e-5):
+    clauses_val = softplus_loss(var_predictions, clauses_lit_adj, clauses_mask)
     return 1 - clauses_val
 
 
-def unsat_cnf_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor, graph_clauses: tf.SparseTensor, eps=1e-5):
-    clauses_val = unsat_cnf_clauses_loss(var_predictions, clauses_lit_adj, eps=eps)
+def unsat_cnf_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor, graph_clauses: tf.SparseTensor, clauses_mask: tf.Tensor, eps=1e-5):
+    clauses_val = unsat_cnf_clauses_loss(var_predictions, clauses_lit_adj, clauses_mask, eps=eps)
     clauses_val = tf.math.log(clauses_val + eps) - tf.math.log1p(eps)
+
     per_graph_value = tf.sparse.sparse_dense_matmul(graph_clauses, clauses_val)
-    return per_graph_value
+    clauses_count = tf.sparse.reduce_sum(graph_clauses * (1 - tf.squeeze(clauses_mask, axis=-1)), axis=1)
+    total_count = tf.sparse.reduce_sum(graph_clauses, axis=1)
+    clauses_count = 1 + clauses_count / total_count
+
+    return tf.exp(per_graph_value * clauses_count)
 
 
-def softplus_mixed_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, eps=1e-8):
+def softplus_mixed_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, clauses_mask: tf.Tensor, eps=1e-8):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
     :param clauses: RaggedTensor of input clauses in DIMAC format
     :return: returns per clause loss which is log_loss multiplied with linear loss
     """
-    clauses_val = softplus_loss(variable_predictions, adj_matrix)
+    clauses_val = softplus_loss(variable_predictions, adj_matrix, clauses_mask)
     log_clauses = -(tf.math.log(1 - clauses_val + eps) - tf.math.log1p(eps))
-    return clauses_val * log_clauses
+    return log_clauses
 
 
-def softplus_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, power=1.):
+def softplus_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, clauses_mask: tf.Tensor, power=1.):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
     :param adj_matrix: Sparse tensor with dense shape literals x clauses
@@ -59,11 +64,7 @@ def softplus_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, 
     literals = tf.concat([variable_predictions, -variable_predictions], axis=0)
     literals = tf.nn.softplus(literals)
     clauses_val2 = tf.sparse.sparse_dense_matmul(adj_matrix, literals)  # Empty clauses should be handled as satisfied
-
-    not_empty_clause = tf.sparse.reduce_max(adj_matrix, axis=1, keepdims=True)
-    not_empty_clause = tf.stop_gradient(not_empty_clause)  # Avoids tensorflow warnings
-    clauses_val = tf.exp(-clauses_val2 * power) * not_empty_clause
-    clauses_val = tf.ensure_shape(clauses_val, clauses_val2.shape)
+    clauses_val = tf.exp(-clauses_val2 * power) * clauses_mask
 
     return clauses_val
 
@@ -88,15 +89,15 @@ def linear_loss_adj(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor
 
 
 if __name__ == '__main__':
-    adj_matrix = tf.SparseTensor([[2, 0], [2, 1], [1, 1], [0, 2], [3, 2]], [1., 1., 1., 1., 1.], [4, 4])
-    logits = tf.constant([-20., -20.])
+    adj_matrix = tf.SparseTensor([[2, 0], [0, 1], [1, 1], [0, 2], [3, 2]], [1., 1., 1., 1., 1.], [4, 3])
+    logits = tf.constant([20., -20.])
     logits = tf.expand_dims(logits, axis=-1)
 
-    graph_constr = tf.SparseTensor([[0, 0], [0, 1], [0, 2]], [1., 1., 1.], [1, 4])
-    rez = unsat_cnf_loss(logits, tf.sparse.transpose(adj_matrix), graph_constr)
+    graph_constr = tf.SparseTensor([[0, 0], [0, 1], [0, 2]], [1., 1., 1.], [1, 3])
+    rez = unsat_cnf_loss(logits, tf.sparse.transpose(adj_matrix), graph_constr, tf.constant([[1.], [1.], [1.]]))
     print(rez)
-    rez = unsat_cnf_clauses_loss(logits, tf.sparse.transpose(adj_matrix))
-    print(rez)
+    # rez = unsat_cnf_clauses_loss(logits, tf.sparse.transpose(adj_matrix))
+    # print(rez)
 
     # rez = softplus_loss(logits, tf.sparse.transpose(adj_matrix))
     # print(rez)

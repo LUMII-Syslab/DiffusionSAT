@@ -24,7 +24,7 @@ class UNSATAccuracyTF(Metric):
 
         with tf.name_scope("unsat_core"):
             tf.summary.scalar("unsat_core", mean_unsat_cores, step=step)
-            tf.summary.scalar("unsat_core", mean_unsat, step=step)
+            tf.summary.scalar("unsat_instances", mean_unsat, step=step)
 
     def log_in_stdout(self, step: int = None, reset_state=True):
         mean_unsat_cores, mean_unsat = self.__calc_accuracy(reset_state)

@@ -261,7 +261,10 @@ def train(unsat_dataset: Dataset, sat_dataset: Dataset, model: Model, ckpt, ckpt
         unsat_model_data = unsat_dataset.filter_model_inputs(unsat_step_data)
         sat_model_data = sat_dataset.filter_model_inputs(sat_step_data)
 
-        model_output = model.train_step(**{**unsat_model_data, **sat_model_data})
+        input_arguments = {**unsat_model_data, **sat_model_data}
+        input_arguments["train_solver"] = False if int(ckpt.step) < 0 else True
+
+        model_output = model.train_step(**input_arguments)
         maker_loss, maker_gradients = model_output["minimizer_loss"], model_output["minimizer_gradients"]
         solver_loss, solver_gradients = model_output["solver_loss"], model_output["solver_gradients"]
 
