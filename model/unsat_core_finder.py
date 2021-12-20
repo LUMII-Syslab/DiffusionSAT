@@ -125,6 +125,8 @@ class SATSolver(Model):
 
             # calculate logits and loss
             logits = self.variables_output(variables)
+            noise = sample_logistic(tf.shape(logits))
+            logits = logits + noise
             per_clause_loss = softplus_mixed_loss(logits, tf.sparse.map_values(tf.round, cl_adj_matrix), clauses_mask)
             per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
             per_graph_loss = tf.sqrt(per_graph_loss + 1e-6) - tf.sqrt(1e-6)
@@ -177,7 +179,7 @@ class UNSATMinimizer(Model):
         self.feature_maps = feature_maps
         self.query_maps = query_maps
 
-    def call(self, adj_matrix, clauses_graph=None, variables_graph=None, training=None, mask=None):
+    def call(self, adj_matrix, clauses_graph=None, variables_graph=None, training=None, mask=None, logging_name=None):
         shape = tf.shape(adj_matrix)
         n_vars = shape[0] // 2
         n_clauses = shape[1]
@@ -193,11 +195,11 @@ class UNSATMinimizer(Model):
                                  rounds,
                                  training,
                                  variables,
-                                 variables_graph)
+                                 variables_graph, logging_name)
 
         return clauses_mask
 
-    def loop(self, adj_matrix, clauses, clauses_graph, rounds, training, variables, variables_graph):
+    def loop(self, adj_matrix, clauses, clauses_graph, rounds, training, variables, variables_graph, logging_name):
         step_outputs = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
 
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
@@ -273,9 +275,9 @@ class UNSATMinimizer(Model):
         clauses_mask_softplus = tf.nn.softplus(stacked_logits)
 
         if training:
-            tf.summary.histogram("logits", last_logits)
+            tf.summary.histogram(f"{logging_name}/logits", stacked_logits[-1])
             discretization = tf.abs(tf.round(clauses_mask_sigmoid) - clauses_mask_sigmoid)
-            tf.summary.histogram("discretization", discretization)
+            tf.summary.histogram(f"{logging_name}/discretization", discretization)
 
         return clauses_mask_sigmoid, clauses_mask_softplus
 
@@ -301,16 +303,18 @@ class CoreFinder(Model):
                    adj_matrix, clauses_graph, variables_graph, solutions, train_solver=True):
         with tf.GradientTape() as minimizer_tape, tf.GradientTape() as solver_tape:
             clauses_mask_sigmoid, clauses_mask_softplus = self.unsat_minimizer(unsat_adj_matrix, unsat_clauses_graph,
-                                                                               unsat_variables_graph, training=True)
-
-            core_loss_sum = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
-            unsat_core_sum = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+                                                                               unsat_variables_graph, training=True,
+                                                                               logging_name="unsat")
 
             tf.summary.histogram("UNSATMinimizer/clauses_mask_sigmoid", clauses_mask_sigmoid[-1])
+            cpg = tf.sparse.sparse_dense_matmul(unsat_clauses_graph, tf.round(clauses_mask_sigmoid), adjoint_b=True)
+            tf.summary.histogram("UNSATMinimizer/clauses_count_per_graph", tf.reduce_mean(cpg))
 
+            unsat_core_sum = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
+            core_loss_sum = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
             step = 0
 
-            for idx in range(8):
+            for idx in range(self.unsat_minimizer.train_rounds):
                 core_logits, core_loss, step = self.solver(unsat_adj_matrix, clauses_mask_sigmoid[idx, :],
                                                            unsat_clauses_graph,
                                                            unsat_variables_graph, training=True,
