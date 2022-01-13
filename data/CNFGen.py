@@ -16,7 +16,8 @@ class SAT_3(KSAT):
     """
 
     def __init__(self, data_dir, min_vars=5, max_vars=5, force_data_gen=False, **kwargs) -> None:
-        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
+        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
+                                    **kwargs)
         self.train_size = 50000
         self.test_size = 5000
         self.min_vars = min_vars
@@ -55,15 +56,14 @@ class SAT_3(KSAT):
 
 
 class UNSAT_3(KSAT):
-    """ Dataset with random UNSAT 3-SAT instances at the satisfiability threshold from CNFGen library.
+    """
+    Dataset with random UNSAT 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
 
-    def __init__(self, data_dir, min_vars=5, max_vars=5, force_data_gen=False, input_mode='variables',
-                 **kwargs) -> None:
-        super(UNSAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
-                                      **kwargs)
-        self.train_size = 100000
-        self.test_size = 10000
+    def __init__(self, data_dir, min_vars=5, max_vars=5, force_data_gen=False, input_mode='variables', **kwargs) -> None:
+        super(UNSAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
+        self.train_size = 30000
+        self.test_size = 2000
         self.min_vars = min_vars
         self.max_vars = max_vars
         self.filter = self.__prepare_filter(input_mode)

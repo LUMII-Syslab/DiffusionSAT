@@ -19,8 +19,9 @@ from tensorflow_addons.utils.types import FloatTensorLike
 from typing import Union, Callable, Dict
 from typeguard import typechecked
 
+
 # from tabulate import tabulate
-#from colorama import Fore, Back, Style
+# from colorama import Fore, Back, Style
 
 
 @tf.keras.utils.register_keras_serializable(package="Addons")
@@ -63,21 +64,22 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
 
     @typechecked
     def __init__(
-        self,
-        learning_rate: Union[FloatTensorLike, Callable, Dict] = 0.001,
-        beta_1: FloatTensorLike = 0.9,
-        beta_2: FloatTensorLike = 0.999,
-        epsilon: FloatTensorLike = 1e-14,
-        weight_decay: Union[FloatTensorLike, Callable, Dict] = 0.0,
-        rectify: bool = True,
-        amsgrad: bool = False,
-        sma_threshold: FloatTensorLike = 5.0,
-        total_steps: int = 0,
-        warmup_proportion: FloatTensorLike = 0.1,
-        min_lr: FloatTensorLike = 0.0,
-        name: str = "AdaBeliefOptimizer",
-        clip_gradients=False, clip_multiplier=3.0, clip_epsilon=1e-2,
-        **kwargs
+            self,
+            learning_rate: Union[FloatTensorLike, Callable, Dict] = 0.001,
+            beta_1: FloatTensorLike = 0.9,
+            beta_2: FloatTensorLike = 0.999,
+            epsilon: FloatTensorLike = 1e-14,
+            weight_decay: Union[FloatTensorLike, Callable, Dict] = 0.0,
+            rectify: bool = True,
+            amsgrad: bool = False,
+            sma_threshold: FloatTensorLike = 5.0,
+            total_steps: int = 0,
+            warmup_proportion: FloatTensorLike = 0.1,
+            min_lr: FloatTensorLike = 0.0,
+            name: str = "AdaBeliefOptimizer",
+            clip_gradients=False, clip_multiplier=3.0, clip_epsilon=1e-2,
+            has_decay_func=lambda x: True,
+            **kwargs
     ):
         r"""Construct a new AdaBelief optimizer.
         Args:
@@ -153,12 +155,15 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
         self.clip_gradients = clip_gradients
         self.clip_multiplier = clip_multiplier
         self.clip_epsilon = clip_epsilon
+        self.has_decay_func = has_decay_func
 
     def _create_slots(self, var_list):
         for var in var_list:
             self.add_slot(var, "m")
         for var in var_list:
             self.add_slot(var, "v")
+        for var in var_list:
+            self.add_slot(var, "noise")
         for var in var_list:
             self.add_slot(var, "grad_dif")
         if self.amsgrad:
@@ -192,7 +197,7 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
         beta_2_power = tf.pow(beta_2_t, local_step)
 
         if self._initial_total_steps > 0:
-            total_steps = int(self._get_hyper("total_steps", var_dtype))
+            total_steps = self._get_hyper("total_steps", var_dtype)
             warmup_steps = total_steps * self._get_hyper("warmup_proportion", var_dtype)
             min_lr = self._get_hyper("min_lr", var_dtype)
             decay_steps = tf.maximum(total_steps - warmup_steps, 1)
@@ -215,8 +220,8 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
         )
         m_corr_t = m_t / (1.0 - beta_1_power)
 
-        grad_dif = self.get_slot(var,'grad_dif')
-        grad_dif.assign( grad - m_t )
+        grad_dif = self.get_slot(var, 'grad_dif')
+        grad_dif.assign(grad - m_t)
         v_t = v.assign(
             beta_2_t * v + (1.0 - beta_2_t) * tf.square(grad_dif) + epsilon_t,
             use_locking=self._use_locking,
@@ -244,14 +249,17 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
                 sma_t >= sma_threshold, r_t * m_corr_t / (v_corr_t + epsilon_t), m_corr_t
             )
         else:
-            var_t =  m_corr_t / (v_corr_t + epsilon_t)
+            var_t = m_corr_t / (v_corr_t + epsilon_t)
 
-        if self._has_weight_decay:
+        if self._has_weight_decay and self.has_decay_func(var):
             var_t += wd_t * var
 
-        var_update = var.assign_sub(lr_t * var_t, use_locking=self._use_locking)
+        var_noise = self.get_slot(var, 'noise')
+        new_noise = tf.random.normal(tf.shape(var))
+        var_update = var.assign_sub(lr_t * (var_t - var_noise + new_noise), use_locking=self._use_locking)
+        noise_update = var_noise.assign(new_noise)
 
-        updates = [var_update, m_t, v_t]
+        updates = [var_update, m_t, v_t, noise_update]
         if self.amsgrad:
             updates.append(vhat_t)
         return tf.group(*updates)
@@ -294,7 +302,7 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
             m_t = self._resource_scatter_add(m, indices, m_scaled_g_values)
         m_corr_t = m_t / (1.0 - beta_1_power)
 
-        grad_dif = self.get_slot(var,'grad_dif')
+        grad_dif = self.get_slot(var, 'grad_dif')
         grad_dif.assign(m_t)
         grad_dif = self._resource_scatter_add(grad_dif, indices, -1.0 * grad)
 
@@ -322,12 +330,12 @@ class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
         if self.rectify:
             sma_threshold = self._get_hyper("sma_threshold", var_dtype)
             var_t = tf.where(
-            sma_t >= sma_threshold, r_t * m_corr_t / (v_corr_t + epsilon_t), m_corr_t
+                sma_t >= sma_threshold, r_t * m_corr_t / (v_corr_t + epsilon_t), m_corr_t
             )
         else:
-            var_t =  m_corr_t / (v_corr_t + epsilon_t)
+            var_t = m_corr_t / (v_corr_t + epsilon_t)
 
-        if self._has_weight_decay:
+        if self._has_weight_decay and self.has_decay_func(var):
             var_t += wd_t * var
 
         with tf.control_dependencies([var_t]):

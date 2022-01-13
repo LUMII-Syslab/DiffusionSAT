@@ -46,8 +46,7 @@ def unsat_cnf_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor,
     return per_graph_value * amortized_clauses
 
 
-def softplus_mixed_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, clauses_mask: tf.Tensor,
-                        eps=1e-8):
+def softplus_mixed_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, clauses_mask: tf.Tensor, eps=1e-8):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
     :param clauses: RaggedTensor of input clauses in DIMAC format

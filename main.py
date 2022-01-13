@@ -3,7 +3,6 @@ import itertools
 import time
 from pathlib import Path
 
-import keras.optimizers
 import numpy as np
 import tensorflow as tf
 from pysat.solvers import Glucose4
@@ -255,7 +254,8 @@ def train(unsat_dataset: Dataset, sat_dataset: Dataset, model: Model, ckpt, ckpt
     train_data_sat = sat_dataset.train_data()
 
     # TODO: Check against step in checkpoint
-    for unsat_step_data, sat_step_data in itertools.islice(zip(train_data_unsat, train_data_sat), Config.train_steps + 1):
+    for unsat_step_data, sat_step_data in itertools.islice(zip(train_data_unsat, train_data_sat),
+                                                           Config.train_steps + 1):
         tf.summary.experimental.set_step(ckpt.step)
 
         unsat_model_data = unsat_dataset.filter_model_inputs(unsat_step_data)
