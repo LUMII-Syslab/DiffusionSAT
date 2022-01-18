@@ -28,25 +28,29 @@ def unsat_clause_count(variable_predictions: tf.Tensor, clauses: tf.RaggedTensor
     return tf.math.reduce_sum(varsum)  # count not satisfied ones
 
 
-def unsat_cnf_clauses_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor, clauses_mask: tf.Tensor, eps=1e-5):
-    clauses_val = softplus_loss(var_predictions, clauses_lit_adj, clauses_mask)
+def unsat_cnf_clauses_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor, clauses_mask_logits: tf.Tensor, eps=1e-5):
+    clauses_val = softplus_loss(var_predictions, clauses_lit_adj, clauses_mask_logits)
     return 1 - clauses_val
 
 
-def unsat_cnf_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor, graph_clauses: tf.SparseTensor, clauses_mask: tf.Tensor, eps=1e-5):
-    clauses_val = unsat_cnf_clauses_loss(var_predictions, clauses_lit_adj, clauses_mask, eps=eps)
+def unsat_cnf_loss(var_predictions: tf.Tensor, clauses_lit_adj: tf.SparseTensor, graph_clauses: tf.SparseTensor,
+                   clauses_mask_logits: tf.Tensor, eps=1e-5):
+    clauses_val = unsat_cnf_clauses_loss(var_predictions, clauses_lit_adj, clauses_mask_logits, eps=eps)
     clauses_val = tf.math.log(clauses_val + eps) - tf.math.log1p(eps)
 
+    clauses_mask = tf.sigmoid(clauses_mask_logits)
     per_graph_value = tf.sparse.sparse_dense_matmul(graph_clauses, clauses_val)
     clauses_count = tf.sparse.reduce_sum(graph_clauses * tf.squeeze(clauses_mask, axis=-1), axis=1)
     total_count = tf.sparse.reduce_sum(graph_clauses, axis=1)
-    amortized_clauses = tf.sqrt(clauses_count + 2) - tf.sqrt(total_count)  # CNF UNSAT core should have at least two clauses
+    amortized_clauses = tf.sqrt(clauses_count + 2) - tf.sqrt(
+        total_count)  # CNF UNSAT core should have at least two clauses
     amortized_clauses = -amortized_clauses  # / total_count
 
-    return per_graph_value * amortized_clauses
+    return per_graph_value + amortized_clauses * 0.001
 
 
-def softplus_mixed_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, clauses_mask: tf.Tensor, eps=1e-8):
+def softplus_mixed_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, clauses_mask: tf.Tensor,
+                        eps=1e-8):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
     :param clauses: RaggedTensor of input clauses in DIMAC format
@@ -57,12 +61,14 @@ def softplus_mixed_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTe
     return log_clauses
 
 
-def softplus_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, clauses_mask: tf.Tensor):
+def softplus_loss(variable_predictions: tf.Tensor, adj_matrix: tf.SparseTensor, clauses_mask_logits: tf.Tensor):
     """
     :param variable_predictions: Logits (without sigmoid applied) from model output - each element represents variable
     :param adj_matrix: Sparse tensor with dense shape literals x clauses
     :return: returns per clause loss in range [0..1] - 0 if clause is satisfied, 1 if not satisfied
     """
+
+    clauses_mask = tf.sigmoid(clauses_mask_logits)
 
     literals = tf.concat([variable_predictions, -variable_predictions], axis=0)
     literals = tf.nn.softplus(literals)

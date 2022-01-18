@@ -100,6 +100,8 @@ class SATSolver(Model):
                 var_query = self.variables_query(v1)
                 v2 = tf.concat([clause_state, clauses_mask, tf.random.normal([n_clauses, 4])], axis=-1)
                 clause_query = self.clauses_query(v2)
+
+                # TODO: Log queries in tensorboard
                 clauses_loss = softplus_loss(var_query, cl_adj_matrix, clause_query)
                 step_loss = tf.reduce_sum(clauses_loss)
 
@@ -229,6 +231,7 @@ class UNSATMinimizer(Model):
                 # add some randomness to avoid zero collapse in normalization
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4])], axis=-1)
                 v2 = tf.concat([clauses, tf.random.normal([n_clauses, 4])], axis=-1)
+                # TODO: Log queries in tensorboard
                 variables_query = self.variables_query(v1)
                 clauses_query = self.clauses_query(v2)
                 clauses_loss = unsat_cnf_clauses_loss(variables_query, cl_adj_matrix, clauses_query)
@@ -286,7 +289,7 @@ class UNSATMinimizer(Model):
             discretization = tf.abs(tf.round(clauses_mask_sigmoid) - clauses_mask_sigmoid)
             tf.summary.histogram(f"{logging_name}/discretization", discretization)
 
-        return clauses_mask_sigmoid, clauses_mask_softplus
+        return stacked_logits, clauses_mask_sigmoid
 
 
 class CoreFinder(Model):
@@ -309,58 +312,47 @@ class CoreFinder(Model):
     def train_step(self, unsat_adj_matrix, unsat_clauses_graph, unsat_variables_graph, unsat_solutions,
                    adj_matrix, clauses_graph, variables_graph, solutions, train_solver=True):
         with tf.GradientTape() as minimizer_tape, tf.GradientTape() as solver_tape:
-            clauses_mask_sigmoid, clauses_mask_softplus = self.unsat_minimizer(unsat_adj_matrix, unsat_clauses_graph,
-                                                                               unsat_variables_graph, training=True,
-                                                                               logging_name="unsat")
+            clauses_mask_logits, clauses_mask_sigmoid = self.unsat_minimizer(unsat_adj_matrix, unsat_clauses_graph,
+                                                                             unsat_variables_graph, training=True,
+                                                                             logging_name="unsat")
 
-            tf.summary.histogram("UNSATMinimizer/clauses_mask_sigmoid", clauses_mask_sigmoid[-1])
-            cpg = tf.sparse.sparse_dense_matmul(unsat_clauses_graph, tf.round(clauses_mask_sigmoid), adjoint_b=True)
+            clauses_mask_sigmoid = clauses_mask_sigmoid[-1, :]
+            clauses_mask_logits = clauses_mask_logits[-1, :]
+
+            tf.summary.histogram("UNSATMinimizer/clauses_mask_sigmoid", clauses_mask_sigmoid)
+            cpg = tf.sparse.sparse_dense_matmul(unsat_clauses_graph,
+                                                tf.expand_dims(tf.round(clauses_mask_sigmoid), axis=-1))
             tf.summary.histogram("UNSATMinimizer/clauses_count_per_graph", tf.reduce_mean(cpg))
 
-            unsat_core_sum = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
-            core_loss_sum = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
-            subcore_loss_sum = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
-            step = 0
+            unsat_core_logits, core_loss, _ = self.solver(unsat_adj_matrix, clauses_mask_sigmoid,
+                                                          unsat_clauses_graph,
+                                                          unsat_variables_graph, training=False,
+                                                          logging_name="core_sat")
 
-            for idx in range(self.unsat_minimizer.train_rounds):
-                unsat_core_logits, unsat_sat_loss, _ = self.solver(unsat_adj_matrix, clauses_mask_sigmoid[idx, :],
-                                                                   unsat_clauses_graph,
-                                                                   unsat_variables_graph, training=False,
-                                                                   logging_name="core_sat")
+            cl_adj_matrix = tf.sparse.transpose(unsat_adj_matrix)
+            unsat_loss = unsat_cnf_loss(unsat_core_logits, cl_adj_matrix, unsat_clauses_graph,
+                                        tf.expand_dims(clauses_mask_logits, axis=-1))
 
-                core_loss_sum = core_loss_sum.write(idx, unsat_sat_loss)
+            subcore_mask = self.generate_subcore_mask(unsat_clauses_graph, clauses_mask_sigmoid)
 
-                cl_adj_matrix = tf.sparse.transpose(unsat_adj_matrix)
-                unsat_loss = unsat_cnf_loss(unsat_core_logits, cl_adj_matrix, unsat_clauses_graph,
-                                            tf.expand_dims(clauses_mask_sigmoid[idx, :], axis=-1))
+            zeros = tf.less(clauses_mask_sigmoid, 0.5)
+            zeros = tf.cast(zeros, tf.float32)
+            mean_zero = tf.reduce_sum(clauses_mask_logits * zeros) / tf.reduce_sum(zeros)
+            subcore_mask_unsat = subcore_mask * clauses_mask_sigmoid + (1 - subcore_mask) * mean_zero
 
-                unsat_core_sum = unsat_core_sum.write(idx, unsat_loss)
+            sat_core_logits, subcore_loss, step = self.solver(unsat_adj_matrix,
+                                                              subcore_mask_unsat,
+                                                              unsat_clauses_graph,
+                                                              unsat_variables_graph, training=True,
+                                                              logging_name="sub_core_sat")
 
-                subcore_mask = self.generate_subcore_mask(unsat_clauses_graph, clauses_mask_sigmoid[idx, :])
-
-                zeros = tf.less(clauses_mask_sigmoid[idx, :], 0.5)
-                zeros = tf.cast(zeros, tf.float32)
-                mean_zero = tf.reduce_sum(clauses_mask_sigmoid[idx, :] * zeros) / tf.reduce_sum(zeros)
-                subcore_mask_unsat = subcore_mask * clauses_mask_sigmoid[idx, :] + (1 - subcore_mask) * mean_zero
-
-                sat_core_logits, core_loss, step = self.solver(unsat_adj_matrix,
-                                                               subcore_mask_unsat,
-                                                               unsat_clauses_graph,
-                                                               unsat_variables_graph, training=True,
-                                                               logging_name="sub_core_sat")
-                subcore_loss_sum = subcore_loss_sum.write(idx, core_loss)
-
-            unsat_loss = unsat_core_sum.stack()
-            core_loss = core_loss_sum.stack()
-            subcore_loss = subcore_loss_sum.stack()
-
-            minimizer_loss = tf.reduce_mean(unsat_loss) + tf.reduce_mean(subcore_loss)
-            solver_loss = tf.reduce_mean(subcore_loss) + tf.reduce_mean(core_loss)
+            minimizer_loss = tf.reduce_mean(unsat_loss)  # + tf.reduce_mean(subcore_loss)
+            solver_loss = tf.reduce_mean(core_loss) + tf.reduce_mean(subcore_loss)
 
             tf.summary.scalar("finder/unsat_loss", minimizer_loss)
             tf.summary.scalar("solver/core_loss", solver_loss)
 
-            count_loss = tf.sparse.reduce_sum(unsat_clauses_graph * clauses_mask_sigmoid[-1], axis=1)
+            count_loss = tf.sparse.reduce_sum(unsat_clauses_graph * clauses_mask_sigmoid, axis=1)
 
         # Update weights of each network
         minimizer_gradients = minimizer_tape.gradient(minimizer_loss, self.unsat_minimizer.trainable_variables)
@@ -375,7 +367,7 @@ class CoreFinder(Model):
         # Additional metrics
         discr_level = self.discretization_level(clauses_mask_sigmoid)
         count_set_clauses = tf.reduce_mean(
-            tf.sparse.reduce_sum(unsat_clauses_graph * tf.round(clauses_mask_sigmoid[-1]), axis=1))
+            tf.sparse.reduce_sum(unsat_clauses_graph * tf.round(clauses_mask_sigmoid), axis=1))
 
         return {
             "steps_taken": step,
