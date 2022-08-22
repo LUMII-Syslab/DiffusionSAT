@@ -207,44 +207,44 @@ from tensorflow.python.framework import function
 from tensorflow.python.framework import ops
 
 #@function.Defun(func_name="slog_grad")
-@ops.RegisterGradient("SegmentProd")
-def _SegmentProdGrad(op, grad):
-    """Gradient for SegmentProd.
-    The gradient can be expressed for each segment by dividing the segment's
-    product by each element of the segment input tensor, but this approach can't
-    deal with zeros in the input.
-    Unlike reduce_prod we can't use cumsum here as individual segments may have
-    a different number of elements. Therefore we consider three cases:
-    1) A segment input contains no zeros and we can safely divide by the input
-       tensor.
-    2) A segment contains exactly one zero. Then the gradient of each input of
-       the segment is zero except for the 0-input, there the gradient is
-       the product of the remaining segment entries.
-    3) A segment contains at least two zeros. The gradient is zero for all
-       segment inputs.
-    """
-    data = op.inputs[0]
-    segment_ids = op.inputs[1]
-    result = op.outputs[0]
-    is_zero = tf.math.equal(data, 0)
-    num_zeros = tf.math.segment_sum(
-        tf.cast(is_zero, dtype=tf.int32), segment_ids)
-    # handle case 3 and set the gradient to 0 for segments with more than one
-    # 0 as input
-    grad = tf.where(
-        tf.math.greater(num_zeros, 1), tf.zeros_like(grad), grad)
-    # replace all zeros with ones and compute the segment_prod
-    non_zero_data = tf.where(is_zero, tf.ones_like(data), data)
-    non_zero_prod = segment_prod(non_zero_data, segment_ids)
-    gathered_prod = tf.gather(result, segment_ids)
-    gathered_non_zero_prod = tf.gather(non_zero_prod, segment_ids)
-    prod_divided_by_el = gathered_prod / (tf.abs(non_zero_data)+1e-6)*tf.sign(non_zero_data)
-    # Now fetch the individual results for segments containing 0 and those that
-    # don't.
-    partial_derivative = tf.where(is_zero, gathered_non_zero_prod,
-                                  prod_divided_by_el)
-    gathered_grad = tf.gather(grad, segment_ids)
-    return gathered_grad * partial_derivative, None
+# @ops.RegisterGradient("SegmentProd")
+# def _SegmentProdGrad(op, grad):
+#     """Gradient for SegmentProd.
+#     The gradient can be expressed for each segment by dividing the segment's
+#     product by each element of the segment input tensor, but this approach can't
+#     deal with zeros in the input.
+#     Unlike reduce_prod we can't use cumsum here as individual segments may have
+#     a different number of elements. Therefore we consider three cases:
+#     1) A segment input contains no zeros and we can safely divide by the input
+#        tensor.
+#     2) A segment contains exactly one zero. Then the gradient of each input of
+#        the segment is zero except for the 0-input, there the gradient is
+#        the product of the remaining segment entries.
+#     3) A segment contains at least two zeros. The gradient is zero for all
+#        segment inputs.
+#     """
+#     data = op.inputs[0]
+#     segment_ids = op.inputs[1]
+#     result = op.outputs[0]
+#     is_zero = tf.math.equal(data, 0)
+#     num_zeros = tf.math.segment_sum(
+#         tf.cast(is_zero, dtype=tf.int32), segment_ids)
+#     # handle case 3 and set the gradient to 0 for segments with more than one
+#     # 0 as input
+#     grad = tf.where(
+#         tf.math.greater(num_zeros, 1), tf.zeros_like(grad), grad)
+#     # replace all zeros with ones and compute the segment_prod
+#     non_zero_data = tf.where(is_zero, tf.ones_like(data), data)
+#     non_zero_prod = segment_prod(non_zero_data, segment_ids)
+#     gathered_prod = tf.gather(result, segment_ids)
+#     gathered_non_zero_prod = tf.gather(non_zero_prod, segment_ids)
+#     prod_divided_by_el = gathered_prod / (tf.abs(non_zero_data)+1e-6)*tf.sign(non_zero_data)
+#     # Now fetch the individual results for segments containing 0 and those that
+#     # don't.
+#     partial_derivative = tf.where(is_zero, gathered_non_zero_prod,
+#                                   prod_divided_by_el)
+#     gathered_grad = tf.gather(grad, segment_ids)
+#     return gathered_grad * partial_derivative, None
 
 
 # @function.Defun(func_name="slog_grad")
