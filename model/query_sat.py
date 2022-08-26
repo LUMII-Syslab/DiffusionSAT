@@ -9,20 +9,51 @@ from model.mlp import MLP
 from utils.parameters_log import *
 from utils.sat import is_batch_sat, is_graph_sat
 
+def sample_gumbel_tf(shape, eps=1e-20):
+  U = tf.random.uniform(shape)
+  return -tf.math.log(-tf.math.log(U + eps) + eps)
+
+def randomized_rounding_tf(x):
+    log_probs = tf.math.log(tf.maximum(x, 1e-20))
+    log_probs += sample_gumbel_tf(tf.shape(x))
+    res = tf.nn.softmax(log_probs, axis=-1)
+    return res
+
+def drop(x, keep_prob):
+    n_scale = tf.floor(tf.random.uniform([tf.shape(x)[0],1]) + keep_prob)
+    return x * n_scale
+
+def distribution_at_time(x, time_increment):
+    n_classes = 2
+    return x*(1-time_increment)+time_increment/n_classes
+
+def construct_input(both_nums_noisy, noise_scale):
+    length = tf.shape(both_nums_noisy)[0]
+    t_emb = tf.zeros([length, 1]) + noise_scale
+    inp = tf.concat([both_nums_noisy, t_emb], axis=-1)
+    return inp
+
+def construct_training_input(both_nums_int, noise_scale):
+    both_nums = tf.one_hot(both_nums_int, 2, dtype = tf.float32)
+    num_at_t = distribution_at_time(both_nums, tf.math.pow(noise_scale, 1/4))
+    noisy_num = randomized_rounding_tf(num_at_t)
+    #noisy_num = drop(both_nums, 1-tf.math.pow(noise_scale, 1/12))
+    return construct_input(noisy_num, noise_scale)
+
 
 class QuerySAT(Model):
 
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
-                 vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=128, supervised=False, trial: optuna.Trial = None, **kwargs):
+                 vote_layers=3, train_rounds=16, test_rounds=64,
+                 query_maps=128, supervised=True, trial: optuna.Trial = None, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
-        self.use_message_passing = False
-        self.use_linear_loss = True
+        self.use_message_passing = True
+        self.use_linear_loss = False
         self.skip_first_rounds = 0
         self.prediction_tries = 1
         self.logit_maps = 8
@@ -59,7 +90,7 @@ class QuerySAT(Model):
         onehot -= 1 / n_features
         return onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
 
-    def call(self, adj_matrix, clauses_graph=None, variables_graph=None, training=None, labels=None, mask=None):
+    def call(self, adj_matrix, clauses_graph=None, variables_graph=None, training=None, labels=None, mask=None, noise_scale = None):
         shape = tf.shape(adj_matrix)
         n_vars = shape[0] // 2
         n_clauses = shape[1]
@@ -67,8 +98,13 @@ class QuerySAT(Model):
         # variables = self.zero_state(n_vars, self.feature_maps)
         # clause_state = self.zero_state(n_clauses, self.feature_maps)
 
-        variables = tf.ones([n_vars, self.feature_maps])
         clause_state = tf.ones([n_clauses, self.feature_maps])
+        if noise_scale is None: noise_scale = tf.random.uniform((),0, 1)  # sample the nose level uniformly
+        if labels is None: labels = tf.random.uniform([n_vars], 0, 2,dtype=tf.int32)
+        #noise_scale = random.uniform(0, 0.5) + random.uniform(0, 0.5)  # more weight around 0.5
+        noisy_labels = construct_training_input(labels, noise_scale)
+        #variables = tf.ones([n_vars, self.feature_maps])
+        variables = tf.concat([noisy_labels, tf.zeros([n_vars, self.feature_maps-3])-0.1], axis=-1)
 
         rounds = self.train_rounds if training else self.test_rounds
 
@@ -76,7 +112,7 @@ class QuerySAT(Model):
             pre_rounds = tf.random.uniform([], 0, self.skip_first_rounds + 1, dtype=tf.int32)
             *_, supervised_loss0, clause_state, variables = self.loop(adj_matrix, clause_state, clauses_graph,
                                                                       labels, pre_rounds,
-                                                                      training, variables, variables_graph)
+                                                                      training, variables, variables_graph, noise_scale)
 
             clause_state = tf.stop_gradient(clause_state)
             variables = tf.stop_gradient(variables)
@@ -88,7 +124,7 @@ class QuerySAT(Model):
                                                                                                    rounds,
                                                                                                    training,
                                                                                                    variables,
-                                                                                                   variables_graph)
+                                                                                                   variables_graph, noise_scale)
 
         if training:
             last_clauses = softplus_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix))
@@ -104,7 +140,7 @@ class QuerySAT(Model):
 
         return last_logits, unsupervised_loss + supervised_loss, step
 
-    def loop(self, adj_matrix, clause_state, clauses_graph, labels, rounds, training, variables, variables_graph):
+    def loop(self, adj_matrix, clause_state, clauses_graph, labels, rounds, training, variables, variables_graph, noise_scale):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
         shape = tf.shape(adj_matrix)
@@ -126,6 +162,7 @@ class QuerySAT(Model):
 
         variables_graph_norm = variables_graph / tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True)
         clauses_graph_norm = clauses_graph / tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True)
+        #per_graph_loss = 0
 
         for step in tf.range(rounds):
             # make a query for solution, get its value and gradient
@@ -175,12 +212,11 @@ class QuerySAT(Model):
             # calculate logits and loss
             logits = self.variables_output(variables)
             if self.supervised:
-                if labels is not None:
-                    smoothed_labels = 0.5 * 0.1 + tf.expand_dims(tf.cast(labels, tf.float32), -1) * 0.9
-                    logit_loss = tf.reduce_mean(
-                        tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=smoothed_labels))
-                else:
-                    logit_loss = 0.
+                smoothed_labels = 0.5 * 0.01 + tf.expand_dims(tf.cast(labels, tf.float32), -1) * 0.99
+                smoothed_labels = tf.tile(smoothed_labels, [1,self.logit_maps])
+                per_var_loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=smoothed_labels)
+                #per_var_loss *= (1.03-noise_scale)*10
+                per_graph_loss = tf.sparse.sparse_dense_matmul(variables_graph_norm, per_var_loss)
             else:
                 if self.use_linear_loss:
                     # binary_noise = tf.round(tf.random.uniform(tf.shape(logits))) * 2 - 1
@@ -189,8 +225,8 @@ class QuerySAT(Model):
                     # noisy_logits = logits+binary_noise*0.5
                     # noisy_logits = tf.concat([logits + binary_noise * 0.5, logits - binary_noise * 0.5], axis=-1)
 
-                    logit_loss = linear_loss_adj(logits, cl_adj_matrix)
-                    # per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
+                    per_clause_loss = linear_loss_adj(logits, cl_adj_matrix)
+                    per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
                     # per_graph_loss = tf.reduce_mean(per_graph_loss, axis=-1)
                     # per_graph_loss = tf.sqrt(per_graph_loss + 0.25) - tf.sqrt(0.25)
                     # logit_loss = tf.reduce_sum(per_clause_loss)
@@ -198,17 +234,18 @@ class QuerySAT(Model):
                     per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
                     per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
                     per_graph_loss = tf.sqrt(per_graph_loss + 1e-6) - tf.sqrt(1e-6)
-                    costs = tf.square(tf.range(1, self.logit_maps + 1, dtype=tf.float32))
-                    per_graph_loss_avg = tf.reduce_sum(
-                        tf.sort(per_graph_loss, axis=-1, direction='DESCENDING') * costs) / tf.reduce_sum(costs)
-                    # per_graph_loss = 0.5*(tf.reduce_min(per_graph_loss, axis=-1)+tf.reduce_mean(per_graph_loss, axis=-1))
-                    logit_loss = tf.reduce_sum(per_graph_loss_avg)
 
-                    best_logit_map = tf.cast(tf.argmin(per_graph_loss, axis=-1), tf.float32)
-                    best_logit_map = tf.expand_dims(best_logit_map, axis=-1)
-                    best_logit_map = tf.sparse.sparse_dense_matmul(variables_graph, best_logit_map, adjoint_a=True)
-                    best_logit_map = tf.cast(tf.squeeze(best_logit_map, axis=-1), tf.int32)
-                    # best_logit_map = tf.argmin(tf.reduce_sum(per_graph_loss, axis=0), output_type=tf.int32)  # todo:select the best logits per graph
+            costs = tf.square(tf.range(1, self.logit_maps + 1, dtype=tf.float32))
+            per_graph_loss_avg = tf.reduce_sum(
+                tf.sort(per_graph_loss, axis=-1, direction='DESCENDING') * costs) / tf.reduce_sum(costs)
+            # per_graph_loss = 0.5*(tf.reduce_min(per_graph_loss, axis=-1)+tf.reduce_mean(per_graph_loss, axis=-1))
+            logit_loss = tf.reduce_sum(per_graph_loss_avg)
+
+            best_logit_map = tf.cast(tf.argmin(per_graph_loss, axis=-1), tf.float32)
+            best_logit_map = tf.expand_dims(best_logit_map, axis=-1)
+            best_logit_map = tf.sparse.sparse_dense_matmul(variables_graph, best_logit_map, adjoint_a=True)
+            best_logit_map = tf.cast(tf.squeeze(best_logit_map, axis=-1), tf.int32)
+            # best_logit_map = tf.argmin(tf.reduce_sum(per_graph_loss, axis=0), output_type=tf.int32)  # todo:select the best logits per graph
 
             step_losses = step_losses.write(step, logit_loss)
 
@@ -230,6 +267,10 @@ class QuerySAT(Model):
 
             # due to the loss at each level, gradients accumulate on the backward pass and may become very large for the first layers
             # reduce the gradient magnitude to remedy this
+            #if training:
+            #variables += tf.random.normal(tf.shape(variables), stddev=0.001)
+            #clause_state += tf.random.normal(tf.shape(clause_state), stddev=0.001)
+
             variables = tf.stop_gradient(variables) * 0.2 + variables * 0.8
             clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
 
@@ -278,7 +319,7 @@ class QuerySAT(Model):
     def predict_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
 
         if self.prediction_tries == 1:
-            predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False)
+            predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False,labels=solutions.flat_values)
         else:
             shape = tf.shape(variables_graph)
             graph_count = shape[0]
@@ -288,7 +329,7 @@ class QuerySAT(Model):
             solved_graphs = tf.zeros([graph_count, 1])
 
             for i in range(self.prediction_tries):
-                predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False)
+                predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False,labels=solutions.flat_values)
                 sat_graphs = is_graph_sat(predictions, adj_matrix, clauses_graph)
                 sat_graphs = tf.clip_by_value(sat_graphs - solved_graphs, 0, 1)
 
@@ -298,6 +339,20 @@ class QuerySAT(Model):
 
             predictions = final_predictions
 
+        return {
+            "steps_taken": step,
+            "loss": loss,
+            "prediction": tf.squeeze(predictions, axis=-1)
+        }
+
+    @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
+                                  tf.TensorSpec(shape=(), dtype = tf.float32)
+                                  ])
+    def plot_step(self, adj_matrix, clauses_graph, variables_graph, solutions, noise_scale):
+        predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False,labels=solutions.flat_values,noise_scale=noise_scale)
         return {
             "steps_taken": step,
             "loss": loss,
