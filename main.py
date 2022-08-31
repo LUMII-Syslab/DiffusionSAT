@@ -67,8 +67,8 @@ def main():
     if Config.test_classic_solver:
         variable_gen_classic_solver()
 
-    if Config.make_cactus:
-        make_cactus(model, dataset)
+    # if Config.make_cactus:
+    #     make_cactus(model, dataset)
 
 
 def make_cactus(model: Model, dataset):

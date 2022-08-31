@@ -22,7 +22,7 @@ class Config:
     optimizer = 'radam'
     train_steps = 1000000
     warmup = 0.0
-    learning_rate = 0.0005
+    learning_rate = 0.0001
     model = 'query_sat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
     task = 'sha-gen2019'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
@@ -58,8 +58,8 @@ class Config:
         config_parser.add_argument('--train_dir', type=str, default=cls.train_dir)
         config_parser.add_argument('--data_dir', type=str, default=cls.data_dir)
         config_parser.add_argument('--restore', type=str, default=None)
-        #config_parser.add_argument('--restore', type=str, default=Config.train_dir + '/sha-gen2019_22_02_25_07:19:43')
-        config_parser.add_argument('--label', type=str, default=cls.label)
+        #config_parser.add_argument('--restore', type=str, default=Config.train_dir + '/sha-gen2019_22_08_30_08:08:52')
+        #config_parser.add_argument('--label', type=str, default=cls.label)
 
         config_parser.add_argument('--ckpt_count', type=int, default=cls.ckpt_count)
         config_parser.add_argument('--eager', action='store_true', default=cls.eager)
