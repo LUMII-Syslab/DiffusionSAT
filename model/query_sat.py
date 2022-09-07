@@ -14,15 +14,15 @@ class QuerySAT(Model):
 
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
-                 vote_layers=3, train_rounds=32, test_rounds=64,
-                 query_maps=128, supervised=False, trial: optuna.Trial = None, **kwargs):
+                 vote_layers=3, train_rounds=16, test_rounds=64,
+                 query_maps=128, supervised=True, trial: optuna.Trial = None, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
         self.train_rounds = train_rounds
         self.test_rounds = test_rounds
         self.optimizer = optimizer
-        self.use_message_passing = False
-        self.use_linear_loss = True
+        self.use_message_passing = True
+        self.use_linear_loss = False
         self.skip_first_rounds = 0
         self.prediction_tries = 1
         self.logit_maps = 8
@@ -69,6 +69,7 @@ class QuerySAT(Model):
 
         variables = tf.ones([n_vars, self.feature_maps])
         clause_state = tf.ones([n_clauses, self.feature_maps])
+        if labels is None: labels = tf.random.uniform([n_vars], 0, 2,dtype=tf.int32)
 
         rounds = self.train_rounds if training else self.test_rounds
 
@@ -175,12 +176,11 @@ class QuerySAT(Model):
             # calculate logits and loss
             logits = self.variables_output(variables)
             if self.supervised:
-                if labels is not None:
-                    smoothed_labels = 0.5 * 0.1 + tf.expand_dims(tf.cast(labels, tf.float32), -1) * 0.9
-                    logit_loss = tf.reduce_mean(
-                        tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=smoothed_labels))
-                else:
-                    logit_loss = 0.
+                smoothed_labels = 0.5 * 0.01 + tf.expand_dims(tf.cast(labels, tf.float32), -1) * 0.99
+                smoothed_labels = tf.tile(smoothed_labels, [1,self.logit_maps])
+                per_var_loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=smoothed_labels)
+                #per_var_loss *= (1.03-noise_scale)*10
+                per_graph_loss = tf.sparse.sparse_dense_matmul(variables_graph_norm, per_var_loss)
             else:
                 if self.use_linear_loss:
                     # binary_noise = tf.round(tf.random.uniform(tf.shape(logits))) * 2 - 1
@@ -198,17 +198,18 @@ class QuerySAT(Model):
                     per_clause_loss = softplus_mixed_loss_adj(logits, cl_adj_matrix)
                     per_graph_loss = tf.sparse.sparse_dense_matmul(clauses_graph, per_clause_loss)
                     per_graph_loss = tf.sqrt(per_graph_loss + 1e-6) - tf.sqrt(1e-6)
-                    costs = tf.square(tf.range(1, self.logit_maps + 1, dtype=tf.float32))
-                    per_graph_loss_avg = tf.reduce_sum(
-                        tf.sort(per_graph_loss, axis=-1, direction='DESCENDING') * costs) / tf.reduce_sum(costs)
-                    # per_graph_loss = 0.5*(tf.reduce_min(per_graph_loss, axis=-1)+tf.reduce_mean(per_graph_loss, axis=-1))
-                    logit_loss = tf.reduce_sum(per_graph_loss_avg)
 
-                    best_logit_map = tf.cast(tf.argmin(per_graph_loss, axis=-1), tf.float32)
-                    best_logit_map = tf.expand_dims(best_logit_map, axis=-1)
-                    best_logit_map = tf.sparse.sparse_dense_matmul(variables_graph, best_logit_map, adjoint_a=True)
-                    best_logit_map = tf.cast(tf.squeeze(best_logit_map, axis=-1), tf.int32)
-                    # best_logit_map = tf.argmin(tf.reduce_sum(per_graph_loss, axis=0), output_type=tf.int32)  # todo:select the best logits per graph
+            costs = tf.square(tf.range(1, self.logit_maps + 1, dtype=tf.float32))
+            per_graph_loss_avg = tf.reduce_sum(
+                tf.sort(per_graph_loss, axis=-1, direction='DESCENDING') * costs) / tf.reduce_sum(costs)
+            # per_graph_loss = 0.5*(tf.reduce_min(per_graph_loss, axis=-1)+tf.reduce_mean(per_graph_loss, axis=-1))
+            logit_loss = per_graph_loss_avg
+
+            best_logit_map = tf.cast(tf.argmin(per_graph_loss, axis=-1), tf.float32)
+            best_logit_map = tf.expand_dims(best_logit_map, axis=-1)
+            best_logit_map = tf.sparse.sparse_dense_matmul(variables_graph, best_logit_map, adjoint_a=True)
+            best_logit_map = tf.cast(tf.squeeze(best_logit_map, axis=-1), tf.int32)
+            # best_logit_map = tf.argmin(tf.reduce_sum(per_graph_loss, axis=0), output_type=tf.int32)  # todo:select the best logits per graph
 
             step_losses = step_losses.write(step, logit_loss)
 
@@ -247,7 +248,10 @@ class QuerySAT(Model):
         #     tf.summary.histogram("var_loss_msg", var_loss_msg)
         #     tf.summary.histogram("query", query)
 
-        unsupervised_loss = tf.reduce_sum(step_losses.stack()) / tf.cast(rounds, tf.float32)
+        step_losses = step_losses.stack()
+        unsupervised_loss = tf.reduce_sum(tf.reduce_min(step_losses, axis=0))
+        unsupervised_loss += tf.reduce_sum(tf.reduce_mean(step_losses, axis=0))*0.1
+
         out_logits = tf.gather(last_logits, best_logit_map, batch_dims=1)
         out_logits = tf.expand_dims(out_logits, axis=-1)
         return out_logits, step, unsupervised_loss, supervised_loss, clause_state, variables

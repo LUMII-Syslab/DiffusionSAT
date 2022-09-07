@@ -5,7 +5,9 @@ from registry.registry import ModelRegistry, DatasetRegistry
 
 class Config:
     """Data and placement config: """
-    train_dir = '/host-dir/np-solver'
+    from pathlib import Path
+
+    train_dir = './np-solver'
     hyperopt_dir = '/host-dir/optuna'
     data_dir = '/host-dir/data'
     force_data_gen = False
@@ -22,7 +24,7 @@ class Config:
     warmup = 0.0
     learning_rate = 0.0001
     model = 'query_sat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
-    task = '3-sat'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
+    task = 'sha-gen2019'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
 
     """Supported training and evaluation modes: """
@@ -56,7 +58,8 @@ class Config:
         config_parser.add_argument('--train_dir', type=str, default=cls.train_dir)
         config_parser.add_argument('--data_dir', type=str, default=cls.data_dir)
         config_parser.add_argument('--restore', type=str, default=None)
-        config_parser.add_argument('--label', type=str, default=cls.label)
+        #config_parser.add_argument('--restore', type=str, default=Config.train_dir + '/sha-gen2019_22_08_30_08:08:52')
+        #config_parser.add_argument('--label', type=str, default=cls.label)
 
         config_parser.add_argument('--ckpt_count', type=int, default=cls.ckpt_count)
         config_parser.add_argument('--eager', action='store_true', default=cls.eager)
