@@ -16,7 +16,7 @@ class SATAccuracyTF(Metric):
         self.mean_total_acc = tf.metrics.Mean()
 
     def update_state(self, model_output, step_data):
-        acc, total_acc = self.__accuracy(model_output["prediction"], step_data)
+        acc, total_acc = self.accuracy(model_output["prediction"], step_data)
         self.mean_acc.update_state(acc)
         self.mean_total_acc.update_state(total_acc)
 
@@ -57,7 +57,7 @@ class SATAccuracyTF(Metric):
 
         return mean_acc, mean_total_acc
 
-    def __accuracy(self, predictions, step_data):
+    def accuracy(self, predictions, step_data):
         predictions = tf.round(tf.sigmoid(predictions))
         predictions = tf.cast(predictions, tf.int32)
 

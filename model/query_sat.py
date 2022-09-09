@@ -32,11 +32,11 @@ def distribution_at_time(x, time_increment):
     n_classes = 2
     return x*(1-time_increment)+time_increment/n_classes
 
-def construct_input(both_nums_noisy, noise_scale):
-    length = tf.shape(both_nums_noisy)[0]
-    t_emb = tf.zeros([length, 1]) + noise_scale
-    inp = tf.concat([both_nums_noisy, t_emb], axis=-1)
-    return inp
+# def construct_input(both_nums_noisy, noise_scale):
+#     length = tf.shape(both_nums_noisy)[0]
+#     t_emb = tf.zeros([length, 1]) + noise_scale
+#     inp = tf.concat([both_nums_noisy, t_emb], axis=-1)
+#     return inp
 
 def construct_training_input(both_nums_int, noise_scale):
     both_nums = tf.one_hot(both_nums_int, 2, dtype = tf.float32)
@@ -50,7 +50,7 @@ class QuerySAT(Model):
 
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
-                 vote_layers=3, train_rounds=16, test_rounds=64,
+                 vote_layers=3, train_rounds=32, test_rounds=64,
                  query_maps=128, supervised=True, trial: optuna.Trial = None, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
@@ -95,7 +95,7 @@ class QuerySAT(Model):
         onehot -= 1 / n_features
         return onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
 
-    def call(self, adj_matrix, clauses_graph=None, variables_graph=None, training=None, labels=None, mask=None, noise_scale = None):
+    def call(self, adj_matrix, clauses_graph=None, variables_graph=None, training=None, labels=None, mask=None, noise_scale = None, noisy_num=None):
         shape = tf.shape(adj_matrix)
         n_vars = shape[0] // 2
         n_clauses = shape[1]
@@ -117,7 +117,7 @@ class QuerySAT(Model):
             pre_rounds = tf.random.uniform([], 0, self.skip_first_rounds + 1, dtype=tf.int32)
             *_, supervised_loss0, clause_state, variables = self.loop(adj_matrix, clause_state, clauses_graph,
                                                                       labels, pre_rounds,
-                                                                      training, variables, variables_graph, noise_scale)
+                                                                      training, variables, variables_graph, noise_scale, noisy_num)
 
             clause_state = tf.stop_gradient(clause_state)
             variables = tf.stop_gradient(variables)
@@ -129,7 +129,7 @@ class QuerySAT(Model):
                                                                                                    rounds,
                                                                                                    training,
                                                                                                    variables,
-                                                                                                   variables_graph, noise_scale)
+                                                                                                   variables_graph, noise_scale, noisy_num)
 
         if training:
             last_clauses = softplus_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix))
@@ -145,7 +145,7 @@ class QuerySAT(Model):
 
         return last_logits, unsupervised_loss + supervised_loss, step
 
-    def loop(self, adj_matrix, clause_state, clauses_graph, labels, rounds, training, variables, variables_graph, noise_scale):
+    def loop(self, adj_matrix, clause_state, clauses_graph, labels, rounds, training, variables, variables_graph, noise_scale, noisy_num):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
         shape = tf.shape(adj_matrix)
@@ -168,7 +168,7 @@ class QuerySAT(Model):
         variables_graph_norm = variables_graph / tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True)
         clauses_graph_norm = clauses_graph / tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True)
         #per_graph_loss = 0
-        noisy_labels = construct_training_input(labels, noise_scale)
+        noisy_labels = construct_training_input(labels, noise_scale) if noisy_num is None else noisy_num
         out_logits = tf.zeros([n_vars,1])
         n_graphs = tf.shape(variables_graph)[0]
         best_loss = tf.zeros([n_graphs])+1e6
@@ -178,14 +178,15 @@ class QuerySAT(Model):
             # make a query for solution, get its value and gradient
             with tf.GradientTape() as grad_tape:
                 # add some randomness to avoid zero collapse in normalization
-                if step==0 or tf.random.uniform((),0,10, dtype=tf.int32)==0:
-                    noisy_solution = noisy_labels
-                else:
-                    #probs = tf.sigmoid(out_logits)
-                    #probs = tf.concat([1-probs, probs], axis=-1)
-                    log_probs = -tf.nn.softplus(-tf.concat([-out_logits, out_logits], axis=-1))
-                    #noisy_solution = randomized_rounding_tf(probs)
-                    noisy_solution = randomized_rounding_tf_log(log_probs)
+                # if step==0 or (tf.random.uniform((),0,10, dtype=tf.int32)==0 and training):
+                #     noisy_solution = noisy_labels
+                # else:
+                #     #probs = tf.sigmoid(out_logits)
+                #     #probs = tf.concat([1-probs, probs], axis=-1)
+                #     log_probs = -tf.nn.softplus(-tf.concat([-out_logits, out_logits], axis=-1))
+                #     #noisy_solution = randomized_rounding_tf(probs)
+                #     noisy_solution = randomized_rounding_tf_log(log_probs)
+                noisy_solution = noisy_labels
 
                 v1 = tf.concat([variables, tf.random.normal([n_vars, 4]), noisy_solution], axis=-1)
                 query = self.variables_query(v1)
@@ -308,6 +309,7 @@ class QuerySAT(Model):
             logits_mean = tf.reduce_mean(last_logits, axis=-1, keepdims=True)
             logits_dif = last_logits - logits_mean
             tf.summary.histogram("logits_dif", logits_dif)
+            tf.summary.histogram("state", variables)
             # tf.summary.histogram("logits_mean", logits_mean)
         #     tf.summary.histogram("clause_msg", cl_msg)
         #     tf.summary.histogram("var_grad", v_grad)
@@ -315,8 +317,8 @@ class QuerySAT(Model):
         #     tf.summary.histogram("query", query)
 
         step_losses = step_losses.stack()
-        unsupervised_loss = tf.reduce_sum(tf.reduce_min(step_losses, axis=0))
-        unsupervised_loss += tf.reduce_sum(tf.reduce_mean(step_losses, axis=0))*0.1
+        #unsupervised_loss = tf.reduce_sum(tf.reduce_min(step_losses, axis=0))
+        unsupervised_loss = tf.reduce_sum(tf.reduce_mean(step_losses, axis=0))
         #unsupervised_loss = tf.reduce_sum(step_losses.stack()/best_loss_counts)
         #unsupervised_loss = tf.reduce_sum(best_loss)
         out_logits = tf.gather(last_logits, best_logit_map, batch_dims=1)
@@ -349,7 +351,7 @@ class QuerySAT(Model):
     def predict_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
 
         if self.prediction_tries == 1:
-            predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False,labels=solutions.flat_values)
+            predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False)
         else:
             shape = tf.shape(variables_graph)
             graph_count = shape[0]
@@ -359,8 +361,7 @@ class QuerySAT(Model):
             solved_graphs = tf.zeros([graph_count, 1])
 
             for i in range(self.prediction_tries):
-                predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False,labels=solutions.flat_values)
-                #predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False)
+                predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False)
                 sat_graphs = is_graph_sat(predictions, adj_matrix, clauses_graph)
                 sat_graphs = tf.clip_by_value(sat_graphs - solved_graphs, 0, 1)
 
@@ -389,6 +390,23 @@ class QuerySAT(Model):
             "loss": loss,
             "prediction": tf.squeeze(predictions, axis=-1)
         }
+
+    @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
+                                  tf.TensorSpec(shape=(), dtype = tf.float32),
+                                  tf.TensorSpec(shape=(None, 2), dtype=tf.float32)
+                                  ])
+    def diffusion_step(self, adj_matrix, clauses_graph, variables_graph, solutions, noise_scale, noisy_num):
+        predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False,
+                                            labels=None,noise_scale=noise_scale,noisy_num=noisy_num)
+        return {
+            "steps_taken": step,
+            "loss": loss,
+            "prediction": tf.squeeze(predictions, axis=-1) # shape [nvars]
+        }
+
 
     def get_config(self):
         return {HP_MODEL: self.__class__.__name__,
