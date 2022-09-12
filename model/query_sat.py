@@ -8,20 +8,55 @@ from loss.sat import softplus_loss_adj, softplus_mixed_loss_adj, linear_loss_adj
 from model.mlp import MLP
 from utils.parameters_log import *
 from utils.sat import is_batch_sat, is_graph_sat
+import tensorflow_probability as tfp
+
+t_power = 1/4
 
 def sample_gumbel_tf(shape, eps=1e-20):
   U = tf.random.uniform(shape)
   return -tf.math.log(-tf.math.log(U + eps) + eps)
 
-def randomized_rounding_tf_log(log_probs):
-    log_probs += sample_gumbel_tf(tf.shape(log_probs))
-    res = tf.nn.softmax(log_probs, axis=-1)
-    return res
+# def randomized_rounding_tf_log(log_probs):
+#     log_probs += sample_gumbel_tf(tf.shape(log_probs))
+#     res = tf.nn.softmax(log_probs, axis=-1)
+#     return res
+
+# def randomized_rounding_tf(x):
+#     log_probs = tf.math.log(tf.maximum(x, 1e-20))
+#     log_probs += sample_gumbel_tf(tf.shape(x))
+#     res = tf.nn.softmax(log_probs, axis=-1)
+#     return res
+
+# The train loss is KL divergence of labels and predictions both transferred to time t
+# note that t is array for each sample
+# def train_loss(labels, prediction_logits, t, label_smoothing = 0.01):
+#     labels_at_t = distribution_at_time(labels, tf.minimum(t + label_smoothing, 1))
+#     probs = tf.nn.softmax(prediction_logits, axis=-1)  # maybe use logscale
+#     probs_at_t = distribution_at_time(probs, t)
+#     KL = -tf.reduce_sum(labels_at_t * tf.math.log(tf.maximum(probs_at_t, 1e-20)), axis=-1) + \
+#          tf.reduce_sum(labels_at_t * tf.math.log(tf.maximum(labels_at_t, 1e-20)), axis=-1)
+#     return 100 * tf.reduce_mean(KL)
+
+def train_loss(labels, prediction_logits, t, label_smoothing = 0.01):
+    t = tf.math.pow(t, t_power)
+    labels_at_t = distribution_at_time(labels, tf.minimum(t + label_smoothing, 1))
+    probs = tf.sigmoid(prediction_logits)  # maybe use logscale
+    probs_at_t = distribution_at_time(probs, t)
+    dist = tfp.distributions.Bernoulli(probs=probs_at_t)
+    label_dist = tfp.distributions.Bernoulli(probs=labels_at_t)
+    loss = label_dist.kl_divergence(dist)
+    norm_dist1 = tfp.distributions.Bernoulli(probs=distribution_at_time(0., tf.minimum(t + label_smoothing, 1)))
+    norm_dist2 = tfp.distributions.Bernoulli(probs=distribution_at_time(0., 1.))
+    norm = norm_dist1.kl_divergence(norm_dist2)
+
+    #return loss/(1-t+0.01)
+    return loss / (norm+1e-4)
 
 def randomized_rounding_tf(x):
-    log_probs = tf.math.log(tf.maximum(x, 1e-20))
-    log_probs += sample_gumbel_tf(tf.shape(x))
-    res = tf.nn.softmax(log_probs, axis=-1)
+    x0 = x[...,0:1]
+    noise = tf.random.uniform(tf.shape(x0))
+    rounded = tf.floor(x0+noise)
+    res = tf.concat([rounded, 1-rounded], axis=-1)
     return res
 
 def drop(x, keep_prob):
@@ -32,15 +67,15 @@ def distribution_at_time(x, time_increment):
     n_classes = 2
     return x*(1-time_increment)+time_increment/n_classes
 
-# def construct_input(both_nums_noisy, noise_scale):
-#     length = tf.shape(both_nums_noisy)[0]
-#     t_emb = tf.zeros([length, 1]) + noise_scale
-#     inp = tf.concat([both_nums_noisy, t_emb], axis=-1)
-#     return inp
+def add_t_emb(both_nums_noisy, noise_scale):
+    length = tf.shape(both_nums_noisy)[0]
+    t_emb = tf.zeros([length, 1]) + noise_scale
+    inp = tf.concat([both_nums_noisy, t_emb], axis=-1)
+    return inp
 
 def construct_training_input(both_nums_int, noise_scale):
     both_nums = tf.one_hot(both_nums_int, 2, dtype = tf.float32)
-    num_at_t = distribution_at_time(both_nums, tf.math.pow(noise_scale, 1/4))
+    num_at_t = distribution_at_time(both_nums, tf.math.pow(noise_scale, t_power))
     noisy_num = randomized_rounding_tf(num_at_t)
     #noisy_num = drop(both_nums, 1-tf.math.pow(noise_scale, 1/12))
     #return construct_input(noisy_num, noise_scale)
@@ -50,7 +85,7 @@ class QuerySAT(Model):
 
     def __init__(self, optimizer: Optimizer,
                  feature_maps=128, msg_layers=3,
-                 vote_layers=3, train_rounds=32, test_rounds=64,
+                 vote_layers=3, train_rounds=16, test_rounds=64,
                  query_maps=128, supervised=True, trial: optuna.Trial = None, **kwargs):
         super().__init__(**kwargs, name="QuerySAT")
         self.supervised = supervised
@@ -104,7 +139,9 @@ class QuerySAT(Model):
         # clause_state = self.zero_state(n_clauses, self.feature_maps)
 
         clause_state = tf.ones([n_clauses, self.feature_maps])
-        if noise_scale is None: noise_scale = tf.random.uniform((),0, 1)  # sample the nose level uniformly
+        if noise_scale is None:
+            #noise_scale = tf.random.uniform((),0, 0.5) + tf.random.uniform((),0, 0.5)  # more weight around 0.5
+            noise_scale = tf.random.uniform((),0, 1)  # sample the nose level uniformly
         if labels is None: labels = tf.random.uniform([n_vars], 0, 2,dtype=tf.int32)
         #noise_scale = random.uniform(0, 0.5) + random.uniform(0, 0.5)  # more weight around 0.5
         #noisy_labels = construct_training_input(labels, noise_scale)
@@ -169,6 +206,7 @@ class QuerySAT(Model):
         clauses_graph_norm = clauses_graph / tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True)
         #per_graph_loss = 0
         noisy_labels = construct_training_input(labels, noise_scale) if noisy_num is None else noisy_num
+        noisy_labels = add_t_emb(noisy_labels, noise_scale)
         out_logits = tf.zeros([n_vars,1])
         n_graphs = tf.shape(variables_graph)[0]
         best_loss = tf.zeros([n_graphs])+1e6
@@ -232,10 +270,13 @@ class QuerySAT(Model):
             # calculate logits and loss
             logits = self.variables_output(variables)
             if self.supervised:
-                smoothed_labels = 0.5 * 0.01 + tf.expand_dims(tf.cast(labels, tf.float32), -1) * 0.99
-                smoothed_labels = tf.tile(smoothed_labels, [1,self.logit_maps])
-                per_var_loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=smoothed_labels)
+                # smoothed_labels = 0.5 * 0.01 + tf.expand_dims(tf.cast(labels, tf.float32), -1) * 0.99
+                # smoothed_labels = tf.tile(smoothed_labels, [1,self.logit_maps])
+                # per_var_loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=smoothed_labels)
                 #per_var_loss *= (1.03-noise_scale)*10
+                smoothed_labels = tf.expand_dims(tf.cast(labels, tf.float32), -1)
+                smoothed_labels = tf.tile(smoothed_labels, [1,self.logit_maps])
+                per_var_loss = train_loss(smoothed_labels, logits, noise_scale)
                 per_graph_loss = tf.sparse.sparse_dense_matmul(variables_graph_norm, per_var_loss)
             else:
                 if self.use_linear_loss:

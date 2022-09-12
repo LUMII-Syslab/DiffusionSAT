@@ -13,7 +13,8 @@ from model.query_sat import randomized_rounding_tf, distribution_at_time
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 
-model_path = default=Config.train_dir + '/sha-gen2019_22_09_07_10:14:05'
+model_path = default=Config.train_dir + '/3-sat_22_09_11_15:44:14'
+from model.query_sat import t_power
 test_batch_size = 256
 default_length = 16
 use_baseline_sampling = True
@@ -54,8 +55,8 @@ def reverse_distribution_step(x, predictions, noise_scale, time_increment):
     return x_new
 
 def reverse_distribution_step_theoretic(x, x0, t, t_increment):
-    t1 = tf.math.pow(t, 1/4) #because such distribution was used in training
-    t2 = tf.math.pow(max(0.0,t- t_increment), 1 / 4)
+    t1 = tf.math.pow(t, t_power) #because such distribution was used in training
+    t2 = tf.math.pow(max(0.0,t- t_increment), t_power)
     x_new = distribution_at_time(x0, t1)
     alpha_t = (1 - t1) / (1 - t2)
     #print("alphat", alpha_t, t- t_increment)
@@ -156,5 +157,5 @@ def evaluate_metrics(prediction_tries=1):
 
     return metrics
 
-test_latest(300,1)
+test_latest(10,n_batches=10)
 #evaluate_metrics()
