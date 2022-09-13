@@ -13,7 +13,9 @@ from model.query_sat import randomized_rounding_tf, distribution_at_time
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 
-model_path = default=Config.train_dir + '/3-sat_22_09_11_15:44:14'
+#model_path = default=Config.train_dir + '/3-sat_22_09_12_14:19:54'
+model_path = default=Config.train_dir + '/3-sat_22_09_12_15:15:29'
+
 from model.query_sat import t_power
 test_batch_size = 256
 default_length = 16
@@ -89,7 +91,7 @@ def diffusion(N, step_data, verbose=True, prepare_image=True):
         #x = reverse_distribution_step(x, tf.stack([1-predictions, predictions], axis=1), noise_scale, 1/N)
         x = reverse_distribution_step_theoretic(x, tf.stack([1 - predictions, predictions], axis=1), noise_scale, 1 / N)
         cum_accuracy = np.maximum(cum_accuracy, total_accuracy.numpy())
-        if verbose: print("accuracy:", accuracy.numpy(), "cum_accuracy:", np.mean(cum_accuracy))
+        if verbose: print("accuracy:", accuracy.numpy(), "cum_accuracy:", np.mean(cum_accuracy), "total_acc", tf.reduce_mean(tf.cast(total_accuracy, tf.float32)).numpy())
         # if use_baseline_sampling:
         #     x = dist.reverse_distribution_step_thoeretic(x, predictions, noise_scale, 1 / N)
         # else:
@@ -121,7 +123,14 @@ def diffusion(N, step_data, verbose=True, prepare_image=True):
         im = im.convert("L")
         im.save("latent.png")
 
-    return np.mean(cum_accuracy)
+    total_accuracy = tf.cast(tf.expand_dims(total_accuracy, axis=-1), tf.float32)
+    variables_graph = step_data['variables_graph_adj']
+    var_correct = tf.sparse.sparse_dense_matmul(variables_graph, total_accuracy, adjoint_a=True)
+    predictions = tf.round(predictions)
+    #print(tf.reduce_mean(var_correct).numpy())
+    #print(var_correct.shape)
+
+    return np.mean(cum_accuracy), predictions,var_correct[:,0]
 
 
 def test_latest(N, n_batches):
@@ -131,9 +140,45 @@ def test_latest(N, n_batches):
     success_rate = 0
     for step_data in iterator:
         counter += 1
-        success_rate += diffusion(N, step_data)
+        success, predictions, var_correct = diffusion(N, step_data)
+        success_rate+=success
 
     print("test dataset sucess", success_rate/counter)
+
+def test_n_solutions(N, n_batches, trials):
+    iterator = itertools.islice(dataset.test_data(), n_batches) if n_batches else dataset.test_data()
+    step_data = next(iterator)
+    last_predictions=None
+    last_var_correct = None
+    success_rate = 0
+
+    for trial in range(trials):
+        success, predictions, var_correct = diffusion(N, step_data, verbose=False)
+        success_rate+=success
+        if last_var_correct is not None:
+            correct = var_correct*last_var_correct
+            equal_vars = (1-tf.abs(last_predictions-predictions))*correct
+            not_equal_vars = tf.abs(last_predictions - predictions) * correct
+            equal_fraction = tf.reduce_sum(equal_vars)/tf.maximum(tf.reduce_sum(correct),1.)
+            not_equal_fraction = tf.reduce_sum(not_equal_vars) / tf.maximum(tf.reduce_sum(correct), 1.)
+            print("correct_vars_fraction", tf.reduce_mean(correct).numpy())
+            print("equal_fraction", equal_fraction.numpy())
+            print("not_equal_fraction", not_equal_fraction.numpy())
+
+            variables_graph = step_data['variables_graph_adj']
+            equal_graphs = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(equal_vars, axis=-1))
+            graph_nodes = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(tf.ones_like(equal_vars), axis=-1))
+            equal_graphs = tf.cast(tf.equal(equal_graphs, graph_nodes), tf.float32)
+            correct_graphs = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(correct, axis=-1))
+            correct_graphs = tf.cast(tf.equal(correct_graphs, graph_nodes), tf.float32)
+            print(correct_graphs)
+            equal_graphs_fraction = tf.reduce_sum(equal_graphs) / tf.maximum(tf.reduce_sum(correct_graphs), 1.)
+            print("equal_graphs_fraction", equal_graphs_fraction.numpy(), "=",tf.reduce_sum(equal_graphs).numpy(), "/", tf.reduce_sum(correct_graphs).numpy())
+
+        last_predictions = predictions
+        last_var_correct = var_correct
+
+    print("test dataset sucess", success_rate/trials)
 
 def evaluate_metrics(prediction_tries=1):
     model.prediction_tries=prediction_tries
@@ -157,5 +202,6 @@ def evaluate_metrics(prediction_tries=1):
 
     return metrics
 
-test_latest(10,n_batches=10)
+#test_latest(10,n_batches=1)
+test_n_solutions(10,n_batches=1, trials=2)
 #evaluate_metrics()

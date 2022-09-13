@@ -10,7 +10,7 @@ from utils.parameters_log import *
 from utils.sat import is_batch_sat, is_graph_sat
 import tensorflow_probability as tfp
 
-t_power = 1/4
+t_power = 1/2
 
 def sample_gumbel_tf(shape, eps=1e-20):
   U = tf.random.uniform(shape)
