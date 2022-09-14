@@ -125,7 +125,8 @@ def run_unigen(input_dimacs: str, unigen_exe: str = "binary/unigen_linux") -> Tu
     if is_sat:
         if len(sample_lines)==0:
             raise ValueError("Unigen returned no solutions for a probably satisfiable instance")
-        solution = [int(var) for line in sample_lines for var in line.split()][:-1] # take only the last solution
+        chosen_line = sample_lines[-1]
+        solution = [int(var) for var in chosen_line.split()][:-1] # exclude the trailing zero
     else:
         solution = []
 
