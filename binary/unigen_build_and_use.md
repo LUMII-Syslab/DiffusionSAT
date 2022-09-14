@@ -15,12 +15,14 @@ A special comment line, e.g.,  `c ind 3 4 7 8 10 11 14 17 18 26 30 35 36 39 42 4
 Invocation example:
 
 ```bash
-unigen --samples 10 myfile1.cnf  >out1.cnf
+unigen --samples 10 --arjun 0 myfile1.cnf  >out1.cnf
 ```
 
 The number of samples $n$ by default is 500; in our example we chose 10.
 
-Unigen outputs a lot of comment lines (starting with `c`), the line containing sampled variables (`vp 10 8 7 6 4 3 1 0`), and $\geq n$ samples. Thus, we need to take the last $n$ non-comment lines. Each such line contains one sample: a list of positive and negative integers ending with 0. Positive and negative integers correspond to `true` and `false` values of the corresponding CNF variables.
+Unigen tries to minimize the number of independent variables by default. Thus, we use the `--arjun 0` args to skip this optimization, and force Unigen to output values for all variables we are interested in.
+
+Unigen outputs a lot of comment lines (starting with `c`), the line containing sampled variables (`vp 10 8 7 6 4 3 1 0`), and $\geq n$ samples. Thus, we need to take the last $n$ non-`c` and non-`vp` lines. Each such line contains one sample: a list of positive and negative integers ending with 0. Positive and negative integers correspond to `true` and `false` values of the corresponding CNF variables.
 
 ## Building Unigen Static Binary
 
