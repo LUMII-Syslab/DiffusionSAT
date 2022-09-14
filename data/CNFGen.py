@@ -6,7 +6,9 @@ from cnfgen import RandomKCNF, CliqueFormula, DominatingSet, GraphColoringFormul
 from pysat.solvers import Glucose4
 
 from data.k_sat import KSAT
-from utils.sat import run_external_solver, build_dimacs_file
+from utils.sat import run_external_solver, run_unigen, build_dimacs_file
+
+from config import Config
 
 
 class SAT_3(KSAT):
@@ -39,12 +41,15 @@ class SAT_3(KSAT):
 
                 dimacs = build_dimacs_file(iclauses, n_vars)
 
-                if n_vars > 200:
-                    is_sat, solution = run_external_solver(dimacs)
+                if Config.use_unigen:
+                    is_sat, solution = run_unigen(dimacs)
                 else:
-                    with Glucose4(bootstrap_with=iclauses) as solver:
-                        is_sat = solver.solve()
-                        solution = None
+                    if n_vars > 200:
+                        is_sat, solution = run_external_solver(dimacs)
+                    else:
+                        with Glucose4(bootstrap_with=iclauses) as solver:
+                            is_sat = solver.solve()
+                            solution = None
 
                 if is_sat:
                     break
