@@ -1,3 +1,4 @@
+import numpy
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,12 +15,12 @@ from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 
 #model_path = default=Config.train_dir + '/3-sat_22_09_12_14:19:54'
-model_path = default=Config.train_dir + '/3-sat_22_09_12_15:15:29'
+model_path = default=Config.train_dir + '/k_sat_22_09_13_07:45:31-official'
 
 from model.query_sat import t_power
-test_batch_size = 256
-default_length = 16
 use_baseline_sampling = True
+test_rounds=64
+diffusion_steps = 64
 
 np.set_printoptions(linewidth=2000, precision=3, suppress=True)
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -37,7 +38,7 @@ def prepare_checkpoints(model):
     return ckpt, manager
 
 optimizer = AdaBeliefOptimizer(Config.learning_rate)
-model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, test_rounds = 64)
+model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, test_rounds = test_rounds)
 dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                  force_data_gen=Config.force_data_gen,
                                                  input_mode=Config.input_mode)
@@ -135,12 +136,15 @@ def diffusion(N, step_data, verbose=True, prepare_image=True):
 
 def test_latest(N, n_batches):
     iterator = itertools.islice(dataset.test_data(), n_batches) if n_batches else dataset.test_data()
+    print_progress = True
 
     counter = 0
     success_rate = 0
     for step_data in iterator:
+        if print_progress and counter % 10 == 0:
+            print("Testing batch", counter)
         counter += 1
-        success, predictions, var_correct = diffusion(N, step_data)
+        success, predictions, var_correct = diffusion(N, step_data, verbose=False, prepare_image=False)
         success_rate+=success
 
     print("test dataset sucess", success_rate/counter)
@@ -151,12 +155,24 @@ def test_n_solutions(N, n_batches, trials):
     last_predictions=None
     last_var_correct = None
     success_rate = 0
+    graph_pos = step_data['variables_in_graph']
+    graph_pos = tf.cumsum(graph_pos).numpy()
+    n_graphs = graph_pos.shape[0]
+    graph_pos = numpy.concatenate([[0], graph_pos])
+    solution_sets = [set() for _ in range(n_graphs)]
+    correct_graph_counts = np.zeros(n_graphs)
 
     for trial in range(trials):
-        success, predictions, var_correct = diffusion(N, step_data, verbose=False)
+        success, predictions, var_correct = diffusion(N, step_data, verbose=False, prepare_image=False)
         success_rate+=success
+
+        variables_graph = step_data['variables_graph_adj']
+        graph_nodes = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(tf.ones_like(predictions), axis=-1))
+        correct_graphs0 = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(var_correct, axis=-1))
+        correct_graphs0 = tf.cast(tf.equal(correct_graphs0, graph_nodes), tf.float32)
+
         if last_var_correct is not None:
-            correct = var_correct*last_var_correct
+            correct = var_correct * last_var_correct
             equal_vars = (1-tf.abs(last_predictions-predictions))*correct
             not_equal_vars = tf.abs(last_predictions - predictions) * correct
             equal_fraction = tf.reduce_sum(equal_vars)/tf.maximum(tf.reduce_sum(correct),1.)
@@ -165,20 +181,28 @@ def test_n_solutions(N, n_batches, trials):
             print("equal_fraction", equal_fraction.numpy())
             print("not_equal_fraction", not_equal_fraction.numpy())
 
-            variables_graph = step_data['variables_graph_adj']
             equal_graphs = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(equal_vars, axis=-1))
-            graph_nodes = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(tf.ones_like(equal_vars), axis=-1))
             equal_graphs = tf.cast(tf.equal(equal_graphs, graph_nodes), tf.float32)
             correct_graphs = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(correct, axis=-1))
             correct_graphs = tf.cast(tf.equal(correct_graphs, graph_nodes), tf.float32)
-            print(correct_graphs)
             equal_graphs_fraction = tf.reduce_sum(equal_graphs) / tf.maximum(tf.reduce_sum(correct_graphs), 1.)
             print("equal_graphs_fraction", equal_graphs_fraction.numpy(), "=",tf.reduce_sum(equal_graphs).numpy(), "/", tf.reduce_sum(correct_graphs).numpy())
+
+        predictions = predictions.numpy()
+        for i in range(n_graphs):
+            if correct_graphs0[i]==1:
+                graph_solution = predictions[graph_pos[i]:graph_pos[i+1]]
+                graph_solution = tuple(graph_solution)
+                solution_sets[i].add(graph_solution)
+                correct_graph_counts[i]+=1
 
         last_predictions = predictions
         last_var_correct = var_correct
 
     print("test dataset sucess", success_rate/trials)
+    n_unique = [len(solution_sets[i]) for i in range(n_graphs)]
+    #print(n_unique)
+    print("unique fraction",np.mean(n_unique)/np.mean(correct_graph_counts))
 
 def evaluate_metrics(prediction_tries=1):
     model.prediction_tries=prediction_tries
@@ -202,6 +226,6 @@ def evaluate_metrics(prediction_tries=1):
 
     return metrics
 
-#test_latest(10,n_batches=1)
-test_n_solutions(10,n_batches=1, trials=2)
+test_latest(diffusion_steps,n_batches=None)
+#test_n_solutions(diffusion_steps,n_batches=1, trials=3)
 #evaluate_metrics()
