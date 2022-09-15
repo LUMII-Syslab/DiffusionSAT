@@ -15,15 +15,16 @@ from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 
 #model_path = default=Config.train_dir + '/3-sat_22_09_12_14:19:54'
-model_path = default=Config.train_dir + '/k_sat_22_09_13_07:45:31-official'
+model_path = default=Config.train_dir + '/3-sat_22_09_13_09:30:24-official'
+#model_path = default=Config.train_dir + '/clique_22_09_14_10:06:22-official'
 
 from model.query_sat import t_power
 use_baseline_sampling = True
-test_rounds=64
-diffusion_steps = 64
+test_rounds=32
+diffusion_steps = 32
 
 np.set_printoptions(linewidth=2000, precision=3, suppress=True)
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def prepare_checkpoints(model):
     ckpt = tf.train.Checkpoint(step=tf.Variable(0, dtype=tf.int64), model=model)
@@ -151,13 +152,23 @@ def test_latest(N, n_batches):
 
 def test_n_solutions(N, n_batches, trials):
     iterator = itertools.islice(dataset.test_data(), n_batches) if n_batches else dataset.test_data()
-    step_data = next(iterator)
+    fraction = 0
+    count=0
+    for step_data in iterator:
+        count+=1
+        f = test_n_solutions_batch(N, step_data, trials)
+        fraction+=f
+
+    print("total unique fraction", fraction/count)
+
+def test_n_solutions_batch(N, step_data, trials):
     last_predictions=None
     last_var_correct = None
     success_rate = 0
     graph_pos = step_data['variables_in_graph']
     graph_pos = tf.cumsum(graph_pos).numpy()
     n_graphs = graph_pos.shape[0]
+    print(n_graphs)
     graph_pos = numpy.concatenate([[0], graph_pos])
     solution_sets = [set() for _ in range(n_graphs)]
     correct_graph_counts = np.zeros(n_graphs)
@@ -165,11 +176,13 @@ def test_n_solutions(N, n_batches, trials):
     for trial in range(trials):
         success, predictions, var_correct = diffusion(N, step_data, verbose=False, prepare_image=False)
         success_rate+=success
+        #print("success_rate", success)
 
         variables_graph = step_data['variables_graph_adj']
         graph_nodes = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(tf.ones_like(predictions), axis=-1))
         correct_graphs0 = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(var_correct, axis=-1))
         correct_graphs0 = tf.cast(tf.equal(correct_graphs0, graph_nodes), tf.float32)
+        #print(correct_graphs0.numpy())
 
         if last_var_correct is not None:
             correct = var_correct * last_var_correct
@@ -202,7 +215,9 @@ def test_n_solutions(N, n_batches, trials):
     print("test dataset sucess", success_rate/trials)
     n_unique = [len(solution_sets[i]) for i in range(n_graphs)]
     #print(n_unique)
-    print("unique fraction",np.mean(n_unique)/np.mean(correct_graph_counts))
+    uniqueFraction = np.mean(n_unique)/np.mean(correct_graph_counts)
+    print("unique fraction",uniqueFraction)
+    return uniqueFraction
 
 def evaluate_metrics(prediction_tries=1):
     model.prediction_tries=prediction_tries
@@ -226,6 +241,6 @@ def evaluate_metrics(prediction_tries=1):
 
     return metrics
 
-test_latest(diffusion_steps,n_batches=None)
-#test_n_solutions(diffusion_steps,n_batches=1, trials=3)
+#test_latest(diffusion_steps,n_batches=1)
+test_n_solutions(diffusion_steps,n_batches=10, trials=30)
 #evaluate_metrics()
