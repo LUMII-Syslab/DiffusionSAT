@@ -8,9 +8,6 @@ from pysat.solvers import Glucose4
 from data.k_sat import KSAT
 from utils.sat import run_external_solver, run_unigen, build_dimacs_file
 
-from config import Config
-
-
 class SAT_3(KSAT):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
@@ -41,20 +38,21 @@ class SAT_3(KSAT):
 
                 dimacs = build_dimacs_file(iclauses, n_vars)
 
-                if Config.use_unigen:
-                    is_sat, solution = run_unigen(dimacs)
+                if n_vars > 200:
+                    is_sat, solution = run_external_solver(dimacs)
                 else:
-                    if n_vars > 200:
-                        is_sat, solution = run_external_solver(dimacs)
-                    else:
-                        with Glucose4(bootstrap_with=iclauses) as solver:
-                            is_sat = solver.solve()
-                            solution = None
+                    with Glucose4(bootstrap_with=iclauses) as solver:
+                        is_sat = solver.solve()
+                        solution = solver.get_model()
+
+                from config import Config
+                if is_sat and Config.use_unigen: # sample a random solution if there exists one
+                    is_sat, solution = run_unigen(dimacs)
 
                 if is_sat:
                     break
 
-            yield n_vars, iclauses, solution
+            yield len(solution), iclauses, solution
 
 
 class Clique(KSAT):
