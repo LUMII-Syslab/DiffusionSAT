@@ -150,8 +150,12 @@ def test_latest(N, n_batches):
 
     print("test dataset sucess", success_rate/counter)
 
-def test_n_solutions(N, n_batches, trials):
-    iterator = itertools.islice(dataset.test_data(), n_batches) if n_batches else dataset.test_data()
+def test_n_solutions(N, n_batches, trials, test_nr):
+    iterator = itertools.islice(dataset.test_data(), n_batches*test_nr) if n_batches else dataset.test_data()
+
+    for _ in range((test_nr-1)*n_batches): #skip some first batches
+        next(iterator)
+
     fraction = 0
     count=0
     for step_data in iterator:
@@ -160,6 +164,17 @@ def test_n_solutions(N, n_batches, trials):
         fraction+=f
 
     print("total unique fraction", fraction/count)
+
+# def test_n_solutions(N, n_batches, trials):
+#     iterator = itertools.islice(dataset.test_data(), n_batches) if n_batches else dataset.test_data()
+#     fraction = 0
+#     count=0
+#     for step_data in iterator:
+#         count+=1
+#         f = test_n_solutions_batch(N, step_data, trials)
+#         fraction+=f
+#
+#     print("total unique fraction", fraction/count)
 
 def test_n_solutions_batch(N, step_data, trials):
     last_predictions=None
@@ -242,5 +257,5 @@ def evaluate_metrics(prediction_tries=1):
     return metrics
 
 #test_latest(diffusion_steps,n_batches=1)
-test_n_solutions(diffusion_steps,n_batches=10, trials=30)
+test_n_solutions(diffusion_steps,n_batches=10, trials=100, test_nr=7)
 #evaluate_metrics()
