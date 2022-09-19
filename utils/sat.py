@@ -110,14 +110,14 @@ def run_external_solver(input_dimacs: str, solver_exe: str = "binary/treengeling
 
     return is_sat, solution
 
-def run_unigen(input_dimacs: str, unigen_exe: str = "binary/unigen_linux") -> Tuple[bool, list]: # added by SK@2022-09
+def run_unigen(input_dimacs: str, unigen_exe: str = "binary/unigen_linux", seed=1) -> Tuple[bool, list]: # added by SK@2022-09
     """
     :param input_dimacs: Correctly formatted DIMACS file as string
     :param unigen_exe: Absolute or relative path to solver executable
     :return: returns True if formula is satisfiable and False otherwise, and an almost uniformly generated solution in form [1,2,-3, ...]
     """
     exe_path = Path(unigen_exe).resolve()
-    output = subprocess.run([str(exe_path), "--samples", "1", "--arjun", "0"], input=input_dimacs, stdout=subprocess.PIPE, universal_newlines=True)
+    output = subprocess.run([str(exe_path), "--samples", "1", "--arjun", "0", "--seed", str(seed)], input=input_dimacs, stdout=subprocess.PIPE, universal_newlines=True)
     unsat_lines = [line for line in output.stdout.split("\n") if line.find("Formula was UNSAT")>=0]
     is_sat = len(unsat_lines) == 0
     sample_lines = [line for line in output.stdout.split("\n") if not line.startswith("c ") and not line.startswith("vp ") and not line==""]
