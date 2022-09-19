@@ -15,8 +15,9 @@ from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 
 #model_path = default=Config.train_dir + '/3-sat_22_09_12_14:19:54'
-model_path = default=Config.train_dir + '/3-sat_22_09_13_09:30:24-official'
+#model_path = default=Config.train_dir + '/3-sat_22_09_13_09:30:24-official'
 #model_path = default=Config.train_dir + '/clique_22_09_14_10:06:22-official'
+model_path = default=Config.train_dir + '/3-sat_22_09_15_10:48:51-unigen'
 
 from model.query_sat import t_power
 use_baseline_sampling = True
@@ -183,7 +184,7 @@ def test_n_solutions_batch(N, step_data, trials):
     graph_pos = step_data['variables_in_graph']
     graph_pos = tf.cumsum(graph_pos).numpy()
     n_graphs = graph_pos.shape[0]
-    print(n_graphs)
+    #print(n_graphs)
     graph_pos = numpy.concatenate([[0], graph_pos])
     solution_sets = [set() for _ in range(n_graphs)]
     correct_graph_counts = np.zeros(n_graphs)
@@ -205,16 +206,16 @@ def test_n_solutions_batch(N, step_data, trials):
             not_equal_vars = tf.abs(last_predictions - predictions) * correct
             equal_fraction = tf.reduce_sum(equal_vars)/tf.maximum(tf.reduce_sum(correct),1.)
             not_equal_fraction = tf.reduce_sum(not_equal_vars) / tf.maximum(tf.reduce_sum(correct), 1.)
-            print("correct_vars_fraction", tf.reduce_mean(correct).numpy())
-            print("equal_fraction", equal_fraction.numpy())
-            print("not_equal_fraction", not_equal_fraction.numpy())
+            #print("correct_vars_fraction", tf.reduce_mean(correct).numpy())
+            #print("equal_fraction", equal_fraction.numpy())
+            #print("not_equal_fraction", not_equal_fraction.numpy())
 
             equal_graphs = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(equal_vars, axis=-1))
             equal_graphs = tf.cast(tf.equal(equal_graphs, graph_nodes), tf.float32)
             correct_graphs = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(correct, axis=-1))
             correct_graphs = tf.cast(tf.equal(correct_graphs, graph_nodes), tf.float32)
             equal_graphs_fraction = tf.reduce_sum(equal_graphs) / tf.maximum(tf.reduce_sum(correct_graphs), 1.)
-            print("equal_graphs_fraction", equal_graphs_fraction.numpy(), "=",tf.reduce_sum(equal_graphs).numpy(), "/", tf.reduce_sum(correct_graphs).numpy())
+            #print("equal_graphs_fraction", equal_graphs_fraction.numpy(), "=",tf.reduce_sum(equal_graphs).numpy(), "/", tf.reduce_sum(correct_graphs).numpy())
 
         predictions = predictions.numpy()
         for i in range(n_graphs):
@@ -227,11 +228,11 @@ def test_n_solutions_batch(N, step_data, trials):
         last_predictions = predictions
         last_var_correct = var_correct
 
-    print("test dataset sucess", success_rate/trials)
+    #print("test dataset sucess", success_rate/trials)
     n_unique = [len(solution_sets[i]) for i in range(n_graphs)]
     #print(n_unique)
     uniqueFraction = np.mean(n_unique)/np.mean(correct_graph_counts)
-    print("unique fraction",uniqueFraction)
+    #print("unique fraction",uniqueFraction)
     return uniqueFraction
 
 def evaluate_metrics(prediction_tries=1):
@@ -257,5 +258,7 @@ def evaluate_metrics(prediction_tries=1):
     return metrics
 
 #test_latest(diffusion_steps,n_batches=1)
-test_n_solutions(diffusion_steps,n_batches=10, trials=100, test_nr=7)
+for test_nr in [1, 3,4,5,7]:
+    print(test_nr)
+    test_n_solutions(diffusion_steps,n_batches=10, trials=100, test_nr=test_nr)
 #evaluate_metrics()
