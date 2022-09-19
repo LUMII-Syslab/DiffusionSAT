@@ -13,15 +13,18 @@ from metrics.sat_metrics import SATAccuracyTF
 from model.query_sat import randomized_rounding_tf, distribution_at_time
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
+from utils.sat import run_unigen, build_dimacs_file
 
 #model_path = default=Config.train_dir + '/3-sat_22_09_12_14:19:54'
 model_path = default=Config.train_dir + '/3-sat_22_09_13_09:30:24-official'
 #model_path = default=Config.train_dir + '/clique_22_09_14_10:06:22-official'
+model_path = default=Config.train_dir + '/clique_22_09_16_08:58:29-unigen'
 
 from model.query_sat import t_power
 use_baseline_sampling = True
 test_rounds=32
 diffusion_steps = 32
+test_unigen = True
 
 np.set_printoptions(linewidth=2000, precision=3, suppress=True)
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -189,7 +192,17 @@ def test_n_solutions_batch(N, step_data, trials):
     correct_graph_counts = np.zeros(n_graphs)
 
     for trial in range(trials):
-        success, predictions, var_correct = diffusion(N, step_data, verbose=False, prepare_image=False)
+        if test_unigen:
+            n_vars = step_data['variables_graph_adj'].shape[1]
+            iclauses = step_data['clauses'].to_list()
+            dimacs = build_dimacs_file(iclauses, n_vars)
+            is_sat, predictions = run_unigen(dimacs, seed=trial)
+            predictions = (tf.cast(tf.sign(predictions), tf.float32)+1)/2
+            assert is_sat
+            success = 1.0
+            var_correct = tf.ones([n_vars], dtype=np.float32)
+        else:
+            success, predictions, var_correct = diffusion(N, step_data, verbose=False, prepare_image=False)
         success_rate+=success
         #print("success_rate", success)
 
