@@ -224,7 +224,7 @@ class DIMACDataset(Dataset):
     def __batch_files(self, files):
         files_size = len(files)
         # filter formulas that will not fit in any batch
-        files = [(node_count, filename) for node_count, filename in files if node_count <= self.max_nodes_per_batch]
+        files = [(node_count, filename) for node_count, filename in files]
 
         dif = files_size - len(files)
         if dif > 0:
@@ -235,7 +235,7 @@ class DIMACDataset(Dataset):
         nodes_in_batch = 0
 
         for nodes_cnt, filename in files:
-            if nodes_cnt + nodes_in_batch <= self.max_nodes_per_batch:
+            if nodes_cnt + nodes_in_batch <= self.max_nodes_per_batch or nodes_in_batch==0:
                 current_batch.append(filename)
                 nodes_in_batch += nodes_cnt
             else:
