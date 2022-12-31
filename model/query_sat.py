@@ -130,7 +130,7 @@ class QuerySAT(Model):
         onehot -= 1 / n_features
         return onehot * tf.sqrt(tf.cast(n_features, tf.float32)) * stddev
 
-    def call(self, adj_matrix, clauses_graph=None, variables_graph=None, training=None, labels=None, mask=None, noise_scale = None, noisy_num=None):
+    def call(self, adj_matrix, clauses_graph=None, variables_graph=None, training=None, labels=None, mask=None, noise_scale = None, noisy_num=None, denoised_num = None):
         shape = tf.shape(adj_matrix)
         n_vars = shape[0] // 2
         n_clauses = shape[1]
@@ -154,7 +154,7 @@ class QuerySAT(Model):
             pre_rounds = tf.random.uniform([], 0, self.skip_first_rounds + 1, dtype=tf.int32)
             *_, supervised_loss0, clause_state, variables = self.loop(adj_matrix, clause_state, clauses_graph,
                                                                       labels, pre_rounds,
-                                                                      training, variables, variables_graph, noise_scale, noisy_num)
+                                                                      training, variables, variables_graph, noise_scale, noisy_num, denoised_num)
 
             clause_state = tf.stop_gradient(clause_state)
             variables = tf.stop_gradient(variables)
@@ -166,7 +166,7 @@ class QuerySAT(Model):
                                                                                                    rounds,
                                                                                                    training,
                                                                                                    variables,
-                                                                                                   variables_graph, noise_scale, noisy_num)
+                                                                                                   variables_graph, noise_scale, noisy_num, denoised_num)
 
         if training:
             last_clauses = softplus_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix))
@@ -182,7 +182,7 @@ class QuerySAT(Model):
 
         return last_logits, unsupervised_loss + supervised_loss, step
 
-    def loop(self, adj_matrix, clause_state, clauses_graph, labels, rounds, training, variables, variables_graph, noise_scale, noisy_num):
+    def loop(self, adj_matrix, clause_state, clauses_graph, labels, rounds, training, variables, variables_graph, noise_scale, noisy_num, denoised_num):
         step_losses = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=True)
         cl_adj_matrix = tf.sparse.transpose(adj_matrix)
         shape = tf.shape(adj_matrix)
@@ -205,8 +205,12 @@ class QuerySAT(Model):
         variables_graph_norm = variables_graph / tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True)
         clauses_graph_norm = clauses_graph / tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True)
         #per_graph_loss = 0
+
         noisy_labels = construct_training_input(labels, noise_scale) if noisy_num is None else noisy_num
         noisy_labels = add_t_emb(noisy_labels, noise_scale)
+        if denoised_num is None: denoised_num = tf.zeros([n_vars,2])
+        else: denoised_num = tf.concat([denoised_num, 1-denoised_num], axis=-1)
+        noisy_labels = tf.concat([noisy_labels, denoised_num], axis=-1)
         out_logits = tf.zeros([n_vars,1])
         n_graphs = tf.shape(variables_graph)[0]
         best_loss = tf.zeros([n_graphs])+1e6
@@ -389,6 +393,32 @@ class QuerySAT(Model):
                                   tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
                                   ])
+    def train_step_selfsupervised(self, adj_matrix, clauses_graph, variables_graph, solutions):
+        with tf.GradientTape() as tape:
+            noise_scale = tf.random.uniform((), 0, 1)
+            labels = solutions.flat_values
+            noisy_labels = construct_training_input(labels, noise_scale)
+            logits, loss1, step = self.call(adj_matrix, clauses_graph, variables_graph, training=True, labels=labels, noise_scale=noise_scale,noisy_num=noisy_labels)
+            _, loss2, step = self.call(adj_matrix, clauses_graph, variables_graph, training=True,labels=labels, denoised_num=tf.stop_gradient(tf.sigmoid(logits)), noise_scale=noise_scale,noisy_num=noisy_labels)
+            loss = loss1+loss2*2
+            train_vars = self.trainable_variables
+
+        gradients = tape.gradient(loss, train_vars)
+        self.optimizer.apply_gradients(zip(gradients, train_vars))
+        tf.summary.scalar("loss1", loss1)
+        tf.summary.scalar("loss2", loss2)
+
+        return {
+            "steps_taken": step,
+            "loss": loss,
+            "gradients": gradients
+        }
+
+    @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
+                                  ])
     def predict_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
 
         if self.prediction_tries == 1:
@@ -442,6 +472,23 @@ class QuerySAT(Model):
     def diffusion_step(self, adj_matrix, clauses_graph, variables_graph, solutions, noise_scale, noisy_num):
         predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False,
                                             labels=None,noise_scale=noise_scale,noisy_num=noisy_num)
+        return {
+            "steps_taken": step,
+            "loss": loss,
+            "prediction": tf.squeeze(predictions, axis=-1) # shape [nvars]
+        }
+
+    @tf.function(input_signature=[tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.SparseTensorSpec(shape=[None, None], dtype=tf.float32),
+                                  tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32),
+                                  tf.TensorSpec(shape=(), dtype = tf.float32),
+                                  tf.TensorSpec(shape=(None, 2), dtype=tf.float32),
+                                  tf.TensorSpec(shape=(None, 1), dtype=tf.float32)
+                                  ])
+    def diffusion_step_self(self, adj_matrix, clauses_graph, variables_graph, solutions, noise_scale, noisy_num, denoised_num):
+        predictions, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=False,
+                                            labels=None,noise_scale=noise_scale,noisy_num=noisy_num, denoised_num=denoised_num)
         return {
             "steps_taken": step,
             "loss": loss,

@@ -8,27 +8,31 @@ from config import Config
 import os
 from PIL import Image
 import itertools
+import time
 
 from metrics.sat_metrics import SATAccuracyTF
 from model.query_sat import randomized_rounding_tf, distribution_at_time
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.sat import run_unigen, build_dimacs_file
+from pysat.solvers import Glucose4
 
 #model_path = default=Config.train_dir + '/3-sat_22_09_12_14:19:54'
 #model_path = default=Config.train_dir + '/3-sat_22_09_13_09:30:24-official'
 #model_path = default=Config.train_dir + '/clique_22_09_14_10:06:22-official'
-model_path = default=Config.train_dir + '/clique_22_09_16_08:58:29-unigen'
+#model_path = default=Config.train_dir + '/clique_22_09_16_08:58:29-unigen'
 #model_path = default=Config.train_dir + '/3-sat_22_09_15_10:48:51-unigen'
+model_path = default=Config.train_dir + '/3-sat_22_12_29_17:06:11-self'
 
 from model.query_sat import t_power
 use_baseline_sampling = True
 test_rounds=32
 diffusion_steps = 32
-test_unigen = True
+test_unigen = False
+self_supervised=False
 
 np.set_printoptions(linewidth=2000, precision=3, suppress=True)
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def prepare_checkpoints(model):
     ckpt = tf.train.Checkpoint(step=tf.Variable(0, dtype=tf.int64), model=model)
@@ -50,9 +54,14 @@ dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
 
 ckpt, manager = prepare_checkpoints(model)
 
-def predict(model_input, noisy_num, noise_scale):
-    output = model.diffusion_step(model_input['adj_matrix'], model_input['clauses_graph'], model_input['variables_graph'],
-                                  model_input['solutions'], noise_scale, noisy_num)
+def predict(model_input, noisy_num, noise_scale, denoised_num=None):
+    if denoised_num is None:
+        output = model.diffusion_step(model_input['adj_matrix'], model_input['clauses_graph'], model_input['variables_graph'],
+                                      model_input['solutions'], noise_scale, noisy_num)
+    else:
+        output = model.diffusion_step_self(model_input['adj_matrix'], model_input['clauses_graph'], model_input['variables_graph'],
+                                      model_input['solutions'], noise_scale, noisy_num,tf.expand_dims(denoised_num, axis=-1))
+
     logits = output["prediction"]
     predictions = tf.sigmoid(logits)
     return predictions, output
@@ -83,12 +92,16 @@ def diffusion(N, step_data, verbose=True, prepare_image=True):
     #print(n_vars)
     x = tf.zeros([n_vars, 2])+0.5
     cum_accuracy = np.zeros(n_graphs)
+    predictions = None
 
     for t in range(N):
         noise_scale = 1 - t / N
         x_noisy = randomized_rounding_tf(x)
         if use_baseline_sampling: x = x_noisy
-        predictions, model_output = predict(model_input, x_noisy, noise_scale)
+        if self_supervised:
+            predictions, model_output = predict(model_input, x_noisy, noise_scale, predictions)
+        else:
+            predictions, model_output = predict(model_input, x_noisy, noise_scale, denoised_num=None)
         metric = SATAccuracyTF()
         #metric.update_state(model_output, step_data)
         #metric.log_in_stdout()
@@ -187,12 +200,13 @@ def test_n_solutions_batch(N, step_data, trials):
     graph_pos = step_data['variables_in_graph']
     graph_pos = tf.cumsum(graph_pos).numpy()
     n_graphs = graph_pos.shape[0]
-    #print(n_graphs)
+    #print("ngraphs",n_graphs)
     graph_pos = numpy.concatenate([[0], graph_pos])
     solution_sets = [set() for _ in range(n_graphs)]
     correct_graph_counts = np.zeros(n_graphs)
 
     for trial in range(trials):
+        start_time = time.time()
         if test_unigen:
             n_vars = step_data['variables_graph_adj'].shape[1]
             iclauses = step_data['clauses'].to_list()
@@ -204,6 +218,9 @@ def test_n_solutions_batch(N, step_data, trials):
             var_correct = tf.ones([n_vars], dtype=np.float32)
         else:
             success, predictions, var_correct = diffusion(N, step_data, verbose=False, prepare_image=False)
+        step_time = time.time() - start_time
+        #print("time", step_time)
+        print(step_time/n_graphs)
         success_rate+=success
         #print("success_rate", success)
 
@@ -220,7 +237,7 @@ def test_n_solutions_batch(N, step_data, trials):
             equal_fraction = tf.reduce_sum(equal_vars)/tf.maximum(tf.reduce_sum(correct),1.)
             not_equal_fraction = tf.reduce_sum(not_equal_vars) / tf.maximum(tf.reduce_sum(correct), 1.)
             #print("correct_vars_fraction", tf.reduce_mean(correct).numpy())
-            #print("equal_fraction", equal_fraction.numpy())
+            #print("equal_fraction", equal_fraction.numpy(), step_time, n_graphs)
             #print("not_equal_fraction", not_equal_fraction.numpy())
 
             equal_graphs = tf.sparse.sparse_dense_matmul(variables_graph, tf.expand_dims(equal_vars, axis=-1))
@@ -270,8 +287,8 @@ def evaluate_metrics(prediction_tries=1):
 
     return metrics
 
-#test_latest(diffusion_steps,n_batches=1)
-for test_nr in [1, 3,4,5,7]:
-    print(test_nr)
-    test_n_solutions(diffusion_steps,n_batches=10, trials=100, test_nr=test_nr)
+test_latest(diffusion_steps,n_batches=10)
+# for test_nr in [1]:#, 3,4,5,7]:
+#     print(test_nr)
+#     test_n_solutions(diffusion_steps,n_batches=10, trials=2, test_nr=test_nr)
 #evaluate_metrics()
