@@ -12,13 +12,15 @@ from tensorflow.keras import Model
 from config import Config
 from data.dataset import Dataset
 from metrics.base import EmptyMetric
+from metrics.sat_metrics import SATAccuracyTF
 from optimization.AdaBelief import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.measure import Timer
 from utils.parameters_log import HP_TRAINABLE_PARAMS, HP_TASK
 from utils.sat import is_graph_sat
 from utils.visualization import create_cactus_data
-
+import matplotlib.pyplot as plt
+import io
 
 def main():
     # optimizer = tfa.optimizers.RectifiedAdam(Config.learning_rate,
@@ -65,8 +67,8 @@ def main():
     if Config.test_classic_solver:
         variable_gen_classic_solver()
 
-    if Config.make_cactus:
-        make_cactus(model, dataset)
+    # if Config.make_cactus:
+    #     make_cactus(model, dataset)
 
 
 def make_cactus(model: Model, dataset):
@@ -258,10 +260,14 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
             print(f"{int(ckpt.step)}. step;\tloss: {loss_mean:.5f};\ttime: {timer.lap():.3f}s")
             mean_loss.reset_states()
 
-            # with tf.name_scope("gradients"):
-            #     with writer.as_default():
-            #         for grd, var in zip(gradients, model.trainable_variables):
-            #             tf.summary.histogram(var.name, grd, step=int(ckpt.step))
+            with tf.name_scope("gradients"):
+                sum_grad = 0
+                for grd, var in zip(gradients, model.trainable_variables):
+                    grad_len = tf.reduce_mean(tf.abs(grd))
+                    #tf.summary.scalar(var.name, grad_len)
+                    sum_grad += grad_len
+
+            tf.summary.scalar("gradlen", sum_grad)
 
             with tf.name_scope("variables"):
                 with writer.as_default():
@@ -279,6 +285,8 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
 
             metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps,
                                        initial=(int(ckpt.step) == 0))
+            plot_curve(dataset, validation_data, model, steps=n_eval_steps)
+
             for metric in metrics:
                 metric.log_in_tensorboard(reset_state=False, step=int(ckpt.step))
                 metric.log_in_stdout(step=int(ckpt.step))
@@ -330,6 +338,53 @@ def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, step
 
     return metrics if not empty else [EmptyMetric()]
 
+def plot_to_image(figure):
+  """Converts the matplotlib plot specified by 'figure' to a PNG image and
+  returns it. The supplied figure is closed and inaccessible after this call."""
+  # Save the plot to a PNG in memory.
+  buf = io.BytesIO()
+  plt.savefig(buf, format='png')
+  # Closing the figure prevents it from being displayed directly inside
+  # the notebook.
+  plt.close(figure)
+  buf.seek(0)
+  # Convert PNG buffer to TF image
+  image = tf.image.decode_png(buf.getvalue(), channels=4)
+  # Add the batch dimension
+  image = tf.expand_dims(image, 0)
+  return image
+
+def plot_curve(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = 100):
+    iterator = itertools.islice(data, steps)
+    loss_data = []
+    acc_data = []
+    total_acc_data = []
+
+    for t in range(steps):
+        metric = SATAccuracyTF()
+        noise_scale = t/steps
+        step_data=next(iterator)
+        model_input = dataset.filter_model_inputs(step_data)
+        output = model.plot_step(**model_input, noise_scale=noise_scale)
+        loss = output["loss"]
+        loss_data.append(loss)
+        metric.update_state(output, step_data)
+        mean_acc, mean_total_acc = metric.get_values()
+        acc_data.append(mean_acc)
+        total_acc_data.append(mean_total_acc)
+
+    figure = plt.figure()
+    plt.plot(loss_data)
+    image_tf = plot_to_image(figure)
+    tf.summary.image("loss_curve", image_tf)
+    figure = plt.figure()
+    plt.plot(acc_data)
+    image_tf = plot_to_image(figure)
+    tf.summary.image("acc_curve", image_tf)
+    figure = plt.figure()
+    plt.plot(total_acc_data)
+    image_tf = plot_to_image(figure)
+    tf.summary.image("total_acc_curve", image_tf)
 
 def test_invariance(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int = None):
     metrics = dataset.metrics()

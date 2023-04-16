@@ -20,12 +20,13 @@ class Config:
 
     """Training and task selection config: """
     optimizer = 'radam'
-    train_steps = 1000000
+    train_steps = 167000
     warmup = 0.0
-    learning_rate = 0.0001
+    learning_rate = 0.0003
     model = 'query_sat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
     task = 'sha-gen2019'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
+    use_unigen = False # whether to use almost uniform SAT solution sampler Unigen (applicable to SAT), SK@2022-10
 
     """Supported training and evaluation modes: """
     train = True
@@ -79,6 +80,8 @@ class Config:
 
         config_parser.add_argument('--input_mode', type=str, default=cls.input_mode, const=cls.input_mode, nargs='?',
                                    choices=['variables', 'literals'])
+        
+        config_parser.add_argument('--use_unigen', type=bool, default=cls.use_unigen) # SK@2022-09
 
         config_parser.add_argument('--force_data_gen', action='store_true', default=cls.force_data_gen)
 

@@ -6,8 +6,7 @@ from cnfgen import RandomKCNF, CliqueFormula, DominatingSet, GraphColoringFormul
 from pysat.solvers import Glucose4
 
 from data.k_sat import KSAT
-from utils.sat import run_external_solver, build_dimacs_file
-
+from utils.sat import run_external_solver, run_unigen, build_dimacs_file
 
 class SAT_3(KSAT):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
@@ -44,12 +43,16 @@ class SAT_3(KSAT):
                 else:
                     with Glucose4(bootstrap_with=iclauses) as solver:
                         is_sat = solver.solve()
-                        solution = None
+                        solution = solver.get_model()
+
+                from config import Config
+                if is_sat and Config.use_unigen: # sample a random solution if there exists one
+                    is_sat, solution = run_unigen(dimacs)
 
                 if is_sat:
                     break
 
-            yield n_vars, iclauses, solution
+            yield len(solution), iclauses, solution
 
 
 class Clique(KSAT):
@@ -57,7 +60,7 @@ class Clique(KSAT):
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
     """
 
-    def __init__(self, data_dir, min_vertices=4, max_vertices=20, force_data_gen=False, **kwargs) -> None:
+    def __init__(self, data_dir, min_vertices=4, max_vertices=40, force_data_gen=False, **kwargs) -> None:
         super(Clique, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
         self.train_size = 50000
@@ -65,7 +68,7 @@ class Clique(KSAT):
         self.min_vertices = min_vertices
         self.max_vertices = max_vertices
         self.clique_size_min = 3
-        self.clique_size_max = 6
+        self.clique_size_max = 3
 
     def train_generator(self) -> tuple:
         return self._generator(self.train_size)
@@ -151,7 +154,7 @@ class KColor(KSAT):
     the graph such that no two adjacent vertices get the same color.
     """
 
-    def __init__(self, data_dir, min_vertices=5, max_vertices=20, force_data_gen=False, **kwargs) -> None:
+    def __init__(self, data_dir, min_vertices=4, max_vertices=20, force_data_gen=False, **kwargs) -> None:
         super(KColor, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
         self.train_size = 50000
