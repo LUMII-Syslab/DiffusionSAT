@@ -2,7 +2,8 @@ import random
 
 import numpy as np
 import tensorflow as tf
-from pysat.solvers import Cadical
+#from pysat.solvers import Cadical
+from pysat.solvers import Solver # by SK; Cadical is not present in recent pysat versions
 
 from data.dimac import DIMACDataset
 from metrics.sat_metrics import SATAccuracyTF, StepStatistics
@@ -36,7 +37,7 @@ class KSAT(DIMACDataset):
         for _ in range(size):
             n_vars = random.randint(self.min_vars, self.max_vars)
 
-            solver = Cadical()
+            solver = Solver() # -- Cadical() by SK
             iclauses = []
 
             while True:
