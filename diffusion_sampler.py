@@ -22,7 +22,7 @@ from pysat.solvers import Glucose4
 #model_path = default=Config.train_dir + '/clique_22_09_14_10:06:22-official'
 #model_path = default=Config.train_dir + '/clique_22_09_16_08:58:29-unigen'
 #model_path = default=Config.train_dir + '/3-sat_22_09_15_10:48:51-unigen'
-model_path = default=Config.train_dir + '/3-sat_22_12_29_17:06:11-self'
+model_path = default=Config.train_dir + '/3-sat_22_12_29_17:06:11-self' # TODO: norádít pareizo folderi
 
 from model.query_sat import t_power
 use_baseline_sampling = True
@@ -35,7 +35,7 @@ np.set_printoptions(linewidth=2000, precision=3, suppress=True)
 #os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def prepare_checkpoints(model):
-    ckpt = tf.train.Checkpoint(step=tf.Variable(0, dtype=tf.int64), model=model)
+    ckpt = tf.train.Checkpoint(step=tf.Variable(0, dtype=tf.int64), model=model) # lasám svarus
     manager = tf.train.CheckpointManager(ckpt, model_path, max_to_keep=1000)
 
     ckpt.restore(manager.latest_checkpoint).expect_partial()
@@ -101,7 +101,8 @@ def diffusion(N, step_data, verbose=True, prepare_image=True):
         if self_supervised:
             predictions, model_output = predict(model_input, x_noisy, noise_scale, predictions)
         else:
-            predictions, model_output = predict(model_input, x_noisy, noise_scale, denoised_num=None)
+            predictions, model_output = predict(model_input, x_noisy, noise_scale, denoised_num=None) 
+        # by SK: predictions are with sigmoid; model_output['prediction'] is without
         metric = SATAccuracyTF()
         #metric.update_state(model_output, step_data)
         #metric.log_in_stdout()
@@ -181,6 +182,7 @@ def test_n_solutions(N, n_batches, trials, test_nr):
         fraction+=f
 
     print("total unique fraction", fraction/count)
+
 
 # def test_n_solutions(N, n_batches, trials):
 #     iterator = itertools.islice(dataset.test_data(), n_batches) if n_batches else dataset.test_data()

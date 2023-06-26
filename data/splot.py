@@ -11,7 +11,7 @@ import subprocess
 from data.k_sat import KSAT
 
 # from utils.sat import remove_unused_vars
-
+MY_DIR = os.path.dirname(os.path.realpath(__file__))
 
 class SplotData(KSAT):
     """
@@ -20,8 +20,8 @@ class SplotData(KSAT):
     The files come in the XML format. They must be placed in <data_dir>.
     """
 
-    def __init__(self, data_dir,
-                 test_size_factor,
+    def __init__(self, data_dir=os.path.join(MY_DIR,"splot"),
+                 test_size_factor=0.10, # 10% of data for tests
                  **kwargs) -> None:
         super(SplotData, self).__init__(data_dir, force_data_gen=False, **kwargs)
 
@@ -80,7 +80,7 @@ class SplotData(KSAT):
 
 if __name__ == "__main__":
 
-    MY_DIR = os.path.dirname(os.path.realpath(__file__))
+    
 
     # for 
     d = SplotData(os.path.join(MY_DIR,"splot"), 0.1)

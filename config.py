@@ -24,7 +24,8 @@ class Config:
     warmup = 0.0
     learning_rate = 0.0003
     model = 'query_sat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
-    task = '3-sat'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
+    task = "splot" # task === dataset
+     # '3-sat'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
     use_unigen = False # whether to use almost uniform SAT solution sampler Unigen (applicable to SAT), SK@2022-10
 
