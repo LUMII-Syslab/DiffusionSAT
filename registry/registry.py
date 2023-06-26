@@ -6,6 +6,7 @@ from data.SHAGen import SHAGen
 from data.SHAGen2019 import SHAGen2019
 from data.k_sat import KSAT
 from data.mixed_sat import MixGraphSAT
+from data.splot import SplotData
 #from data.tsp import EuclideanTSP
 #from data.tsp_asymmetric import AsymmetricTSP
 from data.sha_anf import ANF
@@ -68,5 +69,6 @@ class DatasetRegistry(Registry):
             # "asymmetric_tsp": AsymmetricTSP,
             "primes": PrimesGen,
             "mix_sat": MixGraphSAT,
-            "sha-anf": ANF
+            "sha-anf": ANF,
+            "splot": SplotData
         }

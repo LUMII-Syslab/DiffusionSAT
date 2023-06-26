@@ -207,7 +207,7 @@ class DIMACDataset(Dataset):
             'clauses_len_second': self.__int64_feat([len(x) for c in original_clauses for x in c]),
             'batched_clauses': self.__int64_feat(batched_clauses),
             'batched_clauses_rows': self.__int64_feat([len(x) for x in batched_clauses]),
-            'adj_indices_pos': self.__int64_feat(adj_indices_pos),
+            'adj_indices_pos': self.__int64_feat(adj_indices_pos), # by SK: 2D matrix, literali x klauzulas (0 vai 1)
             'adj_indices_neg': self.__int64_feat(adj_indices_neg),
             'variable_count': self.__int64_feat(variable_count),
             'clauses_in_formula': self.__int64_feat(clauses_in_formula),
@@ -272,8 +272,8 @@ class DIMACDataset(Dataset):
             "clauses": tf.cast(parsed['clauses'], tf.int32),
             "solutions": tf.cast(parsed['solutions'], tf.int32),
             "batched_clauses": tf.cast(parsed['batched_clauses'], tf.int32),
-            "adj_indices_pos": sparse_to_dense(parsed['adj_indices_pos'], dtype=tf.int64, shape=[-1, 2]),
-            "adj_indices_neg": sparse_to_dense(parsed['adj_indices_neg'], dtype=tf.int64, shape=[-1, 2]),
+            "adj_indices_pos": sparse_to_dense(parsed['adj_indices_pos'], dtype=tf.int64, shape=[-1, 2]), # positive edges: var pieder clause
+            "adj_indices_neg": sparse_to_dense(parsed['adj_indices_neg'], dtype=tf.int64, shape=[-1, 2]), # negative edges: neg(var) pieder clause
             "variable_count": sparse_to_dense(parsed['variable_count']),
             "clauses_in_formula": sparse_to_dense(parsed['clauses_in_formula']),
             "cells_in_formula": sparse_to_dense(parsed['cells_in_formula']),
