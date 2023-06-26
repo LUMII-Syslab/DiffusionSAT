@@ -69,8 +69,8 @@ class DIMACDataset(Dataset):
         return self.fetch_dataset(self.test_generator, mode="test")
 
     def fetch_dataset(self, generator: callable, mode: str):
-        dimacs_folder = self.data_dir / "dimacs" / f"{mode}_{self.min_vars}_{self.max_vars}"
-        tfrecords_folder = self.data_dir / "tf_records" / f"{mode}_{self.max_nodes_per_batch}_{self.min_vars}_{self.max_vars}"
+        dimacs_folder = Path(self.data_dir) / Path("dimacs") / Path(f"{mode}_{self.min_vars}_{self.max_vars}")
+        tfrecords_folder = Path(self.data_dir) / Path("tf_records") / Path(f"{mode}_{self.max_nodes_per_batch}_{self.min_vars}_{self.max_vars}")
 
         if self.force_data_gen and tfrecords_folder.exists():
             shutil.rmtree(tfrecords_folder)
