@@ -20,12 +20,15 @@ class SplotData(KSAT):
     The files come in the XML format. They must be placed in <data_dir>.
     """
 
-    def __init__(self, data_dir=os.path.join(MY_DIR,"splot"),
+    def __init__(self, data_dir,
                  test_size_factor=0.10, # 10% of data for tests
+                 max_nodes_per_batch=5000,
                  **kwargs) -> None:
-        super(SplotData, self).__init__(data_dir, force_data_gen=False, **kwargs)
+#        super(SplotData, self).__init__(data_dir, force_data_gen=False, **kwargs)
+        super(SplotData, self).__init__(data_dir, input_mode='literals', max_nodes_per_batch=0)
 
-        self.data_dir = data_dir
+        self.data_dir = os.path.join(MY_DIR,"splot")#data_dir
+        print(f"We are in splot data init; data_dir={self.data_dir}")
         self.test_size_factor = test_size_factor
 
 

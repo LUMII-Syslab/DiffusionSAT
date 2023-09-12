@@ -9,10 +9,14 @@ import os
 from PIL import Image
 import itertools
 import time
+import sys
+from utils.DimacsFile import DimacsFile
+from utils.VariableAssignment import VariableAssignment
 
 from metrics.sat_metrics import SATAccuracyTF
 from model.query_sat import randomized_rounding_tf, distribution_at_time
 from optimization.AdaBelief import AdaBeliefOptimizer
+#from adabelief_tf import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
 from utils.sat import run_unigen, build_dimacs_file
 from pysat.solvers import Glucose4
@@ -22,8 +26,9 @@ from pysat.solvers import Glucose4
 #model_path = default=Config.train_dir + '/clique_22_09_14_10:06:22-official'
 #model_path = default=Config.train_dir + '/clique_22_09_16_08:58:29-unigen'
 #model_path = default=Config.train_dir + '/3-sat_22_09_15_10:48:51-unigen'
-model_path = default=Config.train_dir + '/3-sat_22_12_29_17:06:11-self' # TODO: norádít pareizo folderi
-
+#model_path = default=Config.train_dir + '/3-sat_22_12_29_17:06:11-self' # TODO: norádít pareizo folderi
+#model_path = default=Config.train_dir + '/splot_23_06_30_09:05:54'
+model_path = default=Config.train_dir + '/splot_23_07_28_21:21:02-smallbatch'
 from model.query_sat import t_power
 use_baseline_sampling = True
 test_rounds=32
@@ -46,7 +51,7 @@ def prepare_checkpoints(model):
 
     return ckpt, manager
 
-optimizer = AdaBeliefOptimizer(Config.learning_rate)
+optimizer = AdaBeliefOptimizer(learning_rate=Config.learning_rate)
 model = ModelRegistry().resolve(Config.model)(optimizer=optimizer, test_rounds = test_rounds)
 dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
                                                  force_data_gen=Config.force_data_gen,
@@ -93,6 +98,14 @@ def diffusion(N, step_data, verbose=True, prepare_image=True):
     x = tf.zeros([n_vars, 2])+0.5
     cum_accuracy = np.zeros(n_graphs)
     predictions = None
+
+#    print("KEYS:",list(step_data.keys()),"NVARS:",n_vars)
+#    print("CLAUSES",step_data["clauses"])
+#    print("SOLUTIONS",step_data["solutions"]) # some precomputed solutions
+#    for sol in step_data["solutions"]:
+#        asgn = VariableAssignment(clauses=step_data["clauses"])
+#        asgn.assign_all_from_bit_list(sol)
+#        print("int=",int(asgn),asgn.satisfiable())
 
     for t in range(N):
         noise_scale = 1 - t / N
@@ -164,9 +177,90 @@ def test_latest(N, n_batches):
             print("Testing batch", counter)
         counter += 1
         success, predictions, var_correct = diffusion(N, step_data, verbose=False, prepare_image=False)
+        print("predictions: ", predictions)
         success_rate+=success
 
     print("test dataset sucess", success_rate/counter)
+
+
+
+# tests uniformity using Pearson's Chi squared test; we use UniGen as a reference implementation
+def test_sk(N, n_batches):
+#    iterator = itertools.islice(dataset.test_data(), n_batches) if n_batches else dataset.test_data()
+    iterator = dataset.test_data()
+    print_progress = True
+
+    counter = 0
+    success_rate = 0
+    for step_data in iterator:
+        print("STEP DATA",counter)
+        if print_progress and counter % 10 == 0:
+            print("Testing batch", counter)
+
+        clauses = DimacsFile(clauses=step_data["clauses"]).clauses() # converting tensor to list
+
+        print("LEN=",len(clauses))
+        #counter += 1
+        #continue
+
+        cnt = count_solutions(clauses)
+        cnt2 = count_solutions2(clauses)
+        print("CNT=",cnt, cnt2)
+        gen_cnt = max(cnt,cnt2)*5
+
+        (is_sat, uni_solutions) = run_unigen(str(DimacsFile(clauses=clauses)), n_samples=gen_cnt)
+#        print("UNI SOLS", len(uni_solutions))
+        for uni_sol in uni_solutions:
+            asgn = VariableAssignment(clauses=clauses)
+            asgn.assign_all_from_int_list(uni_sol)
+            print("uni sol",int(asgn), asgn.satisfiable())
+
+        # TODO:
+        # generate unigen via run_unigen("p cnf 5 3\n-1 2 0\n1 -2 0\n-3 4 5 0",  n_samples=cnt*5)
+        # genetate cnt*5 diffusion samples
+        # create map: unigen or diffusion sample -> unigen cnt
+        # create map: unigen or diffusion sample -> diffusion cnt
+        # apply Chi^2
+        counter += 1
+        while True:
+            success, predictions, var_correct = diffusion(N, step_data, verbose=False, prepare_image=False)
+            asgn = VariableAssignment(clauses=clauses)
+            asgn.assign_all_from_bit_list(predictions)
+            print("dif sol",int(asgn), asgn.satisfiable())
+            print("success: ", success)
+            if success > 0:
+                break
+        print("success: ", success)
+        print("predictions: ", predictions)
+        print(tensor_to_int(predictions))
+        success_rate+=success
+        break # TO remove
+
+    print("test dataset sucess", success_rate/counter)
+
+from pyapproxmc import Counter # for counting SAT solutions
+
+def count_solutions(clauses):
+    counter = Counter(seed=2157, epsilon=0.5, delta=0.15)
+
+    for clause in clauses:
+        counter.add_clause(clause)
+    print("counting #solutions...")
+    cell_count, hash_count = counter.count()
+    print("counts=",cell_count, hash_count)
+    return cell_count*(2**hash_count)
+
+def count_solutions2(clauses):
+    from pyunigen import Sampler
+    c = Sampler()
+    for clause in clauses:
+        c.add_clause(clause)
+    print("counting #solutions (2)...")
+    cells, hashes, samples = c.sample(num=0)
+    print("cells/hashes/samples (2)=",cells,hashes,samples," #solutions=cells*2^hashes=",cells*2**hashes)
+    return cells*2**hashes
+
+
 
 def test_n_solutions(N, n_batches, trials, test_nr):
     iterator = itertools.islice(dataset.test_data(), n_batches*test_nr) if n_batches else dataset.test_data()
@@ -289,7 +383,8 @@ def evaluate_metrics(prediction_tries=1):
 
     return metrics
 
-test_latest(diffusion_steps,n_batches=10)
+test_sk(diffusion_steps,n_batches=None)
+#test_latest(diffusion_steps,n_batches=10)
 # for test_nr in [1]:#, 3,4,5,7]:
 #     print(test_nr)
 #     test_n_solutions(diffusion_steps,n_batches=10, trials=2, test_nr=test_nr)
