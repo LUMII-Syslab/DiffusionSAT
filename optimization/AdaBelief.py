@@ -22,9 +22,11 @@ from typeguard import typechecked
 # from tabulate import tabulate
 #from colorama import Fore, Back, Style
 
+# added .legacy. by SK
+# see: https://www.tensorflow.org/api_docs/python/tf/keras/optimizers/legacy/Optimizer
 
 @tf.keras.utils.register_keras_serializable(package="Addons")
-class AdaBeliefOptimizer(tf.keras.optimizers.Optimizer):
+class AdaBeliefOptimizer(tf.keras.optimizers.legacy.Optimizer):
     """
     It implements the AdaBeliefOptimizer proposed by
     Juntang Zhuang et al. in [AdaBeliefOptimizer Optimizer: Adapting stepsizes by the belief
