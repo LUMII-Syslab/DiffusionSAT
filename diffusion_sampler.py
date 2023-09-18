@@ -12,6 +12,7 @@ import time
 import sys
 from utils.DimacsFile import DimacsFile
 from utils.VariableAssignment import VariableAssignment
+from utils.chi_square import chi_square_likelihood
 
 from metrics.sat_metrics import SATAccuracyTF
 from model.query_sat import randomized_rounding_tf, distribution_at_time
@@ -208,35 +209,62 @@ def test_sk(N, n_batches):
         print("CNT=",cnt, cnt2)
         gen_cnt = max(cnt,cnt2)*5
 
+        # unigen_cnt: map: unigen or diffusion sample -> unigen cnt
+        # diffusion_cnt map: unigen or diffusion sample -> diffusion cnt
+        unigen_cnt = {}
+        diffusion_cnt = {}
+
+        # generate unigen via run_unigen("p cnf 5 3\n-1 2 0\n1 -2 0\n-3 4 5 0",  n_samples=gen_cnt)...
         (is_sat, uni_solutions) = run_unigen(str(DimacsFile(clauses=clauses)), n_samples=gen_cnt)
-#        print("UNI SOLS", len(uni_solutions))
+
+        uni_cnt = 0
         for uni_sol in uni_solutions:
             asgn = VariableAssignment(clauses=clauses)
             asgn.assign_all_from_int_list(uni_sol)
-            print("uni sol",int(asgn), asgn.satisfiable())
+            i_sample = int(asgn)
+            if not i_sample in unigen_cnt:
+                unigen_cnt[i_sample]=0
+            if not i_sample in diffusion_cnt:
+                diffusion_cnt[i_sample]=0
+            unigen_cnt[i_sample] += 1
+            uni_cnt += 1
 
-        # TODO:
-        # generate unigen via run_unigen("p cnf 5 3\n-1 2 0\n1 -2 0\n-3 4 5 0",  n_samples=cnt*5)
-        # genetate cnt*5 diffusion samples
-        # create map: unigen or diffusion sample -> unigen cnt
-        # create map: unigen or diffusion sample -> diffusion cnt
-        # apply Chi^2
-        counter += 1
-        while True:
+
+        # genetate uni_cnt diffusion samples...
+        remaining = uni_cnt
+        while remaining>0:
             success, predictions, var_correct = diffusion(N, step_data, verbose=False, prepare_image=False)
             asgn = VariableAssignment(clauses=clauses)
             asgn.assign_all_from_bit_list(predictions)
-            print("dif sol",int(asgn), asgn.satisfiable())
-            print("success: ", success)
-            if success > 0:
-                break
-        print("success: ", success)
-        print("predictions: ", predictions)
-        print(tensor_to_int(predictions))
-        success_rate+=success
-        break # TO remove
 
-    print("test dataset sucess", success_rate/counter)
+            i_sample = int(asgn)
+            is_sat = asgn.satisfiable()
+
+            counter += 1
+            success_rate+=success
+
+            if not i_sample in unigen_cnt:
+                 continue # just ignore this sample due to Chi Square test problem
+
+#            if not i_sample in unigen_cnt:
+#                unigen_cnt[i_sample]=0  <<< we may not leave 0 here, since Chi Square test won't work
+
+
+            if not i_sample in diffusion_cnt:
+                 diffusion_cnt[i_sample]=0
+
+            if is_sat:
+                 diffusion_cnt[i_sample] += 1
+                 remaining -= 1
+                 print("diffusion SATISFIABLE", success)
+            else:
+                 print("diffusion UNSAT", success)
+
+
+        # apply Chi^2
+        chi2_confidence = chi_square_likelihood(diffusion_cnt, unigen_cnt) # observed, expected
+        print("chi square likelihood confidence = ", chi2_confidence*100, "%")
+    print("test dataset diffusion success", success_rate/counter)
 
 from pyapproxmc import Counter # for counting SAT solutions
 
