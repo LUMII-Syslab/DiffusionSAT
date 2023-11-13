@@ -239,8 +239,11 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
 
     mean_loss = tf.metrics.Mean()
     timer = Timer(start_now=True)
+    print("train1")
     validation_data = dataset.validation_data()
+    print("train2")
     train_data = dataset.train_data()
+    print("train3")
 
     # TODO: Check against step in checkpoint
     for step_data in itertools.islice(train_data, Config.train_steps + 1):

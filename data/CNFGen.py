@@ -12,8 +12,14 @@ class SAT_3(KSAT):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
 
-    def __init__(self, data_dir, min_vars=5, max_vars=100, force_data_gen=False, **kwargs) -> None:
-        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
+    def __init__(self, data_dir, min_vars=5,
+                 max_vars=30, # by SK #max_vars=100, 
+                 max_nodes_per_batch=0, # by SK 
+                 force_data_gen=False,
+                 **kwargs) -> None:
+        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
+                                    max_nodes_per_batch=0, # by SK
+                                    **kwargs)
         self.train_size = 100000
         self.test_size = 5000
         self.min_vars = min_vars
@@ -33,6 +39,7 @@ class SAT_3(KSAT):
 
             while True:
                 F = RandomKCNF(3, n_vars, n_clauses)
+                F._compress_clause = lambda x: x
                 clauses = list(F.clauses())
                 iclauses = [F._compress_clause(x) for x in clauses]
 

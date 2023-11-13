@@ -15,9 +15,10 @@ class KSAT(DIMACDataset):
     """
 
     def __init__(self, data_dir, force_data_gen=False,
-                 min_vars=3, max_vars=100,
+                 min_vars=3, max_vars=30,
+                 max_nodes_per_batch=0, # by SK
                  input_mode='variables', test_size=10000, **kwargs) -> None:
-        super(KSAT, self).__init__(data_dir, min_vars, max_vars, force_data_gen=force_data_gen, **kwargs)
+        super(KSAT, self).__init__(data_dir, min_vars, max_vars, force_data_gen=force_data_gen, max_nodes_per_batch=max_nodes_per_batch, **kwargs) # max_nodes_per_batch by SK
         self.filter = self.__prepare_filter(input_mode)
         self.train_size = 300000
         self.test_size = test_size

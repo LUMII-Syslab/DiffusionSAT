@@ -30,7 +30,7 @@ class DimacsFile:
 
     def __number_of_vars(self, clauses):
         a = np.array(self.__flatten(clauses))
-        return max(abs(a.max()), abs(a.min()))
+        return int(max(abs(a.max()), abs(a.min())))
 
     def __flatten(self, l):
         return [item for sublist in l for item in sublist]
