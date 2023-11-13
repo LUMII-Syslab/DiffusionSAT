@@ -18,16 +18,23 @@ class Config:
     restore = None
     label = ""
 
+    max_nodes_per_batch = 20_000 # 20_000 for Nvidia T4, 60_000 for more advanced cards (setting by SK)
+    scale_test_batch = True # whether to use the same test data to fill the whole test batch - useful for finding multiple solutions at once (setting by SK)
+
     """Training and task selection config: """
     optimizer = 'radam'
     train_steps = 167000
+#    train_steps = 500000
     warmup = 0.0
     learning_rate = 0.0003
     model = 'query_sat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
-    task = "splot" # task === dataset
+    #task = "splot" # task === dataset; for "splot" use input_mode="variables"
+    #task = "satlib"
+    #task = "k_sat"
+    task = "3-sat" # with use_unigen and max_vars = 30
      # '3-sat'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
-    use_unigen = False # whether to use almost uniform SAT solution sampler Unigen (applicable to SAT), SK@2022-10
+    use_unigen = True #False # whether to use almost uniform SAT solution sampler Unigen (applicable to SAT), SK@2022-10
 
     """Supported training and evaluation modes: """
     train = True

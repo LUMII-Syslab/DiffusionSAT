@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
 import scipy
+from scipy import stats
 import sys
 
 def chi_square_likelihood(observed, expected):
+    if len(observed)==1 and len(expected)==1:
+        return 1.0 # 100% likelihood
+
     # observed and expected are dicts: id -> cnt
 
     # First, let's map each id to an integer
