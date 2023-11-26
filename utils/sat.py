@@ -4,6 +4,7 @@ from typing import Tuple
 import os
 import uuid
 from utils.VariableAssignment import VariableAssignment
+from utils.DimacsFile import DimacsFile
 
 import tensorflow as tf
 
@@ -154,7 +155,11 @@ def run_quicksampler(input_dimacs: str, solver_exe: str = "binary/quicksampler_l
     with open(dimacs_path, 'w') as file:
         file.write(input_dimacs)
 
+    df = DimacsFile(filename=dimacs_path)
+    df.load()
+
     subprocess.run([str(exe_path), "-n", str(n_samples), dimacs_path])
+
 
     solution = []
     # reading the file line by line:
@@ -165,8 +170,9 @@ def run_quicksampler(input_dimacs: str, solver_exe: str = "binary/quicksampler_l
                 bit_str = arr[1] # the second line element is bit-encoded solution
                 print(bit_str) 
                 bit_list = [int(char) for char in bit_str]
-                asgn = VariableAssignment(len(bit_str))
+                asgn = VariableAssignment(len(bit_str), df.clauses())
                 asgn.assign_all_from_bit_list(bit_list)
+                print(asgn.satisfiable())
                 sol = asgn.as_int_list()
                 if n_samples==1:
                     solution = sol
@@ -189,6 +195,7 @@ def run_quicksampler(input_dimacs: str, solver_exe: str = "binary/quicksampler_l
         pass
 
     return len(solution)>0, solution
+
 
 def is_batch_sat(predictions: tf.Tensor, adj_matrix: tf.SparseTensor):
     variables = tf.round(tf.sigmoid(predictions))
