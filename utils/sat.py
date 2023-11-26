@@ -158,39 +158,43 @@ def run_quicksampler(input_dimacs: str, solver_exe: str = "binary/quicksampler_l
     df = DimacsFile(filename=dimacs_path)
     df.load()
 
-    subprocess.run([str(exe_path), "-n", str(n_samples), dimacs_path])
-
-
+    remaining = n_samples
     solution = []
-    # reading the file line by line:
-    with open(samples_path, 'r') as file:
-        for line in file:
-            arr = line.split()
-            if len(arr)>=2:
-                bit_str = arr[1] # the second line element is bit-encoded solution
-                print(bit_str) 
-                bit_list = [int(char) for char in bit_str]
-                asgn = VariableAssignment(len(bit_str), df.clauses())
-                asgn.assign_all_from_bit_list(bit_list)
-                print(asgn.satisfiable())
-                sol = asgn.as_int_list()
-                if n_samples==1:
-                    solution = sol
-                else:
-                    solution.append(sol)
 
+    while remaining > 0:
+        subprocess.run([str(exe_path), "-n", str(n_samples), dimacs_path])
+
+        if not os.path.exists(samples_path):
+            raise Exception("Quicksampler returned no result")
+        
+        # reading the file line by line:
+        with open(samples_path, 'r') as file:
+            for line in file:
+                arr = line.split()
+                if len(arr)>=2:
+                    bit_str = arr[1] # the second line element is bit-encoded solution
+                    print(bit_str) 
+                    bit_list = [int(char) for char in bit_str]
+                    asgn = VariableAssignment(len(bit_str), df.clauses())
+                    asgn.assign_all_from_bit_list(bit_list)
+                    if asgn.satisfiable():
+                        # append only satisfiable solution
+                        remaining -= 1
+                        sol = asgn.as_int_list()
+                        if n_samples==1:
+                            solution = sol
+                        else:
+                            solution.append(sol)
+        
+        try:
+            os.remove(samples_path)
+        except Exception as e:
+            pass
+
+    
 
     try:
         os.remove(dimacs_path)
-    except Exception as e:
-        pass
-
-    
-    if not os.path.exists(samples_path):
-        raise Exception("Quicksampler returned no result")
-    
-    try:
-        os.remove(samples_path)
     except Exception as e:
         pass
 
