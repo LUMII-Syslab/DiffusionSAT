@@ -42,3 +42,9 @@ cd quicksamler
 sudo apt install z3 libz3-dev
 make
 ```
+
+For using quicksampler:
+
+```
+./quicksampler -n <samples> <file.dimacs>
+```
