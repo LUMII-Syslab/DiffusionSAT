@@ -8,7 +8,8 @@ class DimacsFile:
         if type(clauses) != list:
             clauses = self.__raggedtensor_to_list(clauses)
         if n_vars == 0:
-            n_vars = self.__number_of_vars(clauses)
+            if (len(clauses)>0):
+                n_vars = self.__number_of_vars(clauses)
         self.filename = filename
         self.n_vars = n_vars
         self.i_clauses = clauses
