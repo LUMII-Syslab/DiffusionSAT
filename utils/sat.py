@@ -1,6 +1,9 @@
 import subprocess
 from pathlib import Path
 from typing import Tuple
+import os
+import uuid
+from utils.VariableAssignment import VariableAssignment
 
 import tensorflow as tf
 
@@ -137,6 +140,55 @@ def run_unigen(input_dimacs: str, unigen_exe: str = "binary/unigen_linux", seed=
           solution.append(sol)
 
     return is_sat, solution
+
+def run_quicksampler(input_dimacs: str, solver_exe: str = "binary/quicksampler_linux", seed=1, n_samples=1) -> Tuple[bool, list]: # added by SK@2023-11
+    """
+    :param input_dimacs: Correctly formatted DIMACS file as string
+    :param solver_exe: Absolute or relative path to solver executable
+    :return: returns True if formula is satisfiable and False otherwise, and an almost uniformly generated solution in form [1,2,-3, ...]
+    """
+    exe_path = Path(solver_exe).resolve()
+    dimacs_path = str(uuid.uuid4())+".dimacs"
+    samples_path = dimacs_path+".samples"
+
+    with open(dimacs_path, 'w') as file:
+        file.write(input_dimacs)
+
+    subprocess.run([str(exe_path), "-n", str(n_samples), dimacs_path])
+
+    solution = []
+    # reading the file line by line:
+    with open(samples_path, 'r') as file:
+        for line in file:
+            arr = line.split()
+            if len(arr)>=2:
+                bit_str = arr[1] # the second line element is bit-encoded solution
+                print(bit_str) 
+                bit_list = [int(char) for char in bit_str]
+                asgn = VariableAssignment(len(bit_str))
+                asgn.assign_all_from_bit_list(bit_list)
+                sol = asgn.as_int_list()
+                if n_samples==1:
+                    solution = sol
+                else:
+                    solution.append(sol)
+
+
+    try:
+        os.remove(dimacs_path)
+    except Exception as e:
+        pass
+
+    
+    if not os.path.exists(samples_path):
+        raise Exception("Quicksampler returned no result")
+    
+    try:
+        os.remove(samples_path)
+    except Exception as e:
+        pass
+
+    return len(solution)>0, solution
 
 def is_batch_sat(predictions: tf.Tensor, adj_matrix: tf.SparseTensor):
     variables = tf.round(tf.sigmoid(predictions))
