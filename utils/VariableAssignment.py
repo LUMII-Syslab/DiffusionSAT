@@ -74,6 +74,15 @@ class VariableAssignment:
             if not is_clause_satisfied:
                 return False  # clause c cannot be satisfied
         return True
+    
+    def as_int_list(self):
+        result = []
+        for i in range(len(self.x)):
+            if self.x[i]:
+                result.append(i+1)
+            else:
+                result.append(-(i+1))
+        return result
 
 
 if __name__ == "__main__":  # test
