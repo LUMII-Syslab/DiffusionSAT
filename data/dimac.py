@@ -9,7 +9,6 @@ from pysat.solvers import Glucose4
 from data.dataset import Dataset
 from utils.iterable import elements_to_str, elements_to_int, flatten
 
-
 def compute_adj_indices(clauses):
     adj_indices_pos = [[v - 1, idx] for idx, c in enumerate(clauses) for v in c if v > 0]
     adj_indices_neg = [[abs(v) - 1, idx] for idx, c in enumerate(clauses) for v in c if v < 0]
@@ -21,7 +20,8 @@ class DIMACDataset(Dataset):
     """ Base class for datasets that are based on DIMACS files.
     """
 
-    def __init__(self, data_dir, min_vars, max_vars, force_data_gen=False, max_nodes_per_batch=Config.max_nodes_per_batch, shuffle_size=200, **kwargs) -> None:
+    def __init__(self, data_dir, min_vars, max_vars, force_data_gen=False, max_nodes_per_batch=0, #Config.max_nodes_per_batch, 
+                 shuffle_size=200, **kwargs) -> None:
         self.force_data_gen = force_data_gen
         self.data_dir = Path(data_dir) / self.__class__.__name__
         self.max_nodes_per_batch = max_nodes_per_batch

@@ -173,7 +173,7 @@ def run_quicksampler(input_dimacs: str, solver_exe: str = "binary/quicksampler_l
                 arr = line.split()
                 if len(arr)>=2:
                     bit_str = arr[1] # the second line element is bit-encoded solution
-                    print(bit_str) 
+#                    print(bit_str) 
                     bit_list = [int(char) for char in bit_str]
                     asgn = VariableAssignment(len(bit_str), df.clauses())
                     asgn.assign_all_from_bit_list(bit_list)

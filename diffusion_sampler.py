@@ -19,7 +19,7 @@ from optimization.AdaBelief import AdaBeliefOptimizer
 
 # from adabelief_tf import AdaBeliefOptimizer
 from registry.registry import ModelRegistry, DatasetRegistry
-from utils.sat import run_unigen, build_dimacs_file
+from utils.sat import run_unigen, build_dimacs_file, run_quicksampler
 from pysat.solvers import Glucose4
 
 # model_path = default=Config.train_dir + '/3-sat_22_09_12_14:19:54'
@@ -327,16 +327,17 @@ def test_sk(N, n_batches):
             print("too low approx number of samples")
             continue
 
-        nsamples_k = 5  # for statistical significance, we need at least k=5
+        nsamples_k = 10  # for statistical significance, we need at least k=5
         gen_cnt = nsamples_approx * nsamples_k
 
-        if gen_cnt > 3000:
+        if gen_cnt > 5000:
             print("too much")
             continue
 
         # maps: sample as int -> how many times sampled
         unigen_map = {}
         diffusion_map = {}
+        quicksampler_map = {}
 
         # generate unigen samples:
         time1 = dt2ms(datetime.now())
@@ -362,14 +363,20 @@ def test_sk(N, n_batches):
             unigen_map[i_sample] += 1
             if not i_sample in diffusion_map:
                 diffusion_map[i_sample] = 0
+            if not i_sample in quicksampler_map:
+                quicksampler_map[i_sample] = 0
         benchmark["n_solutions"] = n_solutions
-        benchmark["unigen_map"] = unigen_map
+        benchmark["unigen_map"] = sorted(unigen_map.items())
 
-        # genetate n_solutions valid (!) diffusion samples...
+        # genetate n_solutions*nsamples_k valid (!) diffusion samples...
         remaining = n_solutions * nsamples_k
         diffusion_total_time = 0
         diffusion_sat_samples = 0
         diffusion_total_samples = 0
+        if diffusion_name+"_map" in benchmark:
+            remaining = 0 # skip generating if already generated earlier
+            print("skipping diffusion gen; old map: ",diffusion_map)
+
         while remaining > 0:
             if diffusion_total_samples - diffusion_sat_samples > 1000:
                 break  # too many unsat samples
@@ -418,16 +425,39 @@ def test_sk(N, n_batches):
             print("no diffusion sample for too long")
             continue
 
-        benchmark[diffusion_name + "_map"] = diffusion_map
-        benchmark[diffusion_name + "_speed"] = (
-            float(diffusion_total_time) / diffusion_sat_samples
+        
+        if not diffusion_name+"_map" in benchmark:
+            benchmark[diffusion_name + "_map"] = sorted(diffusion_map.items())
+            benchmark[diffusion_name + "_speed"] = (
+                float(diffusion_total_time) / diffusion_sat_samples
+            )
+            benchmark[diffusion_name + "_success_rate"] = float(
+                diffusion_sat_samples
+            ) / float(diffusion_total_samples)
+
+
+        # genetate quicksampler samples...
+        time1 = dt2ms(datetime.now())
+        (is_sat, quicksampler_samples) = run_quicksampler(
+            str(DimacsFile(clauses=clauses)), n_samples=n_solutions * nsamples_k
         )
-        benchmark[diffusion_name + "_success_rate"] = float(
-            diffusion_sat_samples
-        ) / float(diffusion_total_samples)
+        time2 = dt2ms(datetime.now())
+        print("quicksampler done")
+
+        benchmark["quicksampler_speed"] = float(time2 - time1) / len(unigen_samples)
+        quicksampler_map = {}
+        for sample in quicksampler_samples:
+            asgn = VariableAssignment(clauses=clauses)
+            asgn.assign_all_from_int_list(sample)
+            i_sample = int(asgn)
+            if not i_sample in quicksampler_map:
+                quicksampler_map[i_sample] = 0
+            quicksampler_map[i_sample] += 1
+        benchmark["quicksampler_map"] = sorted(quicksampler_map.items())
 
         print("diffusion:", diffusion_map)
         print("unigen:   ", unigen_map)
+        print("quicksampler: ", quicksampler_map)
 
         db.begin()
         if "__id" in benchmark:
