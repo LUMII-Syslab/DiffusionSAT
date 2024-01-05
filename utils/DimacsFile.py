@@ -40,7 +40,13 @@ class DimacsFile:
         f = open(self.filename, "r")
         lines = f.readlines()
         f.close()
-
+        self.load_from_lines(lines)
+        
+    def load_from_string(self, text):
+        lines = [line.strip() for line in text.split("\n")]
+        self.load_from_lines(lines)
+        
+    def load_from_lines(self, lines):
         self.n_vars = 0
         self.i_clauses = []
         for line in lines:
