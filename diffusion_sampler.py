@@ -67,6 +67,7 @@ dataset = DatasetRegistry().resolve(Config.task)(
     data_dir=Config.data_dir,
     force_data_gen=Config.force_data_gen,
     input_mode=Config.input_mode,
+    max_nodes_per_batch=Config.max_nodes_per_batch
 )
 
 ckpt, manager = prepare_checkpoints(model)
