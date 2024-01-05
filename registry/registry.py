@@ -20,6 +20,12 @@ from model.simple_neurosat import SimpleNeuroSAT
 #from model.tsp_matrix_se import TSPMatrixSE
 from model.anf_sat import ANFSAT
 
+from satsolvers.QuickSampler import QuickSampler
+from satsolvers.Unigen import Unigen
+from satsolvers.Walksat import Walksat
+from satsolvers.Treengeling import Treengeling
+from satsolvers.Lingeling import Lingeling
+from satsolvers.Default import DefaultSatSolver
 class Registry:
 
     @property
@@ -74,3 +80,17 @@ class DatasetRegistry(Registry):
             "splot": SplotData,
             "satlib": SatLib
         }
+
+class SatSolverRegistry(Registry):
+    @property
+    def registry(self) -> dict:
+        return {
+            "quicksampler": QuickSampler,
+            "unigen": Unigen,
+            "walksat": Walksat,
+            "treengeling": Treengeling,
+            "lingeling": Lingeling,
+            "default": DefaultSatSolver
+        }
+    
+    
