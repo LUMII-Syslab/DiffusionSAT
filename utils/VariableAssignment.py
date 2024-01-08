@@ -33,7 +33,7 @@ class VariableAssignment:
     def __flatten(self, l):
         return [item for sublist in l for item in sublist]
 
-    def assign(self, i, value):
+    def assign(self, i: int, value: bool):
         # i must be zero-based
         self.x[i] = value
 
@@ -50,6 +50,10 @@ class VariableAssignment:
             i_bit = int(bit)
             self.assign(bit_no, i_bit == 1)
             bit_no += 1
+            
+    def assign_all_from_int(self, i):
+        for bit_no in range(len(self.x)):
+            self.assign(bit_no,i & (1 << bit_no) != 0)
 
     def __int__(self):
         # right-to-left binary encoding
