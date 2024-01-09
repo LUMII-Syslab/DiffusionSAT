@@ -2,7 +2,6 @@
 
 import numpy as np
 
-
 class DimacsFile:
     def __init__(self, filename="file.cnf", n_vars=0, clauses=[]):
         if type(clauses) != list:
@@ -103,6 +102,49 @@ class DimacsFile:
                 self.n_vars = max(self.n_vars, abs(i))
             # append the new clause:
             self.i_clauses.append(c)
+            
+    def reduce_clauses(self):
+        # sort clauses and remove duplicates:
+        result = list({tuple(sorted(x)) for x in self.i_clauses})
+        # convert to lists:
+        result = [ list(c) for c in result ]
+        result = sorted(result, key=len)
+        
+        # remove subsumed clauses:
+        i = 0
+        while i<len(result):
+            j = i+1
+            while j<len(result):
+                if self.__is_subsumed(result[i], result[j]):
+                    # remove the larger clause
+                    result = result[:j] + result[j+1:]
+                else:
+                    j += 1
+            i += 1
+        self.i_clauses = result
+        
+    def __is_subsumed(self, sorted_clause1, sorted_clause2):
+        # use merge-like approach to see if sorted_clause1 is fully contained in sorted_clause2:
+        i = 0
+        j = 0
+        while i<len(sorted_clause1):
+            while j<len(sorted_clause2) and sorted_clause2[j]<sorted_clause1[i]:
+                j += 1
+            if j>=len(sorted_clause2) or sorted_clause2[j] != sorted_clause1[i]:
+                return False
+            else:
+                i += 1
+                j += 1
+        return True
+    
+        # variant with bisect:
+        #for lit in sorted_clause1:
+            # Use binary search to check if lit is in sorted_clause2
+        #    i = bisect.bisect_left(sorted_clause2, lit)
+        #    if i >= len(sorted_clause2) or sorted_clause2[i] != lit:
+        #        return False
+        #return True
+
 
     def set_value(self, i, value):
         self.b_values[abs(i)] = value
