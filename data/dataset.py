@@ -21,9 +21,52 @@ class Dataset(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def filter_model_inputs(self, step_data) -> dict:
+    def args_for_train_step(self, step_data) -> dict:
         pass
 
+    @abstractmethod
+    def metrics(self, initial=False) -> list:
+        pass
+
+class SatInstances(metclass=ABCMeta):
+    """ Base dataset for generating SAT instances.
+    """
+    
+    @abstractmethod
+    def train_generator(self) -> tuple:
+        """ Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
+        This generator should be finite (in the size of dataset)
+        :return: tuple(variable_count: int, clauses: list of tuples)
+        """
+        pass
+
+    @abstractmethod
+    def test_generator(self) -> tuple:
+        """ Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
+        This generator should be finite (in the size of dataset)
+        :return: tuple(variable_count: int, clauses: list of tuples)
+        """
+        pass
+
+class SatSpecifics(metclass=ABCMeta):
+    
+    @abstractmethod
+    def prepare_dataset(self, batched_dataset: tf.data.Dataset):
+        """ Prepare task specifics for dataset.
+        :param dataset: tf.data.Dataset with attributes 
+                        clauses, solutions, batched_clauses, adj_indices_pos, adj_indices_neg, variable_count, clauses_in_formula, cells_in_formula
+        :return: tf.data.Dataset
+        """
+        pass
+    
+    @abstractmethod
+    def args_for_train_step(self, step_data) -> dict:
+        """ Converts the given batch (from previously prepared datased via prepare_dataset) 
+            to a dictionary of arguments to be passed to the neural network train_step method.
+        """
+        pass
+    
+    
     @abstractmethod
     def metrics(self, initial=False) -> list:
         pass

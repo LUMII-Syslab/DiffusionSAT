@@ -2,24 +2,21 @@ import random
 
 import numpy as np
 import tensorflow as tf
-#from pysat.solvers import Cadical
-from pysat.solvers import Solver # by SK; Cadical is not present in recent pysat versions
+from pysat.solvers import Solver # using Solver since Cadical is not present in recent pysat versions
 
-from data.dimac import DIMACDataset
+from data.dimac import SatInstances, SatSpecifics
 from metrics.sat_metrics import SATAccuracyTF, StepStatistics
+from utils.DimacsFile import DimacsFile
 
-
-class KSAT(DIMACDataset):
+    
+class KSatInstances(SatInstances):
     """ Dataset from NeuroSAT paper, just for variables. Dataset generates k-SAT
     instances with variable count in [min_size, max_size].
     """
 
     def __init__(self, data_dir, force_data_gen=False,
                  min_vars=3, max_vars=30,
-                 max_nodes_per_batch=0, # by SK
-                 input_mode='variables', test_size=10000, **kwargs) -> None:
-        super(KSAT, self).__init__(data_dir, min_vars, max_vars, force_data_gen=force_data_gen, max_nodes_per_batch=max_nodes_per_batch, **kwargs) # max_nodes_per_batch by SK
-        self.filter = self.__prepare_filter(input_mode)
+                 test_size=10000, **kwargs) -> None:
         self.train_size = 300000
         self.test_size = test_size
         self.min_vars = min_vars
@@ -54,8 +51,11 @@ class KSAT(DIMACDataset):
                 else:
                     break
 
+            # Since { c[1], . . . , c[m−1]} had a satisfying assignment, negating a single literal in c[m] must yield a satisﬁable problem { c[1], . . . , c[m−1], c[m]′} 
+            # // from the NeuroSAT paper
             iclause_unsat = iclause
             iclause_sat = [-iclause_unsat[0]] + iclause_unsat[1:]
+            
 
             iclauses.append(iclause_unsat)
             # yield only SAT instance
@@ -69,18 +69,36 @@ class KSAT(DIMACDataset):
         vs = np.random.choice(n, size=min(n, k), replace=False)
         return [int(v + 1) if random.random() < 0.5 else int(-(v + 1)) for v in vs]
 
-    # TODO: remove subsumed clauses - when shorter clause is fully in a longer one, the longer one is redundant
+    
     @staticmethod
     def remove_duplicate_clauses(clauses):
-        return list({tuple(sorted(x)) for x in clauses})
+        df = DimacsFile(clauses=clauses)
+        df.reduce_clauses() # also removes subsumed clauses
+        return df.clauses()
+        
 
+
+class KSatSpecifics(SatSpecifics):
+    
+    def __init__(self, input_mode):
+        self.args_filter = self.__prepare_filter(input_mode)
+    
+    def prepare_dataset(self, dataset: tf.data.Dataset):
+        return dataset.map(self.create_adj_matrices, tf.data.experimental.AUTOTUNE)
+
+    def args_for_train_step(self, step_data) -> dict:
+        return self.args_filter(step_data)
+
+    def metrics(self, initial=False) -> list:
+        return [SATAccuracyTF(), StepStatistics()]
+    
     def create_adj_matrices(self, data):
         var_count = tf.reduce_sum(data["variable_count"])
         clauses_count = tf.reduce_sum(data["clauses_in_formula"])
 
         shape = [tf.shape(data["adj_indices_neg"])[0], 1]
-        offset = tf.ones(shape, dtype=tf.int32) * var_count
-        zeros = tf.zeros(shape, dtype=tf.int32)
+        offset = tf.ones(shape, dtype=tf.int32) * var_count  # offset for the negative variable nodes (=== +var_count for each negative node)
+        zeros = tf.zeros(shape, dtype=tf.int32)              # offset for the clause nodes (zeros)
         offset = tf.concat([offset, zeros], axis=-1)
         offset = tf.cast(offset, tf.int64)
         neg = data["adj_indices_neg"] + offset
@@ -95,19 +113,19 @@ class KSAT(DIMACDataset):
 
         graph_count = tf.shape(data["variable_count"])
         graph_id = tf.range(0, graph_count[0])
-        variables_mask = tf.repeat(graph_id, data["variable_count"])
-        clauses_mask = tf.repeat(graph_id, data["clauses_in_formula"])
+        variables_mask = tf.repeat(graph_id, data["variable_count"])   # to which graph each of the combined (batched) variables belongs
+        clauses_mask = tf.repeat(graph_id, data["clauses_in_formula"]) # to which graph each of the combined (batched) clauses belongs
 
         clauses_enum = tf.range(0, var_shape[1], dtype=tf.int32)
         c_g_indices = tf.stack([clauses_mask, clauses_enum], axis=1)
-        c_g_indices = tf.cast(c_g_indices, tf.int64)
+        c_g_indices = tf.cast(c_g_indices, tf.int64)  # list of pairs: [graph_id, clause#]
         clauses_graph_adj = self.create_adjacency_matrix(c_g_indices,
                                                          self.create_shape(tf.cast(graph_count[0], tf.int64),
                                                                            var_shape[1]))
 
         variables_enum = tf.range(0, var_shape[0], dtype=tf.int32)
         v_g_indices = tf.stack([variables_mask, variables_enum], axis=1)
-        v_g_indices = tf.cast(v_g_indices, tf.int64)
+        v_g_indices = tf.cast(v_g_indices, tf.int64)  # list of pairs: [graph_id, var#]
         variables_graph_adj = self.create_adjacency_matrix(v_g_indices,
                                                            self.create_shape(tf.cast(graph_count[0], tf.int64),
                                                                              var_shape[0]))
@@ -134,15 +152,6 @@ class KSAT(DIMACDataset):
         return tf.sparse.SparseTensor(indices,
                                       tf.ones(tf.shape(indices)[0], dtype=tf.float32),
                                       dense_shape=dense_shape)
-
-    def prepare_dataset(self, dataset: tf.data.Dataset):
-        return dataset.map(self.create_adj_matrices, tf.data.experimental.AUTOTUNE)
-
-    def filter_model_inputs(self, step_data) -> dict:
-        return self.filter(step_data)
-
-    def metrics(self, initial=False) -> list:
-        return [SATAccuracyTF(), StepStatistics()]
 
     def __prepare_filter(self, input_mode):
         if input_mode == "variables":

@@ -238,21 +238,19 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     writer = tf.summary.create_file_writer(Config.train_dir)
     writer.set_as_default()
 
+    print("===> Starting the train() process...")
     mean_loss = tf.metrics.Mean()
     timer = Timer(start_now=True)
-    print("train1")
     validation_data = dataset.validation_data()
-    print("train2")
     train_data = dataset.train_data()
-    print("train3")
 
     # TODO: Check against step in checkpoint
     for step_data in itertools.islice(train_data, Config.train_steps + 1):
         tf.summary.experimental.set_step(ckpt.step)
 
-        model_data = dataset.filter_model_inputs(step_data)
+        step_args = dataset.args_for_train_step(step_data)
 
-        model_output = model.train_step(**model_data)
+        model_output = model.train_step(**step_args)
         loss, gradients = model_output["loss"], model_output["gradients"]
         mean_loss.update_state(loss)
 
@@ -284,7 +282,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
                 n_eval_steps = 1
                 iterator = itertools.islice(validation_data, 1)
                 for visualization_step_data in iterator:
-                    model_input = dataset.filter_model_inputs(visualization_step_data)
+                    model_input = dataset.args_for_train_step(visualization_step_data)
                     model.log_visualizations(**model_input)
 
             metrics = evaluate_metrics(dataset, validation_data, model, steps=n_eval_steps,
@@ -308,6 +306,8 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
             writer.flush()
 
         ckpt.step.assign_add(1)
+        
+    print(f"<=== Training finshed; {int(ckpt.step)} training steps performed.")
 
 
 def prepare_checkpoints(model, optimizer):
@@ -334,7 +334,7 @@ def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, step
         if print_progress and counter % 10 == 0:
             print("Testing batch", counter)
         counter += 1
-        model_input = dataset.filter_model_inputs(step_data)
+        model_input = dataset.args_for_train_step(step_data)
         output = model.predict_step(**model_input)
         for metric in metrics:
             metric.update_state(output, step_data)
@@ -368,7 +368,7 @@ def plot_curve(dataset: Dataset, data: tf.data.Dataset, model: Model, steps: int
         metric = SATAccuracyTF()
         noise_scale = t/steps
         step_data=next(iterator)
-        model_input = dataset.filter_model_inputs(step_data)
+        model_input = dataset.args_for_train_step(step_data)
         output = model.plot_step(**model_input, noise_scale=noise_scale)
         loss = output["loss"]
         loss_data.append(loss)

@@ -189,9 +189,9 @@ class QuerySAT(Model):
         n_clauses = shape[1]
         n_vars = shape[0] // 2
         last_logits = tf.zeros([n_vars, self.logit_maps])
-        lit_degree = tf.reshape(tf.sparse.reduce_sum(adj_matrix, axis=1), [n_vars * 2, 1])
+        lit_degree = tf.reshape(tf.sparse.reduce_sum(adj_matrix, axis=1), [n_vars * 2, 1]) # how many times each literal participates in clauses
         degree_weight = tf.math.rsqrt(tf.maximum(lit_degree, 1))
-        var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars, :] + lit_degree[n_vars:, :], 1))
+        var_degree_weight = 4 * tf.math.rsqrt(tf.maximum(lit_degree[:n_vars, :] + lit_degree[n_vars:, :], 1)) # degree_weight but 2 literals are joined into 1 var
         rev_lit_degree = tf.reshape(tf.sparse.reduce_sum(cl_adj_matrix, axis=1), [n_clauses, 1])
         rev_degree_weight = tf.math.rsqrt(tf.maximum(rev_lit_degree, 1))
         # q_msg = tf.zeros([n_clauses, self.query_maps])
@@ -203,6 +203,9 @@ class QuerySAT(Model):
         best_logit_map = tf.zeros([n_vars], dtype=tf.int32)
 
         variables_graph_norm = variables_graph / tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True)
+          # ^^^ the weight of each vertex depending on the graph size;
+          # the smaller the graph, the more weight to each its vertex
+          
         clauses_graph_norm = clauses_graph / tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True)
         #per_graph_loss = 0
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import tensorflow as tf
 from pysat.solvers import Glucose4
 
-from data.dataset import Dataset
+from data.dataset import Dataset, SatInstances, SatSpecifics
 from utils.iterable import elements_to_str, elements_to_int, flatten
 
 def compute_adj_indices(clauses):
@@ -16,12 +16,14 @@ def compute_adj_indices(clauses):
     return adj_indices_pos, adj_indices_neg
 
 
-class DIMACDataset(Dataset):
+class BatchedDimacsDataset(Dataset):
     """ Base class for datasets that are based on DIMACS files.
     """
 
-    def __init__(self, data_dir, min_vars, max_vars, force_data_gen=False, max_nodes_per_batch=0, #Config.max_nodes_per_batch, 
+    def __init__(self, sat_instances: SatInstances, sat_specifics: SatSpecifics, data_dir, min_vars, max_vars, force_data_gen=False, max_nodes_per_batch=0,
                  shuffle_size=200, **kwargs) -> None:
+        self.sat_instances = sat_instances
+        self.sat_specifics = sat_specifics
         self.force_data_gen = force_data_gen
         self.data_dir = Path(data_dir) / self.__class__.__name__
         self.max_nodes_per_batch = max_nodes_per_batch
@@ -29,45 +31,29 @@ class DIMACDataset(Dataset):
         self.min_vars = min_vars
         self.max_vars = max_vars
 
-    @abstractmethod
-    def train_generator(self) -> tuple:
-        """ Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
-        This generator should be finite (in the size of dataset)
-        :return: tuple(variable_count: int, clauses: list of tuples)
-        """
-        pass
-
-    @abstractmethod
-    def test_generator(self) -> tuple:
-        """ Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
-        This generator should be finite (in the size of dataset)
-        :return: tuple(variable_count: int, clauses: list of tuples)
-        """
-        pass
-
-    @abstractmethod
-    def prepare_dataset(self, dataset: tf.data.Dataset):
-        """ Prepare task specifics for dataset.
-        :param dataset: tf.data.Dataset
-        :return: tf.data.Dataset
-        """
-        pass
-
+    # implemented abstract methods:
     def train_data(self) -> tf.data.Dataset:
-        data = self.fetch_dataset(self.train_generator, mode="train")
+        data = self.fetch_dataset(self.sat_instances.train_generator, mode="train")
         data = data.shuffle(self.shuffle_size)
         data = data.repeat()
         return data.prefetch(tf.data.experimental.AUTOTUNE)
 
     def validation_data(self) -> tf.data.Dataset:
-        data = self.fetch_dataset(self.test_generator, mode="validation")
+        data = self.fetch_dataset(self.sat_instances.test_generator, mode="validation")
         data = data.shuffle(self.shuffle_size)
         data = data.repeat()
         return data.prefetch(tf.data.experimental.AUTOTUNE)
 
     def test_data(self) -> tf.data.Dataset:
-        return self.fetch_dataset(self.test_generator, mode="test")
+        return self.fetch_dataset(self.sat_instances.test_generator, mode="test")
+    
+    def args_for_train_step(self, step_data) -> dict:
+        return self.sat_specifics.args_for_train_step(step_data)
 
+    def metrics(self, initial=False) -> list:
+        return self.sat_specifics.metrics(initial)
+
+    # other methods:
     def fetch_dataset(self, generator: callable, mode: str):
         dimacs_folder = Path(self.data_dir) / Path("dimacs") / Path(f"{mode}_{self.min_vars}_{self.max_vars}")
         tfrecords_folder = Path(self.data_dir) / Path("tf_records") / Path(f"{mode}_{self.max_nodes_per_batch}_{self.min_vars}_{self.max_vars}")
@@ -82,7 +68,7 @@ class DIMACDataset(Dataset):
             self.dimac_to_data(dimacs_folder, tfrecords_folder)
 
         data = self.read_dataset(tfrecords_folder)
-        return self.prepare_dataset(data)
+        return self.sat_specifics.prepare_dataset(data)
 
     def read_dataset(self, data_folder):
         data_files = [str(d) for d in data_folder.glob("*.tfrecord")]
@@ -103,7 +89,7 @@ class DIMACDataset(Dataset):
         print(f"Generating DIMACS data in '{data_folder}' directory!")
         for idx, (n_vars, clauses, *solution) in enumerate(data_generator()):
 
-            solution = solution[0] if solution and solution[0] else get_sat_model(clauses)
+            solution = solution[0] if solution and solution[0] else get_sat_solution(clauses)
             solution = [int(x > 0) for x in solution]
             solution = elements_to_str(solution)
 
@@ -133,13 +119,16 @@ class DIMACDataset(Dataset):
 
     def shift_clause(self, clauses, offset):
         return [[self.shift_variable(x, offset) for x in c] for c in clauses]
+    
+    def sat_node_count(self, n_vars, n_clauses):
+        # Warning: This doesn't match node count if we use variables instead of literals!!!
+        return 2*n_vars + n_clauses
 
     def dimac_to_data(self, dimacs_dir: Path, tfrecord_dir: Path):
         files = [d for d in dimacs_dir.glob("*.dimacs")]
         formula_size = [self.__read_dimacs_details(f) for f in files]
 
-        # TODO: Doesn't match our node count as we use variables instead of literals
-        node_count = [2 * n + m for (n, m) in formula_size]
+        node_count = [self.sat_node_count(n,m) for (n, m) in formula_size]
 
         # Put formulas with similar size in same batch
         files = sorted(zip(node_count, files))
@@ -167,6 +156,9 @@ class DIMACDataset(Dataset):
                 dataset_filename = tfrecord_dir / f"data_{dataset_id}.tfrecord"
                 tfwriter = tf.io.TFRecordWriter(str(dataset_filename), options)
 
+        # close the last file...
+        tfwriter.flush()
+        tfwriter.close()
         print(f"Created {len(batches)} data batches in {tfrecord_dir}...\n")
 
     def prepare_example(self, batch):
@@ -207,8 +199,8 @@ class DIMACDataset(Dataset):
             'clauses_len_second': self.__int64_feat([len(x) for c in original_clauses for x in c]),
             'batched_clauses': self.__int64_feat(batched_clauses),
             'batched_clauses_rows': self.__int64_feat([len(x) for x in batched_clauses]),
-            'adj_indices_pos': self.__int64_feat(adj_indices_pos), # by SK: 2D matrix, literali x klauzulas (0 vai 1)
-            'adj_indices_neg': self.__int64_feat(adj_indices_neg),
+            'adj_indices_pos': self.__int64_feat(adj_indices_pos), # by SK: 2D matrix ar "pozitīvām" šķautnēm: mainīgais x klauzulas#
+            'adj_indices_neg': self.__int64_feat(adj_indices_neg), # by SK: 2D matrix ar "negatīvām" šķautnēm: mainīgais x klauzulas#
             'variable_count': self.__int64_feat(variable_count),
             'clauses_in_formula': self.__int64_feat(clauses_in_formula),
             'cells_in_formula': self.__int64_feat(cells_in_formula)
@@ -228,14 +220,13 @@ class DIMACDataset(Dataset):
 
         dif = files_size - len(files)
         if dif > 0:
-            print(f"\n\n WARNING: {dif} formulas was not included in dataset as they exceeded max node count! \n\n")
+            print(f"\n\n WARNING: {dif} formulas were not included in dataset as they exceeded max node count! \n\n")
 
         batches = []
         current_batch = []
         nodes_in_batch = 0
 
         for nodes_cnt, filename in files:
-#            print(f"\n\n max_nodes_per_batch={self.max_nodes_per_batch} nodes_in_batch={nodes_in_batch}\n")
             if nodes_cnt + nodes_in_batch <= self.max_nodes_per_batch or nodes_in_batch==0:
                 current_batch.append(filename)
                 nodes_in_batch += nodes_cnt
@@ -281,11 +272,11 @@ class DIMACDataset(Dataset):
         }
 
 
-def get_sat_model(clauses: list):
+def get_sat_solution(clauses: list):
     with Glucose4(bootstrap_with=clauses) as solver:
         is_sat = solver.solve()
         if not is_sat:
-            raise ValueError("Can't get model for unSAT clause")
+            raise ValueError("Can't get solution for UNSAT clauses")
         return solver.get_model()
 
 
