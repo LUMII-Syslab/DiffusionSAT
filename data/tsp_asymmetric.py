@@ -111,7 +111,7 @@ class AsymmetricTSP(Dataset):
         return data
 
 
-    def filter_model_inputs(self, step_data) -> dict:
+    def args_for_train_step(self, step_data) -> dict:
         return {"adj_matrix": step_data["adjacency_matrix"], "coords": step_data["coordinates"], "labels": step_data["labels"]}
 
 

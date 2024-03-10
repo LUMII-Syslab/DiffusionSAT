@@ -394,7 +394,7 @@ class ANF(Dataset):
         text_file.close()
         return n_vars, clauses, var_id_map
 
-    def filter_model_inputs(self, step_data) -> dict:
+    def args_for_train_step(self, step_data) -> dict:
         return {"ands_index1":step_data[0],
                 "ands_index2":step_data[1],
                 "n_vars":step_data[2],

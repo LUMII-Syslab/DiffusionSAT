@@ -1,13 +1,15 @@
 import random
 import shutil
-from abc import abstractmethod
+from abc import abstractmethod, ABCMeta
 from pathlib import Path
 
 import tensorflow as tf
 from pysat.solvers import Glucose4
 
-from data.dataset import Dataset, SatInstances, SatSpecifics
+from data.dataset import Dataset
 from utils.iterable import elements_to_str, elements_to_int, flatten
+
+from config import Config
 
 def compute_adj_indices(clauses):
     adj_indices_pos = [[v - 1, idx] for idx, c in enumerate(clauses) for v in c if v > 0]
@@ -16,11 +18,54 @@ def compute_adj_indices(clauses):
     return adj_indices_pos, adj_indices_neg
 
 
+class SatInstances(metaclass=ABCMeta):
+    """ Base dataset for generating SAT instances.
+    """
+    
+    @abstractmethod
+    def train_generator(self) -> tuple:
+        """ Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
+        This generator should be finite (in the size of dataset)
+        :return: tuple(variable_count: int, clauses: list of tuples)
+        """
+        pass
+
+    @abstractmethod
+    def test_generator(self) -> tuple:
+        """ Generator function (instead of return use yield), that returns single instance to be writen in DIMACS file.
+        This generator should be finite (in the size of dataset)
+        :return: tuple(variable_count: int, clauses: list of tuples)
+        """
+        pass
+
+class TaskSpecifics(metaclass=ABCMeta):
+    
+    @abstractmethod
+    def prepare_dataset(self, batched_dataset: tf.data.Dataset):
+        """ Prepare task specifics for dataset.
+        :param dataset: tf.data.Dataset with attributes 
+                        clauses, solutions, batched_clauses, adj_indices_pos, adj_indices_neg, variable_count, clauses_in_formula, cells_in_formula
+        :return: tf.data.Dataset
+        """
+        pass
+    
+    @abstractmethod
+    def args_for_train_step(self, step_data) -> dict:
+        """ Converts the given batch (from previously prepared datased via prepare_dataset) 
+            to a dictionary of arguments to be passed to the neural network train_step method.
+        """
+        pass
+    
+    
+    @abstractmethod
+    def metrics(self, initial=False) -> list:
+        pass
+
 class BatchedDimacsDataset(Dataset):
     """ Base class for datasets that are based on DIMACS files.
     """
 
-    def __init__(self, sat_instances: SatInstances, sat_specifics: SatSpecifics, data_dir, min_vars, max_vars, force_data_gen=False, max_nodes_per_batch=0,
+    def __init__(self, sat_instances: SatInstances, sat_specifics: TaskSpecifics, data_dir=Config.data_dir, data_dir_suffix=None, force_data_gen=Config.force_data_gen, max_nodes_per_batch=Config.max_nodes_per_batch,
                  shuffle_size=200, **kwargs) -> None:
         self.sat_instances = sat_instances
         self.sat_specifics = sat_specifics
@@ -28,8 +73,7 @@ class BatchedDimacsDataset(Dataset):
         self.data_dir = Path(data_dir) / self.__class__.__name__
         self.max_nodes_per_batch = max_nodes_per_batch
         self.shuffle_size = shuffle_size
-        self.min_vars = min_vars
-        self.max_vars = max_vars
+        self.data_dir_suffix = self.__class__.__name__ if data_dir_suffix is None else data_dir_suffix
 
     # implemented abstract methods:
     def train_data(self) -> tf.data.Dataset:
@@ -39,7 +83,10 @@ class BatchedDimacsDataset(Dataset):
         return data.prefetch(tf.data.experimental.AUTOTUNE)
 
     def validation_data(self) -> tf.data.Dataset:
-        data = self.fetch_dataset(self.sat_instances.test_generator, mode="validation")
+        if hasattr(self.sat_instances, "validation_generator"):
+            data = self.fetch_dataset(self.sat_instances.validation_generator, mode="validation")
+        else:
+            data = self.fetch_dataset(self.sat_instances.test_generator, mode="validation")
         data = data.shuffle(self.shuffle_size)
         data = data.repeat()
         return data.prefetch(tf.data.experimental.AUTOTUNE)
@@ -55,11 +102,14 @@ class BatchedDimacsDataset(Dataset):
 
     # other methods:
     def fetch_dataset(self, generator: callable, mode: str):
-        dimacs_folder = Path(self.data_dir) / Path("dimacs") / Path(f"{mode}_{self.min_vars}_{self.max_vars}")
-        tfrecords_folder = Path(self.data_dir) / Path("tf_records") / Path(f"{mode}_{self.max_nodes_per_batch}_{self.min_vars}_{self.max_vars}")
+        dimacs_folder = Path(self.data_dir) / Path("dimacs") / Path(f"{mode}_{self.data_dir_suffix}")
+        tfrecords_folder = Path(self.data_dir) / Path("tf_records") / Path(f"{mode}_{self.max_nodes_per_batch}_{self.data_dir_suffix}")
 
         if self.force_data_gen and tfrecords_folder.exists():
             shutil.rmtree(tfrecords_folder)
+
+        if self.force_data_gen and dimacs_folder.exists():
+            shutil.rmtree(dimacs_folder) # by SK: remove also dimacs folder to re-generate .dimacs files
 
         if not dimacs_folder.exists() and not tfrecords_folder.exists():
             self.write_dimacs_to_file(dimacs_folder, generator)

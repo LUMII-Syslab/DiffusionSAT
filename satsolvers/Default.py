@@ -1,7 +1,7 @@
 from typing import Tuple
 
-from SatSolver import SatSolver
-from Treengeling import Treengeling
+from satsolvers.SatSolver import SatSolver
+from satsolvers.Treengeling import Treengeling
 from utils.DimacsFile import DimacsFile
 from pysat.solvers import Glucose4
 

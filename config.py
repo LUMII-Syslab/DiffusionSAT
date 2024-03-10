@@ -1,7 +1,23 @@
 import argparse
 
-from registry.registry import ModelRegistry, DatasetRegistry
+import sys
+import subprocess
+import json
 
+# We have removed depdendency on registry.registry, since
+# it depends on files (e.g., SAT datasets), which may use Config.
+# A direct dependency on registry.registry then would enforce circular imports in Python.
+# Intead, we call another python3 interpreter to obtain info about registry.registry.
+def registry_choices() -> dict:
+    python3 = sys.executable # e.g. 'python3'
+    result = subprocess.run([python3, 'registry/registry.py'], capture_output=True, text=True)
+
+    if result.returncode == 0:
+        # Parse the JSON output from the subprocess
+        output_dict = json.loads(result.stdout)
+        return output_dict
+    else:
+        raise Exception("Error parsing dict from registry/registry: "+result.stderr)
 
 class Config:
     """Data and placement config: """
@@ -18,8 +34,8 @@ class Config:
     restore = None
     label = ""
 
-    max_nodes_per_batch = 20_000 # 20_000 for Nvidia T4, 60_000 for more advanced cards (setting by SK)
-    scale_test_batch = True # whether to use the same test data to fill the whole test batch - useful for finding multiple solutions at once (setting by SK)
+    #scale_test_batch = True # whether to use the same test data to fill the whole test batch - useful for finding multiple solutions at once (setting by SK)
+    # this functionality moved directly to data/diffusion_sat.py
 
     """Training and task selection config: """
     optimizer = 'radam'
@@ -31,10 +47,16 @@ class Config:
     #task = "splot" # task === dataset; for "splot" use input_mode="variables"
     #task = "satlib"
     #task = "k_sat"
-    task = "3-sat" # with use_unigen and max_vars = 30
-     # '3-sat'  # k_sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
+    task = "diffusion-sat"
+     # '3-sat'  # k-sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
+     
+    # Applicable to SAT-based tasks:
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
-    use_unigen = True #False # whether to use almost uniform SAT solution sampler Unigen (applicable to SAT), SK@2022-10
+    max_nodes_per_batch = 20_000 # 20_000 for Nvidia T4, 60_000 for more advanced cards (setting by SK)
+    #sat_solver_for_generators = "unigen"
+    # !!! see: data/diffusion_sat.py#get_sat_solution
+      # "default" (means: Glucose4+lingeling), "glucose", "lingeling", "unigen", "quicksampler"
+      # see SatSolverRegistry in registry/registry.py for details
 
     """Supported training and evaluation modes: """
     train = True
@@ -62,6 +84,8 @@ class Config:
 
     @classmethod
     def __argument_parser(cls):
+        choices = registry_choices()
+        
         config_parser = argparse.ArgumentParser()
 
         config_parser.add_argument('--train_dir', type=str, default=cls.train_dir)
@@ -81,16 +105,17 @@ class Config:
         config_parser.add_argument('--learning_rate', type=float, default=cls.learning_rate)
 
         config_parser.add_argument('--model', type=str, default=cls.model, const=cls.model, nargs='?',
-                                   choices=ModelRegistry().registered_names)
+                                   choices=choices["ModelRegistry"])
 
         config_parser.add_argument('--task', type=str, default=cls.task, const=cls.task, nargs='?',
-                                   choices=DatasetRegistry().registered_names)
+                                   choices=choices["DatasetRegistry"])
+
+        config_parser.add_argument('--sat_solver_for_generators', type=str, default=cls.task, const=cls.task, nargs='?',
+                                   choices=choices["SatSolverRegistry"])
 
         config_parser.add_argument('--input_mode', type=str, default=cls.input_mode, const=cls.input_mode, nargs='?',
                                    choices=['variables', 'literals'])
         
-        config_parser.add_argument('--use_unigen', type=bool, default=cls.use_unigen) # SK@2022-09
-
         config_parser.add_argument('--force_data_gen', action='store_true', default=cls.force_data_gen)
 
         config_parser.add_argument('--train', action='store_true', default=cls.train)
@@ -102,3 +127,10 @@ class Config:
         config_parser.add_argument('--evaluate_variable_gen', action='store_true', default=cls.evaluate_variable_gen)
 
         return config_parser
+
+
+if __name__ == "__main__":  # test
+    ccc = registry_choices()
+    print("choices are:")
+    print(ccc)
+    

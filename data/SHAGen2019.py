@@ -6,20 +6,9 @@ import random
 import subprocess
 
 from utils.sat import remove_unused_vars
+from data.dimac import SatInstances, BatchedDimacsDataset
+from data.SatSpecifics import SatSpecifics
 
-try:
-    from data.k_sat import KSAT
-    from pysat.solvers import Solver
-except ImportError as err:
-    if __name__ != "__main__":
-        print("import error; run the main script outside the data folder")
-        raise err
-    else:
-        print("import ok")
-
-
-        class KSAT:
-            pass
 
 TEST_MODE = False  # True
 BENCHMARK_MODE = False  # True
@@ -29,7 +18,7 @@ def random_binary_string(n):
     return "".join([str(random.randint(0, 1)) for _ in range(n)])
 
 
-class SHAGen2019(KSAT):
+class SHAGen2019_Instances(SatInstances):
     """ Dataset with random SAT instances based on the SHA1 algorithm. We use cgen with the parameters similar to SAT Competition 2019.
     """
 
@@ -49,7 +38,7 @@ class SHAGen2019(KSAT):
     def __init__(self, data_dir,
                  min_vars=4, max_vars=100040,
                  force_data_gen=False, **kwargs) -> None:
-        super(SHAGen2019, self).__init__(data_dir, min_vars=min_vars,
+        super().__init__(data_dir, min_vars=min_vars,
                                          max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         # maximum number of samples; if there are less, we will stop earlier
         self.train_size = 90000
@@ -195,8 +184,8 @@ class SHAGen2019(KSAT):
                 break  # stop the iterator, too many attempts; perhaps, we are not able to generate the desired number of variables according to the given constraints
 
 
-if __name__ == "__main__":
-    nvars, clauses = remove_unused_vars(10, [[-1, 4, 9], [-4, 1, -10], [10]])
-    # nvars, clauses = remove_unused_vars(3, [[-1,3]])
-    # nvars, clauses = remove_unused_vars(3, [[]])
-    print(nvars, clauses)
+class SHAGen2019(BatchedDimacsDataset):
+
+    def __init__(self, **kwargs):
+        super().__init__(SHAGen2019_Instances(**kwargs), SatSpecifics(**kwargs))
+

@@ -1,6 +1,7 @@
 from typing import Tuple
 
-from SatSolver import SatSolver
+from satsolvers.SatSolver import SatSolver
+from satsolvers.Default import DefaultSatSolver
 import subprocess
 from pathlib import Path
 
@@ -18,6 +19,13 @@ class Unigen(SatSolver):
         :param input_dimacs: Correctly formatted DIMACS file as string (including \\n)
         :return: returns True and the list of solutions in the form [[1,2,-3, ...],...] for satisfiable SAT instances or False and [] for unsatisfiable
         """
+        
+        # first, check if the instance is satisfiable:
+        default_solver = DefaultSatSolver()
+        is_sat1, _ = default_solver.one_sample(input_dimacs)
+        if not is_sat1:
+            return False, []
+        
         exe_path = Path(unigen_exe).resolve()
         output = subprocess.run([str(exe_path), "--samples", str(n_samples), "--arjun", "0", "--seed", str(seed)], input=input_dimacs, stdout=subprocess.PIPE, universal_newlines=True)
         unsat_lines = [line for line in output.stdout.split("\n") if line.find("Formula was UNSAT")>=0]

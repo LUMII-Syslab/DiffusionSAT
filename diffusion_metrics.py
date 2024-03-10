@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 from scipy import stats
 import numpy as np
 
+import math
+
 def fetch_item_by_attribute(table, attr_name, attr_value):
     for item in table.all():
         print(item, attr_value, attr_name)
@@ -84,7 +86,7 @@ def entropy_arr(a, middle, delta):
         
     x = [middle-delta-1] + x + [middle+delta+1]
     y = [before] + y + [after]
-    print("ENTRYOPY ARRS")
+    print("ENTROPY ARRS")
     print("x",x)
     print("y",y)
     return x,y
@@ -124,6 +126,7 @@ if __name__ == '__main__':
         print("QUICKSAMPLER", len(quicksampler_cnt), quicksampler_cnt)
         print("IDEAL", len(ideal_cnt), ideal_cnt)
         print("")
+
         chisq, p  = stats.chisquare(unigen_cnt, ideal_cnt)
         print("UNIGEN/IDEAL chi2 uniformity probability=",p*100,"%")
         chisq, p  = stats.chisquare(diffusion_cnt, ideal_cnt)
@@ -133,7 +136,19 @@ if __name__ == '__main__':
         chisq, p  = stats.chisquare(uniform_cnt, ideal_cnt)
         print("UNIFORM/IDEAL chi2 uniformity probability=",p*100,"%")
 
-        
+        print()
+
+        chisq, p  = stats.chisquare(unigen_cnt, uniform_cnt)
+        print(p)
+        print("UNIGEN/UNIFORM log chi2 uniformity probability=","-INF" if p==0.0 else math.log(p,2))
+        chisq, p  = stats.chisquare(diffusion_cnt, uniform_cnt)
+        print(p)
+        print("DIFFUSION/UNIFORM log chi2 uniformity probability=","-INF" if p==0.0 else math.log(p,2))
+        chisq, p  = stats.chisquare(quicksampler_cnt, uniform_cnt)
+        print(p)
+        print("QUICKSAMPLER/UNIFORM log chi2 uniformity probability=","-INF" if p==0.0 else math.log(p,2))
+
+
         x, y_uniform = entropy_arr(uniform_map,10,7)
         x, y_unigen = entropy_arr(item["unigen_map"],10,7)
         x, y_diffusion = entropy_arr(item["diffusion_3-sat-unigen-500k_map"],10,7)

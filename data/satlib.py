@@ -4,17 +4,15 @@ import os
 import fnmatch
 from natsort import natsorted, ns
 
-import random
-import hashlib
-import subprocess
+from data.dimac import SatInstances, BatchedDimacsDataset
+from data.SatSpecifics import SatSpecifics
 
-from data.k_sat import KSAT
 from utils.DimacsFile import DimacsFile
 
 # from utils.sat import remove_unused_vars
 MY_DIR = os.path.dirname(os.path.realpath(__file__))
 
-class SatLib(KSAT):
+class SatLib_Instances(SatInstances):
     """
     Enumerating SAT instances obtained from https://www.cs.ubc.ca/~hoos/SATLIB/benchm.html.
 
@@ -25,7 +23,7 @@ class SatLib(KSAT):
                  max_nodes_per_batch=5000,
                  **kwargs) -> None:
 #        super(SplotData, self).__init__(data_dir, force_data_gen=False, **kwargs)
-        super(SatLib, self).__init__(data_dir, input_mode='literals', max_nodes_per_batch=0)
+        super().__init__(data_dir, input_mode='literals', max_nodes_per_batch=0)
 
         self.data_dir = os.path.join(MY_DIR,"satlib")#data_dir
         print(f"We are in satlib data init; data_dir={self.data_dir}")
@@ -53,6 +51,11 @@ class SatLib(KSAT):
                 dimacs.load()
                 yield dimacs.number_of_vars(), dimacs.clauses()
 
+
+class SatLib(BatchedDimacsDataset):
+
+    def __init__(self, **kwargs):
+        super().__init__(SatLib_Instances(**kwargs), SatSpecifics(**kwargs))
 
 
 if __name__ == "__main__":

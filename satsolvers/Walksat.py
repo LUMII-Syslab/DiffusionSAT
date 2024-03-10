@@ -1,6 +1,6 @@
 from typing import Tuple
 
-from SatSolver import SatSolver
+from satsolvers.SatSolver import SatSolver
 from utils.sat import walksat
 
 class Walksat(SatSolver):

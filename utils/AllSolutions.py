@@ -1,5 +1,5 @@
-from DimacsFile import DimacsFile
-from VariableAssignment import VariableAssignment
+from utils.DimacsFile import DimacsFile
+from utils.VariableAssignment import VariableAssignment
 from pyunigen import Sampler    # for counting SAT solutions
 from pyapproxmc import Counter  # for counting SAT solutions
 

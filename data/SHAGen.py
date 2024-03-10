@@ -5,7 +5,8 @@ import platform
 import random
 import subprocess
 from enum import Enum
-from data.k_sat import KSAT
+from data.dimac import SatInstances, BatchedDimacsDataset
+from data.SatSpecifics import SatSpecifics
 
 
 def random_binary_string(n):
@@ -22,7 +23,7 @@ class HashSetting(Enum):
                         # since it is harder to generate a SATISFIABLE CNF, please, increase the number of rounds and the number of allowed variables
 
 
-class SHAGen(KSAT):
+class SHAGen_Instances(SatInstances):
     """ Dataset with random SAT instances based on the SHA1 algorithm. We use cgen inside.
     """
 
@@ -42,7 +43,7 @@ class SHAGen(KSAT):
     def __init__(self, data_dir,
                  min_vars=4, max_vars=1000,
                  force_data_gen=False, **kwargs) -> None:
-        super(SHAGen, self).__init__(data_dir, min_vars=min_vars,
+        super().__init__(data_dir, min_vars=min_vars,
                                      max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         # maximum number of samples; if there are less, we will stop earlier
         self.train_size = 10000
@@ -199,3 +200,10 @@ class SHAGen(KSAT):
             # after while ended, let's check if we reached the attempt limit
             if attempts == self.max_attempts:
                 break  # stop the iterator, too many attempts; perhaps, we are not able to generate the desired number of variables according to the given constraints
+
+class SHAGen(BatchedDimacsDataset):
+
+    def __init__(self, **kwargs):
+        super().__init__(SHAGen_Instances(**kwargs), SatSpecifics(**kwargs))
+
+

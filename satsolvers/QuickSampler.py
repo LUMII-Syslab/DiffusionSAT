@@ -5,7 +5,7 @@ from pathlib import Path
 import os
 import uuid
 
-from SatSolver import SatSolver
+from satsolvers.SatSolver import SatSolver
 from utils.VariableAssignment import VariableAssignment
 from utils.DimacsFile import DimacsFile
 

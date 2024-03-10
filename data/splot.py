@@ -4,16 +4,13 @@ import os
 import fnmatch
 from natsort import natsorted, ns
 
-import random
-import hashlib
-import subprocess
-
-from data.k_sat import KSAT
+from data.dimac import SatInstances, BatchedDimacsDataset
+from data.SatSpecifics import SatSpecifics
 
 # from utils.sat import remove_unused_vars
 MY_DIR = os.path.dirname(os.path.realpath(__file__))
 
-class SplotData(KSAT):
+class SplotData_Instances(SatInstances):
     """
     Enumerating SAT instances obtained from http://www.splot-research.org (real world use cases).
 
@@ -24,8 +21,7 @@ class SplotData(KSAT):
                  test_size_factor=0.10, # 10% of data for tests
                  max_nodes_per_batch=5000,
                  **kwargs) -> None:
-#        super(SplotData, self).__init__(data_dir, force_data_gen=False, **kwargs)
-        super(SplotData, self).__init__(data_dir, input_mode='literals', max_nodes_per_batch=0)
+        super().__init__(data_dir, input_mode='literals', max_nodes_per_batch=0)
 
         self.data_dir = os.path.join(MY_DIR,"splot")#data_dir
         print(f"We are in splot data init; data_dir={self.data_dir}")
@@ -79,6 +75,12 @@ class SplotData(KSAT):
 
             res.append(-var_map[id] if neg else var_map[id])
         return res
+
+
+class SplotData(BatchedDimacsDataset):
+
+    def __init__(self, **kwargs):
+        super().__init__(SplotData_Instances(**kwargs), SatSpecifics(**kwargs))
 
 
 if __name__ == "__main__":

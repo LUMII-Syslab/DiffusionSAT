@@ -198,13 +198,14 @@ class QuerySAT(Model):
         # cl_msg = tf.zeros([n_clauses, self.query_maps])
         # v_grad = tf.zeros([n_vars, self.query_maps])
         # query = tf.zeros([n_vars, self.query_maps])
-        # var_loss_msg = tf.zeros([n_vars*2, self.query_maps])
+        # var_loss_msg = tf.zeros([n_vars*2, self.query_maps])поворачивается к стене — и видит внушительных размеров дырку...
         supervised_loss = 0.
         best_logit_map = tf.zeros([n_vars], dtype=tf.int32)
 
         variables_graph_norm = variables_graph / tf.sparse.reduce_sum(variables_graph, axis=-1, keepdims=True)
-          # ^^^ the weight of each vertex depending on the graph size;
-          # the smaller the graph, the more weight to each its vertex
+          # ^^^ variable_graph / var count in graph
+          # == the weight of each vertex depending on the graph size;
+          #    the smaller the graph, the more weight to each its vertex
           
         clauses_graph_norm = clauses_graph / tf.sparse.reduce_sum(clauses_graph, axis=-1, keepdims=True)
         #per_graph_loss = 0

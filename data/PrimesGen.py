@@ -5,11 +5,13 @@
 import glob
 import os
 
-from data.k_sat import KSAT
+from data.dimac import SatInstances, BatchedDimacsDataset
+from data.SatSpecifics import SatSpecifics
+
 from utils.sat import remove_unused_vars, remove_useless_clauses
 import random
 
-class PrimesGen(KSAT):
+class PrimesGen_Instances(SatInstances):
     """ Dataset with SAT instances based on integer factorization into 2 primes, each below 1000.
     """
 
@@ -18,7 +20,7 @@ class PrimesGen(KSAT):
         FETCHED_DATA_DIR = "data/" + FETCHED_DATA_DIR
 
     def __init__(self, data_dir, min_vars=4, max_vars=200, force_data_gen=False, **kwargs) -> None:
-        super(PrimesGen, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
+        super().__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         self.train_size = 20000  # maximum number of samples; if there are less, we will stop earlier
         self.test_size = 1000
 
@@ -93,3 +95,9 @@ class PrimesGen(KSAT):
             # after while ended, let's check if we reached the attempt limit
             if attempts == self.max_attempts:
                 break  # stop the iterator, too many attempts; perhaps, we are not able to generate the desired number of variables according to the given constraints
+
+class PrimesGen(BatchedDimacsDataset):
+
+    def __init__(self, **kwargs):
+        super().__init__(PrimesGen_Instances(**kwargs), SatSpecifics(**kwargs))
+

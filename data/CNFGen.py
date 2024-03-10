@@ -5,25 +5,30 @@ import numpy as np
 from cnfgen import RandomKCNF, CliqueFormula, DominatingSet, GraphColoringFormula
 from pysat.solvers import Glucose4
 
-from data.k_sat import KSAT
-from utils.sat import run_external_solver, run_unigen, build_dimacs_file
+from data.dimac import BatchedDimacsDataset, SatInstances
+from data.SatSpecifics import SatSpecifics
+from utils.sat import build_dimacs_file
+from satsolvers.SatSolver import SatSolver
+from satsolvers.Default import DefaultSatSolver
 
-class SAT_3(KSAT):
+class SAT_3_Instances(SatInstances):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
 
     def __init__(self, data_dir, min_vars=5,
                  max_vars=30, # by SK #max_vars=100, 
-                 max_nodes_per_batch=0, # by SK 
                  force_data_gen=False,
+                 sat_solver: SatSolver=DefaultSatSolver(),
+                 train_size = 100_000,
+                 test_size = 5_000,
                  **kwargs) -> None:
-        super(SAT_3, self).__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
-                                    max_nodes_per_batch=0, # by SK
+        super().__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
                                     **kwargs)
-        self.train_size = 100000
-        self.test_size = 5000
+        self.train_size = train_size
+        self.test_size = test_size
         self.min_vars = min_vars
         self.max_vars = max_vars
+        self.sat_solver = sat_solver
 
     def train_generator(self) -> tuple:
         return self._generator(self.train_size)
@@ -44,31 +49,24 @@ class SAT_3(KSAT):
                 iclauses = [F._compress_clause(x) for x in clauses]
 
                 dimacs = build_dimacs_file(iclauses, n_vars)
-
-                if n_vars > 200:
-                    is_sat, solution = run_external_solver(dimacs)
-                else:
-                    with Glucose4(bootstrap_with=iclauses) as solver:
-                        is_sat = solver.solve()
-                        solution = solver.get_model()
-
-                from config import Config
-                if is_sat and Config.use_unigen: # sample a random solution if there exists one
-                    is_sat, solution = run_unigen(dimacs)
+                
+                is_sat, solution = self.sat_solver.one_sample(dimacs)
 
                 if is_sat:
                     break
 
             yield len(solution), iclauses, solution
 
-
-class Clique(KSAT):
+class SAT_3(BatchedDimacsDataset):
+    def __init__(self, **kwargs):
+        super().__init__(SAT_3_Instances(**kwargs), SatSpecifics(**kwargs))
+class Clique_Instances(SatInstances):
     """ Dataset with random sat instances from triangle detection in graphs.
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
     """
 
     def __init__(self, data_dir, min_vertices=4, max_vertices=40, force_data_gen=False, **kwargs) -> None:
-        super(Clique, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
+        super().__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
         self.train_size = 50000
         self.test_size = 10000
@@ -107,14 +105,17 @@ class Clique(KSAT):
                     break
             yield n_vars, iclauses
 
+class Clique(BatchedDimacsDataset):
+    def __init__(self, **kwargs):
+        super().__init__(Clique_Instances(**kwargs), SatSpecifics(**kwargs))
 
-class DomSet(KSAT):
+class DomSet_Instances(SatInstances):
     """ Dataset with random sat instances from triangle detection in graphs.
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5
     """
 
     def __init__(self, data_dir, min_vertices=4, max_vertices=12, force_data_gen=False, **kwargs) -> None:
-        super(DomSet, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
+        super().__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
         self.train_size = 10000
         self.test_size = 5000
@@ -151,8 +152,10 @@ class DomSet(KSAT):
 
             yield n_vars, iclauses
 
-
-class KColor(KSAT):
+class DomSet(BatchedDimacsDataset):
+    def __init__(self, **kwargs):
+        super().__init__(DomSet_Instances(**kwargs), SatSpecifics(**kwargs))
+class KColor_Instances(SatInstances):
     """
     Generates the clauses for colorability formula
     The formula encodes the fact that the graph :math:`G` has a coloring
@@ -162,7 +165,7 @@ class KColor(KSAT):
     """
 
     def __init__(self, data_dir, min_vertices=4, max_vertices=20, force_data_gen=False, **kwargs) -> None:
-        super(KColor, self).__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
+        super().__init__(data_dir, min_vars=min_vertices, max_vars=max_vertices,
                                      force_data_gen=force_data_gen, **kwargs)
         self.train_size = 50000
         self.test_size = 10000
@@ -199,3 +202,7 @@ class KColor(KSAT):
                     break
 
             yield n_vars, iclauses
+
+class KColor(BatchedDimacsDataset):
+    def __init__(self, **kwargs):
+        super().__init__(KColor_Instances(**kwargs), SatSpecifics(**kwargs))

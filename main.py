@@ -22,6 +22,8 @@ from utils.visualization import create_cactus_data
 import matplotlib.pyplot as plt
 import io
 
+from utils.DimacsFile import DimacsFile
+
 def main():
     # optimizer = tfa.optimizers.RectifiedAdam(Config.learning_rate,
     #                                          total_steps=Config.train_steps,
@@ -32,11 +34,8 @@ def main():
     # optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)  # check for accuracy issues!
 
     model = ModelRegistry().resolve(Config.model)(optimizer=optimizer)
-    dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                     force_data_gen=Config.force_data_gen,
-                                                     input_mode=Config.input_mode,
-                                                     max_nodes_per_batch=Config.max_nodes_per_batch)
-
+    dataset = DatasetRegistry().resolve(Config.task)(test_dimacs=DimacsFile(clauses=[[1,-2],[2,-1]]))
+    
     ckpt, manager = prepare_checkpoints(model, optimizer)
 
     if Config.train:
@@ -198,8 +197,7 @@ def evaluate_batch_generalization(model):
     for batch_size in range(3000, 24000, 1000):
         print(f"Generating dataset with max_batch_size={batch_size}")
         dataset = DatasetRegistry().resolve(Config.task)(data_dir=Config.data_dir,
-                                                         force_data_gen=Config.force_data_gen,
-                                                         input_mode=Config.input_mode,
+                                                         force_data_gen=Config.force_data_gen,                                                         
                                                          max_nodes_per_batch=batch_size)
 
         iterator = itertools.islice(dataset.test_data(), 1)
@@ -307,7 +305,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
 
         ckpt.step.assign_add(1)
         
-    print(f"<=== Training finshed; {int(ckpt.step)} training steps performed.")
+    print(f"<=== train() finshed; {int(ckpt.step)} training steps performed.")
 
 
 def prepare_checkpoints(model, optimizer):

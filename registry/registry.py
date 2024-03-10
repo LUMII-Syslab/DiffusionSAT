@@ -1,10 +1,21 @@
 from abc import abstractmethod
 
+import os
+import sys
+
+# Add the current working directory to the module search path
+current_directory = os.getcwd()
+sys.path.append(current_directory)
+
+from data.k_sat import KSatInstances, SatSpecifics, KSatDataset
+from data.dimac import BatchedDimacsDataset
+
+from data.diffusion_sat import DiffusionSatDataset
+
 from data.CNFGen import SAT_3, Clique, DomSet, KColor
 from data.PrimesGen import PrimesGen
 from data.SHAGen import SHAGen
 from data.SHAGen2019 import SHAGen2019
-from data.k_sat import KSAT
 from data.mixed_sat import MixGraphSAT
 from data.splot import SplotData
 from data.satlib import SatLib
@@ -26,6 +37,11 @@ from satsolvers.Walksat import Walksat
 from satsolvers.Treengeling import Treengeling
 from satsolvers.Lingeling import Lingeling
 from satsolvers.Default import DefaultSatSolver
+
+import json
+
+
+
 class Registry:
 
     @property
@@ -59,13 +75,18 @@ class ModelRegistry(Registry):
             "neurocore": NeuroCore
         }
 
+class QSatDataset(BatchedDimacsDataset):
+
+    def __init__(self, min_vars, max_vars, test_size, train_size, **kwargs):
+        super().__init__(KSatInstances(min_vars, max_vars, test_size, train_size, **kwargs), SatSpecifics(**kwargs), data_dir_suffix=str(min_vars)+"_"+str(max_vars))    
 
 class DatasetRegistry(Registry):
 
     @property
     def registry(self) -> dict:
         return {
-            "k_sat": KSAT,
+            "k-sat": KSatDataset,
+            "diffusion-sat": DiffusionSatDataset, 
             "k_color": KColor,
             "3-sat": SAT_3,
             "clique": Clique,
@@ -93,4 +114,11 @@ class SatSolverRegistry(Registry):
             "default": DefaultSatSolver
         }
     
+if __name__ == "__main__":  # print dict as JSON to output
+    registry_dict = {
+        'ModelRegistry': list(ModelRegistry().registered_names), 
+        'DatasetRegistry': list(DatasetRegistry().registered_names),
+        'SatSolverRegistry': list(SatSolverRegistry().registered_names)
+    }
+    print(json.dumps(registry_dict))
     
