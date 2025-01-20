@@ -14,27 +14,21 @@ pip install -r requirements.txt
 
 ## Training New Models
 
-Edit the config.py file and set these settings:
-```python
-    train_steps = 167_000 #1_000 #5_000 #10_000 #25_000 #50_000 #75_000 #167_000
-    train_min_vars = 30 #3 30
-    train_max_vars = 100 #30 100
-    test_size=10_000
-    train_size=100_000
-    use_hard_3sat = True 
-       # ^^^ if True, use hard 3-SAT instances with 4.3 clause/variable ratio for training;
-       #     if False, use NeuroSAT-based k-SAT generation algorithm
-    desired_multiplier_for_the_number_of_solutions = 20
-       # ^^^ only if use_hard_3sat==False
-       # remove some clauses to multiply the number of samples by desired_multiplier_for_the_number_of_solutions
-    max_nodes_per_batch = 20_000 # 20_000 for Nvidia T4, 60_000 for more advanced cards (setting by SK)
-    use_cosine_decay = True # use CosineDecay instead of fixed rate schedule
-    learning_rate = 0.0003
-       # ^^^ the fixed learning rate, if use_cosine_decay==False
-    use_unigen = True
-       # ^^^ Unigen() or Glucose() for computing samples used for training;
-       #     see: data/diffusion_sat_instances.py#get_sat_solution
-```
+Edit the `config.py` file and set these settings in the `Config` class:
+
+| parameter name                                 | sample value           | description                                                  |
+| ---------------------------------------------- | ---------------------- | ------------------------------------------------------------ |
+| train_steps                                    | 167_000                | number of iterations to perform during the training process; <br />if `use_cosine_decay==False` (see below), the number of iterations should be 100_000 or more |
+| train_min_vars                                 | 3 (30)                 | the min number of variables in a random SAT formula to generate |
+| train_max_vars                                 | 30 (100)               | the max number of variables in a random SAT formula to generate |
+| train_size                                     | 100_000                | the number of SAT instances to generate                      |
+| test_size                                      | 10_000                 | the number of SAT instances to use for validation            |
+| use_hard_3sat                                  | True                   | whether hard 3-SAT instances should be generated with clause/variable ratio ~ 4.3 |
+| desired_multiplier_for_the_number_of_solutions | 20                     | [ony if `use_hard_3sat==False`] remove some clauses of random SAT instances to increate the number of possible solutions by this factor |
+| max_nodes_per_batch                            | 20_000 (for NVidia T4) | the upper limit on how many literals and clauses to use in one batch |
+| use_cosine_decay                               | True                   | use CosineDecay instead of fixed rate learning schedule      |
+| learning_rate                                  | 0.0003                 | [only if `use_cosine_decay==False`] the fixed learning rate  |
+| use_unigen                                     | True                   | use Unigen solver for computing sample solutions; if False, Glucose will be used;<br />see also: `data/diffusion_sat_instances.py#get_sat_solution` |
 
 Then launch
 ```bash
