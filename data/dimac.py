@@ -87,7 +87,7 @@ class BatchedDimacsDataset(Dataset):
             data = self.fetch_dataset(self.sat_instances.validation_generator, mode="validation")
         else:
             data = self.fetch_dataset(self.sat_instances.test_generator, mode="validation")
-        data = data.shuffle(self.shuffle_size)
+        # data = data.shuffle(self.shuffle_size) # ??
         data = data.repeat()
         return data.prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -112,7 +112,7 @@ class BatchedDimacsDataset(Dataset):
             shutil.rmtree(dimacs_folder) # by SK: remove also dimacs folder to re-generate .dimacs files
 
         if not dimacs_folder.exists() and not tfrecords_folder.exists():
-            self.write_dimacs_to_file(dimacs_folder, generator)
+            self.write_dimacs_to_file(dimacs_folder, generator, mode)
 
         if not tfrecords_folder.exists():
             self.dimac_to_data(dimacs_folder, tfrecords_folder)
@@ -126,7 +126,7 @@ class BatchedDimacsDataset(Dataset):
         data = data.map(self.feature_from_file, tf.data.experimental.AUTOTUNE)
         return data
 
-    def write_dimacs_to_file(self, data_folder: Path, data_generator: callable):
+    def write_dimacs_to_file(self, data_folder: Path, data_generator: callable, mode: str):
         if self.force_data_gen and data_folder.exists():
             shutil.rmtree(data_folder)
 
@@ -138,8 +138,7 @@ class BatchedDimacsDataset(Dataset):
 
         print(f"Generating DIMACS data in '{data_folder}' directory!")
         for idx, (n_vars, clauses, *solution) in enumerate(data_generator()):
-
-            solution = solution[0] if solution and solution[0] else get_sat_solution(clauses)
+            solution = solution[0] if solution and solution[0] else get_sat_solution(clauses, mode)
             solution = [int(x > 0) for x in solution]
             solution = elements_to_str(solution)
 
@@ -235,6 +234,8 @@ class BatchedDimacsDataset(Dataset):
             original_clauses.append(clauses)
             variable_count.append(var_count)
             solutions.append(solution)
+            if var_count != len(solution):
+                raise Exception("lengths do not match")
             batched_clauses.extend(self.shift_clause(clauses, offset))
             cells_in_formula.append(sum([len(c) for c in clauses]))
             offset += var_count
@@ -322,7 +323,9 @@ class BatchedDimacsDataset(Dataset):
         }
 
 
-def get_sat_solution(clauses: list):
+def get_sat_solution(clauses: list, mode: str = None):
+    if mode != "test":
+        raise Exception("This get_sat_solution should not be called if the generator provides the solutions!")
     with Glucose4(bootstrap_with=clauses) as solver:
         is_sat = solver.solve()
         if not is_sat:

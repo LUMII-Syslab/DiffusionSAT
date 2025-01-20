@@ -10,6 +10,7 @@ from tensorboard.plugins.hparams import api as hp
 from tensorflow.keras import Model
 
 from config import Config
+from data.CNFGen import SAT_3
 from data.dataset import Dataset
 from metrics.base import EmptyMetric
 from metrics.sat_metrics import SATAccuracyTF
@@ -19,10 +20,13 @@ from utils.measure import Timer
 from utils.parameters_log import HP_TRAINABLE_PARAMS, HP_TASK
 from utils.sat import is_graph_sat
 from utils.visualization import create_cactus_data
+from tensorflow.keras.optimizers.schedules import CosineDecay
 import matplotlib.pyplot as plt
 import io
 
-from utils.DimacsFile import DimacsFile
+from data.diffusion_sat_instances import DiffusionSatDataset
+from model.query_sat import QuerySAT
+from data.k_sat import KSatInstances
 
 def main():
     # optimizer = tfa.optimizers.RectifiedAdam(Config.learning_rate,
@@ -30,24 +34,62 @@ def main():
     #                                          warmup_proportion=Config.warmup)
     # optimizer = tf.keras.optimizers.Adam(config.learning_rate)
 
-    optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
+    # was:
+    # optimizer = AdaBeliefOptimizer(Config.learning_rate, beta_1=0.6, clip_gradients=True)
+    # now:
+    # optimizer with cosine scheduler, see [https://www.tensorflow.org/api_docs/python/tf/keras/optimizers/schedules/CosineDecay]
+
+    learning_rate = Config.learning_rate
+    beta1 = 0.9
+    beta2 = 0.999
+    if Config.use_cosine_decay:
+        initial_learning_rate = 0.001
+        decay_steps = Config.train_steps
+        alpha = 0.5  # Define the alpha parameter for the cosine decay
+        epsilon = 1e-8
+
+        cosine_decay = CosineDecay(initial_learning_rate=initial_learning_rate,
+            decay_steps=decay_steps,
+            alpha=alpha)
+        learning_rate = cosine_decay    
+        
+    optimizer = AdaBeliefOptimizer(learning_rate=learning_rate,
+        beta_1=beta1,
+        beta_2=beta2,
+        epsilon=epsilon,
+        clip_gradients=True)
+
+
     # optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)  # check for accuracy issues!
 
-    model = ModelRegistry().resolve(Config.model)(optimizer=optimizer)
-    dataset = DatasetRegistry().resolve(Config.task)(test_dimacs=DimacsFile(clauses=[[1,-2],[2,-1]])) # TODO: which was the best dimacs, python diagramming?
+    model = QuerySAT(optimizer=optimizer)
+    # old: ModelRegistry().resolve(Config.model)(optimizer=optimizer)
+
+    dataset = DiffusionSatDataset( 
+#        train_and_validation_instances = KSatInstances(
+#                min_vars=3, max_vars=30,
+#                test_size=10_000,#10_000,#50_000,#10000,
+#                train_size=100_000,#300_000,#1_000_000,#300000,
+#                desired_multiplier_for_the_number_of_solutions=Config.desired_multiplier_for_the_number_of_solutions                                 
+#        )
+        train_and_validation_instances = SAT_3(
+                min_vars=3, max_vars=30,
+                test_size=10_000,#10_000,#50_000,#10000,
+                train_size=100_000,#300_000,#1_000_000,#300000,
+        )
+    )
+    # old: dataset = DatasetRegistry().resolve(Config.task)...
     
     ckpt, manager = prepare_checkpoints(model, optimizer)
 
     if Config.train:
         train(dataset, model, ckpt, manager)
 
-    if Config.evaluate:
-        test_metrics = evaluate_metrics(dataset, dataset.test_data(), model,
-                                        print_progress=(Config.task == 'euclidean_tsp'))
-        for metric in test_metrics:
-            if Config.task == 'euclidean_tsp':
-                metric.log_in_tensorboard(reset_state=False, scope="TSP_test_metrics")
-            metric.log_in_stdout()
+    #if Config.evaluate:
+    #    test_metrics = evaluate_metrics(dataset, dataset.test_data(), model,
+    #                                    print_progress=False)
+    #    for metric in test_metrics:
+    #        metric.log_in_stdout()
 
     if Config.evaluate_round_gen:
         evaluate_round_generalization(dataset, optimizer)
@@ -236,7 +278,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
     writer = tf.summary.create_file_writer(Config.train_dir)
     writer.set_as_default()
 
-    print("===> Starting the train() process...")
+    print("===> Starting the train() process... ("+str(Config.train_steps)+" steps)")
     mean_loss = tf.metrics.Mean()
     timer = Timer(start_now=True)
     validation_data = dataset.validation_data()
@@ -252,7 +294,7 @@ def train(dataset: Dataset, model: Model, ckpt, ckpt_manager):
         loss, gradients = model_output["loss"], model_output["gradients"]
         mean_loss.update_state(loss)
 
-        if int(ckpt.step) % 100 == 0:
+        if int(ckpt.step) % 1000 == 0: # tf.summary var samazināt
             loss_mean = mean_loss.result()
             with writer.as_default():
                 tf.summary.scalar("loss", loss_mean, step=int(ckpt.step))
@@ -333,6 +375,8 @@ def evaluate_metrics(dataset: Dataset, data: tf.data.Dataset, model: Model, step
             print("Testing batch", counter)
         counter += 1
         model_input = dataset.args_for_train_step(step_data)
+        
+        sh = tf.shape(step_data["variables_graph_adj"])
         output = model.predict_step(**model_input)
         for metric in metrics:
             metric.update_state(output, step_data)

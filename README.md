@@ -1,10 +1,8 @@
->📋  A template README.md for code accompanying a Machine Learning paper
+# DiffusionSAT
 
-# My Paper Title
-
-This repository is the official implementation of [My Paper Title](https://arxiv.org/abs/2030.12345). 
-
->📋  Optional: include a graphic explaining your approach/main result, bibtex entry, link to demos, blog posts and tutorials
+This repository is the official implementation of DiffusionSAT, a pure GNN SAT solver.
+- For training, it uses Belief Propagation and QuerySAT-based approach.
+- For sampling solutions, it uses multinomial denoising diffusion.
 
 ## Requirements
 
@@ -14,49 +12,61 @@ To install requirements:
 pip install -r requirements.txt
 ```
 
->📋  Describe how to set up the environment, e.g. pip/conda/docker commands, download datasets, etc...
+## Training New Models
 
-## Training
-
-To train the model(s) in the paper, run this command:
-
-```train
-python train.py --input-data <path_to_data> --alpha 10 --beta 20
+Edit the config.py file and set these settings:
+```python
+    train_steps = 167_000 #1_000 #5_000 #10_000 #25_000 #50_000 #75_000 #167_000
+    train_min_vars = 30 #3 30
+    train_max_vars = 100 #30 100
+    test_size=10_000
+    train_size=100_000
+    use_hard_3sat = True 
+       # ^^^ if True, use hard 3-SAT instances with 4.3 clause/variable ratio for training;
+       #     if False, use NeuroSAT-based k-SAT generation algorithm
+    desired_multiplier_for_the_number_of_solutions = 20
+       # ^^^ only if use_hard_3sat==False
+       # remove some clauses to multiply the number of samples by desired_multiplier_for_the_number_of_solutions
+    max_nodes_per_batch = 20_000 # 20_000 for Nvidia T4, 60_000 for more advanced cards (setting by SK)
+    use_cosine_decay = True # use CosineDecay instead of fixed rate schedule
+    learning_rate = 0.0003
+       # ^^^ the fixed learning rate, if use_cosine_decay==False
+    use_unigen = True
+       # ^^^ Unigen() or Glucose() for computing samples used for training;
+       #     see: data/diffusion_sat_instances.py#get_sat_solution
 ```
 
->📋  Describe how to train the models, with example commands on how to train the models in your paper, including the full training procedure and appropriate hyperparameters.
+Then launch
+```bash
+python3 ./diffusion_training.py
+```
+
+## Using Existing Models
+
+Existing (pre-trained) models are available in the Releases section.
+
+## Sampling SAT Solutions
+You can use diffusion_sample.py. There you need to define two variables:
+- model_path -- specifies where the pre-trained model is located
+- dimacs_filename -- specifies the name of the SAT problem specified in the DIMACS format
+
+```python
+diffusion_dict = DiffusionSampler(model_path, dimacs_filename).samples(n_samples)
+```
+
+The result is a python dictionary in the format: `[solution_as_int: number_of_occurrences]`.
+The `solution_as_int` is an int with binary representation corresponding to bit values for x1, x2,...xN (the right-most bit is for x1, bit 0 means "False", bit 1 means "True").
+The `number_of_occurrences` shows how many times that particular solution was generated.
+
+
 
 ## Evaluation
 
-To evaluate my model on ImageNet, run:
-
-```eval
-python eval.py --model-file mymodel.pth --benchmark imagenet
+Some evaluation (e.g., uniformity) can be obtained by launching:
+```bash
+python3 diffusion_evaluation.py
 ```
-
->📋  Describe how to evaluate the trained models on benchmarks reported in the paper, give commands that produce the results (section below).
-
-## Pre-trained Models
-
-You can download pretrained models here:
-
-- [My awesome model](https://drive.google.com/mymodel.pth) trained on ImageNet using parameters x,y,z. 
-
->📋  Give a link to where/how the pretrained models can be downloaded and how they were trained (if applicable).  Alternatively you can have an additional column in your results table with a link to the models.
 
 ## Results
 
-Our model achieves the following performance on :
-
-### [Image Classification on ImageNet](https://paperswithcode.com/sota/image-classification-on-imagenet)
-
-| Model name         | Top 1 Accuracy  | Top 5 Accuracy |
-| ------------------ |---------------- | -------------- |
-| My awesome model   |     85%         |      95%       |
-
->📋  Include a table of results from your paper, and link back to the leaderboard for clarity and context. If your main result is a figure, include that figure and link to the command or notebook to reproduce it. 
-
-
-## Contributing
-
->📋  Pick a licence and describe how to contribute to your code repository. 
+Papers:

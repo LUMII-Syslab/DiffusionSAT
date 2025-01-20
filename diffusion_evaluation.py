@@ -12,6 +12,7 @@ from satuniformity.BenchmarksFile import BenchmarksFile
 from satuniformity.UnigenSampler import UnigenSampler
 from satuniformity.DiffusionSampler import DiffusionSampler
 from satuniformity.QuickSampler import QuickSampler
+import sys
 
 
 # model_path = default = Config.train_dir + "/3-sat-unigen-500k"
@@ -22,7 +23,8 @@ model_path = default = Config.train_dir +"/diffusion-sat_24_07_05_12:01:18"
 # ^^^ cosine
 model_path = default = Config.train_dir +"/diffusion-sat_24_07_05_14:01:22"
 # ^^^ cosine
-dimacs_filename = "test3.dimacs"
+model_path = default = Config.train_dir +"/diffusion-sat-167k"
+dimacs_filename = "test0.dimacs"
 
 np.set_printoptions(linewidth=2000, precision=3, suppress=True)
 # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -39,14 +41,29 @@ def add_missing_keys(source_dict, target_dict, value=0):
 def test_sk():
     print("TEST DIFFUSION BY SK")
 
+    model_prefix = Config.train_dir +"/diffusion-sat-"
+    
+    #model_suffixes = [ "1k-fixed", "5k-fixed", "10k-fixed", "25k-fixed", "50k-fixed", "75k-fixed", "167k-fixed" ]
+    model_suffixes = [ "1k-cos", "5k-cos", "10k-cos", "25k-cos", "50k-cos", "75k-cos", "167k-cos" ]
+    #model_suffixes = [ "1k-fixed4", "5k-fixed4", "10k-fixed4", "25k-fixed4", "50k-fixed4", "75k-fixed4", "167k-fixed4" ]
+    #model_suffixes = [ "1k-cos4", "5k-cos4", "10k-cos4", "25k-cos4", "50k-cos4", "75k-cos4", "167k-cos4" ]
+    #steps_labels = [ "1K", "5K", "10K", "25K", "50K", "75K", "167K" ]
+
+    # TODO: for cycle:
+    model_suffix = model_suffixes[0]
+    model_path = model_prefix+model_suffix
+
     df = DimacsFile(filename=dimacs_filename)
     df.load()
     all = AllSolutions(df.number_of_vars(), df.clauses())
     print("Counting # of solutions...")
     n_solutions = all.count()
-    print("=",n_solutions)
+    print("DIFF SOLUTIONS=",n_solutions)
     k = 50
     n_samples = n_solutions * k
+#    n_samples = 50
+    n_samples = n_samples * 10
+    #n_samples = n_solutions *2
     print("Generating ",n_samples," samples using different samplers...")
 
     bf = BenchmarksFile()
@@ -87,11 +104,12 @@ def test_sk():
     benchmark["quicksampler_samples"]=sorted(quicksampler_dict.items())
     benchmark["quicksampler_speed"] = float(time2 - time1) / len(quicksampler_dict)
 
-    print("unigen:   ", unigen_dict)
-    print("diffusion:", diffusion_dict)
-    print("quicksampler: ", quicksampler_dict)
+    print("n_samples: ", n_samples)
+    print("unigen:   ", benchmark["unigen_samples"])
+    print("diffusion:", benchmark["diffusion_samples"])
+    print("quicksampler: ", benchmark["quicksampler_samples"])
 
-    bf.write(benchmark)
+    #bf.write(benchmark)
 
 
 test_sk()

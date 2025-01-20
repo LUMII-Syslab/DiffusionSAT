@@ -5,6 +5,11 @@ import numpy as np
 
 class VariableAssignment:
     def __init__(self, n_vars=0, clauses=[]):
+        if clauses == []:
+            # fix the case, when only clauses are passed without named arg
+            if type(n_vars) != int:
+                clauses = n_vars
+                n_vars = 0
         if type(clauses) != list:
             clauses = self.__raggedtensor_to_list(clauses)
         if n_vars == 0:
@@ -64,7 +69,12 @@ class VariableAssignment:
         return res
 
     def __str__(self):
-        return str(int(self))
+        s = ""
+        for bit_no in range(len(self.x)):
+            s += "1" if self.x[bit_no] else "0"
+        return s
+        #variant:
+        #return str(int(self))
 
     def satisfiable(self):
         for a in range(len(self.clauses)):  # a = clause index
@@ -87,6 +97,13 @@ class VariableAssignment:
             else:
                 result.append(-(i+1))
         return result
+    
+    def value(self, i):
+        # i must be zero based
+        return self.x[i]
+
+    def values(self):
+        return self.x
 
 
 if __name__ == "__main__":  # test

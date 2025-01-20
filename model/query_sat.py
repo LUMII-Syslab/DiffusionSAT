@@ -37,7 +37,7 @@ def sample_gumbel_tf(shape, eps=1e-20):
 #          tf.reduce_sum(labels_at_t * tf.math.log(tf.maximum(labels_at_t, 1e-20)), axis=-1)
 #     return 100 * tf.reduce_mean(KL)
 
-def train_loss(labels, prediction_logits, t, label_smoothing = 0.01):
+def train_loss(labels, prediction_logits, t, label_smoothing = 0.01): #KL divergence
     t = tf.math.pow(t, t_power)
     labels_at_t = distribution_at_time(labels, tf.minimum(t + label_smoothing, 1))
     probs = tf.sigmoid(prediction_logits)  # maybe use logscale
@@ -138,37 +138,38 @@ class QuerySAT(Model):
         # variables = self.zero_state(n_vars, self.feature_maps)
         # clause_state = self.zero_state(n_clauses, self.feature_maps)
 
-        clause_state = tf.ones([n_clauses, self.feature_maps])
+        clauses_state = tf.ones([n_clauses, self.feature_maps])
         if noise_scale is None:
             #noise_scale = tf.random.uniform((),0, 0.5) + tf.random.uniform((),0, 0.5)  # more weight around 0.5
             noise_scale = tf.random.uniform((),0, 1)  # sample the nose level uniformly
         if labels is None: labels = tf.random.uniform([n_vars], 0, 2,dtype=tf.int32)
         #noise_scale = random.uniform(0, 0.5) + random.uniform(0, 0.5)  # more weight around 0.5
         #noisy_labels = construct_training_input(labels, noise_scale)
-        variables = tf.ones([n_vars, self.feature_maps])
-        #variables = tf.concat([noisy_labels, tf.zeros([n_vars, self.feature_maps-3])-0.1], axis=-1)
+        variables_state = tf.ones([n_vars, self.feature_maps])
+        #variables_state = tf.concat([noisy_labels, tf.zeros([n_vars, self.feature_maps-3])-0.1], axis=-1)
 
         rounds = self.train_rounds if training else self.test_rounds
 
         if training and self.skip_first_rounds > 0:  # do some first rounds without training
             pre_rounds = tf.random.uniform([], 0, self.skip_first_rounds + 1, dtype=tf.int32)
-            *_, supervised_loss0, clause_state, variables = self.loop(adj_matrix, clause_state, clauses_graph,
+            *_, supervised_loss0, clauses_state, variables_state = self.loop(adj_matrix, clauses_state, clauses_graph,
                                                                       labels, pre_rounds,
-                                                                      training, variables, variables_graph, noise_scale, noisy_num, denoised_num)
+                                                                      training, variables_state, variables_graph, noise_scale, noisy_num, denoised_num)
 
-            clause_state = tf.stop_gradient(clause_state)
-            variables = tf.stop_gradient(variables)
+            clauses_state = tf.stop_gradient(clauses_state)
+            variables_state = tf.stop_gradient(variables_state)
 
-        last_logits, step, unsupervised_loss, supervised_loss, clause_state, variables = self.loop(adj_matrix,
-                                                                                                   clause_state,
+        last_logits, step, unsupervised_loss, supervised_loss, clauses_state, variables_state = self.loop(adj_matrix,
+                                                                                                   clauses_state,
                                                                                                    clauses_graph,
                                                                                                    labels,
                                                                                                    rounds,
                                                                                                    training,
-                                                                                                   variables,
+                                                                                                   variables_state,
                                                                                                    variables_graph, noise_scale, noisy_num, denoised_num)
 
         if training:
+            #TODO: ne katrai iterācijai
             last_clauses = softplus_loss_adj(last_logits, adj_matrix=tf.sparse.transpose(adj_matrix))
             tf.summary.histogram("clauses", last_clauses)
             last_layer_loss = tf.reduce_sum(
@@ -198,7 +199,7 @@ class QuerySAT(Model):
         # cl_msg = tf.zeros([n_clauses, self.query_maps])
         # v_grad = tf.zeros([n_vars, self.query_maps])
         # query = tf.zeros([n_vars, self.query_maps])
-        # var_loss_msg = tf.zeros([n_vars*2, self.query_maps])поворачивается к стене — и видит внушительных размеров дырку...
+        # var_loss_msg = tf.zeros([n_vars*2, self.query_maps])
         supervised_loss = 0.
         best_logit_map = tf.zeros([n_vars], dtype=tf.int32)
 
@@ -211,7 +212,8 @@ class QuerySAT(Model):
         #per_graph_loss = 0
 
         noisy_labels = construct_training_input(labels, noise_scale) if noisy_num is None else noisy_num
-        noisy_labels = add_t_emb(noisy_labels, noise_scale)
+        # ^^^ 
+        noisy_labels = add_t_emb(noisy_labels, noise_scale) # pievieno kolonnu ar troksna lielumu, piem., 0.1
         if denoised_num is None: denoised_num = tf.zeros([n_vars,2])
         else: denoised_num = tf.concat([denoised_num, 1-denoised_num], axis=-1)
         noisy_labels = tf.concat([noisy_labels, denoised_num], axis=-1)
@@ -234,10 +236,11 @@ class QuerySAT(Model):
                 #     noisy_solution = randomized_rounding_tf_log(log_probs)
                 noisy_solution = noisy_labels
 
-                v1 = tf.concat([variables, tf.random.normal([n_vars, 4]), noisy_solution], axis=-1)
+                v1 = tf.concat([variables, tf.random.normal([n_vars, 4]), noisy_solution], axis=-1) # variable state!
                 query = self.variables_query(v1)
-                clauses_loss = softplus_loss_adj(query, cl_adj_matrix)
-                step_loss = tf.reduce_sum(clauses_loss)
+                clauses_loss = softplus_loss_adj(query, cl_adj_matrix) # katrai klauzulai rēķina Emīla loss
+                step_loss = tf.reduce_sum(clauses_loss) # šo vajag gradientam
+            # ^^^^ šitais gradient tape neko netrenē
 
             variables_grad = tf.convert_to_tensor(grad_tape.gradient(step_loss, query))
             variables_grad = variables_grad * var_degree_weight
@@ -248,7 +251,7 @@ class QuerySAT(Model):
             if self.use_message_passing:
                 var_msg = self.lit_mlp(v1, training=training)
                 lit1, lit2 = tf.split(var_msg, 2, axis=1)
-                literals = tf.concat([lit1, lit2], axis=0)
+                literals = tf.concat([lit1, lit2], axis=0) # pa citu dimensiju
                 clause_messages = tf.sparse.sparse_dense_matmul(cl_adj_matrix, literals)
                 clause_messages *= rev_degree_weight
                 cl_msg = clause_messages
@@ -257,26 +260,27 @@ class QuerySAT(Model):
                 clause_unit = tf.concat([clause_state, clauses_loss], axis=-1)
             clause_data = self.clause_mlp(clause_unit, training=training)
 
-            variables_loss_all = clause_data[:, 0:self.query_maps]
-            new_clause_value = clause_data[:, self.query_maps:]
+            variables_loss_all = clause_data[:, 0:self.query_maps] # messages, ko sūtīs uz mainīgajiem   >
+            new_clause_value = clause_data[:, self.query_maps:] # nākamās klauzulu vertības              > vienā MLP
             new_clause_value = self.clauses_norm(new_clause_value, clauses_graph_norm, training=training) * 0.25
             clause_state = new_clause_value + 0.1 * clause_state
 
             # Aggregate loss over edges
-            variables_loss = tf.sparse.sparse_dense_matmul(adj_matrix, variables_loss_all)
+            variables_loss = tf.sparse.sparse_dense_matmul(adj_matrix, variables_loss_all) # te mēs sūtam messages uz mainīgajiem
             variables_loss *= degree_weight
+            # variable_loss īstenībā ir message, ko saņem mainīgie (TODO)
             var_loss_msg = variables_loss
             variables_loss_pos, variables_loss_neg = tf.split(variables_loss, 2, axis=0)
             v_grad = variables_grad
 
             # calculate new variable state
-            unit = tf.concat([variables_grad, v1, variables_loss_pos, variables_loss_neg], axis=-1)
-            new_variables = self.update_gate(unit)
+            unit = tf.concat([variables_grad, v1, variables_loss_pos, variables_loss_neg], axis=-1)   # (atv.gradient, vecais ma stāvoklis, msg no klauzulām + un -)
+            new_variables = self.update_gate(unit) # MLP, kas kaut ko izdomā
             new_variables = self.variables_norm(new_variables, variables_graph_norm, training=training) * 0.25
             variables = new_variables + 0.1 * variables
 
             # calculate logits and loss
-            logits = self.variables_output(variables)
+            logits = self.variables_output(variables) # pasaka vai mainīgais ir 0 vai 1 (-infty ; +infty) -> beidzamajā cikla iterācijā
             if self.supervised:
                 # smoothed_labels = 0.5 * 0.01 + tf.expand_dims(tf.cast(labels, tf.float32), -1) * 0.99
                 # smoothed_labels = tf.tile(smoothed_labels, [1,self.logit_maps])
@@ -285,7 +289,7 @@ class QuerySAT(Model):
                 smoothed_labels = tf.expand_dims(tf.cast(labels, tf.float32), -1)
                 smoothed_labels = tf.tile(smoothed_labels, [1,self.logit_maps])
                 per_var_loss = train_loss(smoothed_labels, logits, noise_scale)
-                per_graph_loss = tf.sparse.sparse_dense_matmul(variables_graph_norm, per_var_loss)
+                per_graph_loss = tf.sparse.sparse_dense_matmul(variables_graph_norm, per_var_loss) # ma loss x ma svars pa visu grafu; matmul - sasumme pa visu grafu kopā
             else:
                 if self.use_linear_loss:
                     # binary_noise = tf.round(tf.random.uniform(tf.shape(logits))) * 2 - 1
@@ -316,7 +320,7 @@ class QuerySAT(Model):
             best_logit_map = tf.cast(tf.squeeze(best_logit_map, axis=-1), tf.int32)
             # best_logit_map = tf.argmin(tf.reduce_sum(per_graph_loss, axis=0), output_type=tf.int32)  # todo:select the best logits per graph
 
-            step_losses = step_losses.write(step, logit_loss)
+            step_losses = step_losses.write(step, logit_loss) # ~ push stekā
 
             # n_unsat_clauses = unsat_clause_count(logits, clauses)
             # if n_unsat_clauses == 0:
@@ -344,6 +348,7 @@ class QuerySAT(Model):
             clause_state = tf.stop_gradient(clause_state) * 0.2 + clause_state * 0.8
 
         if training:
+            # last_logits: pasaka vai mainīgais ir 0 vai 1 (-infty ; +infty)
             logits_round = tf.round(tf.sigmoid(last_logits))
             logits_different = tf.reduce_mean(tf.abs(logits_round[:, 0:1] - logits_round[:, 1:]))
             tf.summary.scalar("logits_different", logits_different)
@@ -373,9 +378,9 @@ class QuerySAT(Model):
                                   tf.RaggedTensorSpec(shape=[None, None], dtype=tf.int32, row_splits_dtype=tf.int32)
                                   ])
     def train_step(self, adj_matrix, clauses_graph, variables_graph, solutions):
-        with tf.GradientTape() as tape:
+        with tf.GradientTape() as tape: # !!!! ārējā gradienta tape
             _, loss, step = self.call(adj_matrix, clauses_graph, variables_graph, training=True, labels=solutions.flat_values)
-            train_vars = self.trainable_variables
+            train_vars = self.trainable_variables # te būs trenējamie mainīgie no visiem iekšējiem MLP
             gradients = tape.gradient(loss, train_vars)
             self.optimizer.apply_gradients(zip(gradients, train_vars))
 

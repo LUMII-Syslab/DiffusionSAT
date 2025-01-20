@@ -15,15 +15,15 @@ class SAT_3_Instances(SatInstances):
     """ Dataset with random 3-SAT instances at the satisfiability threshold from CNFGen library.
     """
 
-    def __init__(self, data_dir, min_vars=5,
+    def __init__(self,
+                 min_vars=5,
                  max_vars=30, # by SK #max_vars=100, 
-                 force_data_gen=False,
+                 # force_data_gen=False,
                  sat_solver: SatSolver=DefaultSatSolver(),
                  train_size = 100_000,
                  test_size = 5_000,
                  **kwargs) -> None:
-        super().__init__(data_dir, min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen,
-                                    **kwargs)
+        super().__init__()#min_vars=min_vars, max_vars=max_vars, force_data_gen=force_data_gen, **kwargs)
         self.train_size = train_size
         self.test_size = test_size
         self.min_vars = min_vars
@@ -58,8 +58,9 @@ class SAT_3_Instances(SatInstances):
             yield len(solution), iclauses, solution
 
 class SAT_3(BatchedDimacsDataset):
-    def __init__(self, **kwargs):
+    def __init__(self, min_vars, max_vars, **kwargs):
         super().__init__(SAT_3_Instances(**kwargs), SatSpecifics(**kwargs))
+        super().__init__(SAT_3_Instances(min_vars, max_vars, **kwargs), SatSpecifics(**kwargs), str(min_vars)+"_"+str(max_vars))
 class Clique_Instances(SatInstances):
     """ Dataset with random sat instances from triangle detection in graphs.
     Using Erdos-Renyi graphs with edge probability such that it is triangle-free with probability 0.5

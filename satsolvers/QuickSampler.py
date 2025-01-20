@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 import uuid
 
+import random
 from satsolvers.SatSolver import SatSolver
 from utils.VariableAssignment import VariableAssignment
 from utils.DimacsFile import DimacsFile
@@ -43,20 +44,27 @@ class QuickSampler(SatSolver):
             if not os.path.exists(samples_path):
                 raise Exception("Quicksampler returned no result")
             
+            i=1
             # reading the file line by line:
             with open(samples_path, 'r') as file:
-                for line in file:
+                lines = file.readlines()
+                random.shuffle(lines)
+                #for line in file: - without shuffle
+                for line in lines:
                     arr = line.split()
                     if len(arr)>=2:
                         bit_str = arr[1] # the second line element is bit-encoded solution
                         bit_list = [int(char) for char in bit_str]
                         asgn = VariableAssignment(len(bit_str), df.clauses())
                         asgn.assign_all_from_bit_list(bit_list)
+                        i+=1
                         if asgn.satisfiable():
                             # append only satisfiable solution
-                            remaining -= 1
                             sol = asgn.as_int_list()
                             returned_samples.append(sol)
+                            remaining -= 1
+                            if remaining == 0:
+                                break
             
             try:
                 os.remove(samples_path)

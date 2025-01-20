@@ -10,7 +10,7 @@ sys.path.append(current_directory)
 from data.k_sat import KSatInstances, SatSpecifics, KSatDataset
 from data.dimac import BatchedDimacsDataset
 
-from data.diffusion_sat import DiffusionSatDataset
+from data.diffusion_sat_instances import DiffusionSatDataset
 
 from data.CNFGen import SAT_3, Clique, DomSet, KColor
 from data.PrimesGen import PrimesGen

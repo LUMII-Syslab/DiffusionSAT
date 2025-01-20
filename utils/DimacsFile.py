@@ -13,6 +13,7 @@ class DimacsFile:
         self.n_vars = n_vars
         self.i_clauses = clauses
         self.b_values = {}
+        self.comments = []
 
     def __raggedtensor_to_list(self, tf_clauses):
         n_clauses = np.shape(tf_clauses)[0]
@@ -91,6 +92,9 @@ class DimacsFile:
 
     def clauses(self):
         return self.i_clauses
+
+    def add_comment(self, comment):
+        self.comments.append(comment)
 
     def add_clause(self, clause):
         self.add_clauses([clause])
@@ -176,6 +180,8 @@ class DimacsFile:
 
     def store(self, *comments):
         f = open(self.filename, "w")
+        for c in self.comments:
+            f.write("c " + c + "\n")
         for c in comments:
             f.write("c " + c + "\n")
         f.write(

@@ -10,7 +10,7 @@ class AllSolutions:
         Uses Unigen internally.
     """
 
-    def __init__(self, n_vars, clauses):
+    def __init__(self, n_vars: int, clauses: list):
         self.n_vars = n_vars
         self.clauses = clauses
         self.__approximate_count = -1

@@ -20,6 +20,26 @@ def registry_choices() -> dict:
         raise Exception("Error parsing dict from registry/registry: "+result.stderr)
 
 class Config:
+    """DiffusionSat changeable config for diffusion_training: """
+    train_steps = 167_000 #1_000 #5_000 #10_000 #25_000 #50_000 #75_000 #167_000
+    train_min_vars = 30 #3 30
+    train_max_vars = 100 #30 100
+    test_size=10_000
+    train_size=100_000
+    use_hard_3sat = True 
+       # ^^^ if True, use hard 3-SAT instances with 4.3 clause/variable ratio for training;
+       #     if False, use NeuroSAT-based k-SAT generation algorithm
+    desired_multiplier_for_the_number_of_solutions = 20
+       # ^^^ only if use_hard_3sat==False
+       # remove some clauses to multiply the number of samples by desired_multiplier_for_the_number_of_solutions
+    max_nodes_per_batch = 20_000 # 20_000 for Nvidia T4, 60_000 for more advanced cards (setting by SK)
+    use_cosine_decay = True # use CosineDecay instead of fixed rate schedule
+    learning_rate = 0.0003
+       # ^^^ the fixed learning rate, if use_cosine_decay==False
+    use_unigen = True
+       # ^^^ Unigen() or Glucose() for computing samples used for training;
+       #     see: data/diffusion_sat_instances.py#get_sat_solution
+
     """Data and placement config: """
     from pathlib import Path
 
@@ -39,24 +59,16 @@ class Config:
 
     """Training and task selection config: """
     optimizer = 'radam'
-    train_steps = 167000
-#    train_steps = 500000
     warmup = 0.0
-    learning_rate = 0.0003
     model = 'query_sat'  # query_sat,  query_sat_lit, neuro_sat, tsp_matrix_se
     #task = "splot" # task === dataset; for "splot" use input_mode="variables"
     #task = "satlib"
     #task = "k_sat"
-    task = "diffusion-sat"
+    task = '3-sat' # "diffusion-sat"
      # '3-sat'  # k-sat, k_color, 3-sat, clique, primes, sha-gen2019, dominating_set, euclidean_tsp, asymmetric_tsp
      
     # Applicable to SAT-based tasks:
     input_mode = 'literals'  # "variables" or "literals", applicable to SAT
-    max_nodes_per_batch = 20_000 # 20_000 for Nvidia T4, 60_000 for more advanced cards (setting by SK)
-    #sat_solver_for_generators = "unigen"
-    # !!! see: data/diffusion_sat.py#get_sat_solution
-      # "default" (means: Glucose4+lingeling), "glucose", "lingeling", "unigen", "quicksampler"
-      # see SatSolverRegistry in registry/registry.py for details
 
     """Supported training and evaluation modes: """
     train = True
